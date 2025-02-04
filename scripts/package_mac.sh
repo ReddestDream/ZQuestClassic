@@ -22,9 +22,9 @@ set -eux
 cd "$ROOT"
 
 if [ -z $version ]; then
-  python scripts/package.py --build_folder "$build_dir" --skip_archive
+  python3 scripts/package.py --build_folder "$build_dir" --skip_archive
 else
-  python scripts/package.py --version $version --build_folder "$build_dir" --skip_archive
+  python3 scripts/package.py --version $version --build_folder "$build_dir" --skip_archive
 fi
 
 # Set SKIP_APP_BUNDLE=1 to skip building an osx application bundle.
