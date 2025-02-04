@@ -416,6 +416,11 @@ endforeach()
 # Build the ZScript parser
 #############################################################
 
+# Note modern macOS (15.3) has outdated bison (2.6), necessitating setting path to a newer version
+# For homebrew:
+# Apple Silicon: PATH="/opt/homebrew/opt/bison/bin:$PATH"
+# Intel: PATH="/usr/local/opt/bison/bin:$PATH"
+
 find_package(BISON QUIET)
 find_package(FLEX QUIET)
 
