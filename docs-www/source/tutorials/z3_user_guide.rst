@@ -1,7 +1,7 @@
 Z3 User Guide
 =============
 
-This is written for experienced users of ZC, and describes the major changes related to the new `z3` region scrolling feature.
+This is written for experienced users of ZC, and describes the major changes related to the new "z3" scrolling regions feature.
 
 "z3" refers to the third Zelda, A Link To The Past, which unlike the original Zelda features playing areas larger than a single screen. To accomplish the same in ZQuest Classic, one had to rewrite the entire game engine and every feature you wanted to use in ZScript, an incredibly daunting task. Now, ZQuest Classic supports z3-style screens via a new features: regions.
 
@@ -29,7 +29,7 @@ The traditional viewport for ZC has been 256 pixels wide by 176 pixels tall - or
 
 In a scrolling region, the viewport pans as the player moves across the region. By default the viewport is centered to draw the player in the middle of the screen, but this is bounded by the edges of the region to prevent showing beyond the current region. This behavior can be customized via scripting.
 
-There is a new option to have an extended height viewport (applicable only when a region is taller than 1 screen). This makes the viewport 232 pixels (or 3.5 combos taller) - the same height as the passive subscreen. This effectively centers the player as if the passive subscreen did not exist. This is controlled by a DMap flag. When using an extended height viewport, the passive subscreen should be configured to have no background color. Without a transparent passive subscreen, it will look very odd. Similarly, if not using an extended height viewport, the passive subscreen should be opaque.
+There is a new option to have an extended height viewport (applicable only when a region is taller than 1 screen). This makes the viewport 232 pixels (or 3.5 combos taller - the height of the passive subscreen). This effectively centers the player as if the passive subscreen did not exist. This is controlled by a DMap flag. When using an extended height viewport, the passive subscreen should be configured to have no background color. Without a transparent passive subscreen, it will look very odd. Similarly, if not using an extended height viewport, the passive subscreen should be opaque.
 
 The viewport height is only extended if the DMap flag is on, and if the current region is taller than one screen.
 
@@ -38,6 +38,16 @@ Note: all this is ignoring the fact that the bottom 8 pixels has always and cont
 When in a scrolling region, enemies and their weapons are paused if they are outside the current viewport, with some buffer (48px). However, weapon/npc scripts still run.
 
 Player weapons are considered "out of bounds" when they leave the viewport. Most player weapons are deleted when they go out of bounds (unless `CollDetection` is false), such as arrows. But some weapon types have special behavior: for example, boomerangs just begin returning to the hero.
+
+Mazes
+-----
+
+A minor addition, but mazes have some new configuration options to provide more flexibility, especially useful within regions.
+
+- ``Can Get Lost In Maze`` - Going any direction other than the exit gets the hero "lost" - in this state, leaving in the direction of the exit does not leave the maze, but does get the hero "unlost" (so using the exit direction once more will actually leave the maze)
+- ``Loopy Maze`` - Instead of scrolling, taking any non-exit direction in a maze will insta-warp the player to the opposite side (not reloading the screen at all), with an optional wipe effect (see Maze Path dialog)
+
+Mazes work on any screen of a region.
 
 ZScript
 -------
@@ -71,7 +81,12 @@ The :ref:`Viewport<globals_viewport>` global defines the visible portion of the 
 Region
 ^^^^^^
 
-The :ref:`Region<globals_region>` global defines the currently active region. See the documentation for more details.
+The :ref:`Region<globals_region>` global defines the currently active region and some helper functions. See the documentation for more details.
+
+There's also some functions for configuring region ids:
+
+* :ref:`void ClearRegion(int map)<globals_fun_clearregion>`
+* :ref:`void SetRegion(int map, int origin_screen, int width, int height, int region_id)<globals_fun_setregion>`
 
 sprite SpawnScreen
 ^^^^^^^^^^^^^^^^^^^
@@ -124,14 +139,3 @@ Each individual screen within a region may have up to 128 FFCs. The number used 
 To load the FFC with the specified ID, use `Screen->LoadFFC(int ffc_id)`.
 
 To load the FFC at a specific index for a given screen, use `Screen->LoadFFC(int screen, int index)`.
-
-Region-related functions
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-New functions in `std` (see :doc:`/zscript/libs/std/std_functions` for details):
-
-* :ref:`int RegionRelativeScreenX(int scr)<libs_std_fun_regionrelativescreenx>`
-* :ref:`int RegionRelativeScreenY(int scr)<libs_std_fun_regionrelativescreeny>`
-* :ref:`int RegionWorldOffsetX(int scr)<libs_std_fun_regionworldoffsetx>`
-* :ref:`int RegionWorldOffsetY(int scr)<libs_std_fun_regionworldoffsety>`
-* :ref:`bool RegionIncludesScreen(int scr)<libs_std_fun_regionincludesscreen>`
