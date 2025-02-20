@@ -1707,7 +1707,14 @@ void HeroClass::init()
     if(y==0)   dir=down;
     
     if(y==world_h-16) dir=up;
-    
+
+	if (hero_scr)
+	{
+		x += region_scr_dx*256;
+		y += region_scr_dy*176;
+		update_viewport();
+	}
+
     lstep=0;
     skipstep=0;
     autostep=false;
@@ -26708,6 +26715,7 @@ void HeroClass::exitcave()
     
     x += region_scr_dx*256;
     y += region_scr_dy*176;
+	update_viewport();
         
     int32_t type1 = combobuf[MAPCOMBO(x,y-16)].type;
     int32_t type2 = combobuf[MAPCOMBO(x,y)].type;

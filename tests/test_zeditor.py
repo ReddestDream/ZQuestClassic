@@ -118,7 +118,7 @@ class TestZEditor(unittest.TestCase):
             return
 
         test_cases = [
-            ('classic_1st.zplay', 'quests/Z1 Recreations/classic_1st.qst'),
+            ('classic_1st.zplay', 'classic_1st.qst'),
             # TODO: fails
             # ('freedom_in_chains.zplay', 'freedom_in_chains.qst'),
             ('ss_jenny.zplay', 'ss_jenny.qst'),
@@ -205,7 +205,23 @@ class TestZEditor(unittest.TestCase):
 
                 tmp_qst_path = tmp_dir / qst_path.name
                 shutil.copy(qst_path, tmp_qst_path)
-                self.quick_assign(tmp_qst_path)
+
+                # Currently there is a flaky crash, seemingly only on ubuntu+clang.
+                #
+                #   Exception: got error running command: zeditor -headless -quick-assign .tmp/test_zeditor/newbie_boss.qst
+                #   do_compile_and_slots at compilezscript.cpp:440:1
+                #
+                # For now, repeat a few times (CI only).
+                attempts = 3 if 'CI' in os.environ else 1
+                for i in range(attempts):
+                    try:
+                        self.quick_assign(tmp_qst_path)
+                        break
+                    except Exception as e:
+                        if i == attempts - 1:
+                            raise e
+                        print(e)
+
                 successful_qsts.append(qst_path)
 
         all_replay_paths = []
@@ -235,7 +251,7 @@ class TestZEditor(unittest.TestCase):
         args = [
             '-headless',
             '-export-strings',
-            'quests/Z1 Recreations/classic_1st.qst',
+            root_dir / 'tests/replays/classic_1st.qst',
             tsv_path,
         ]
         run_target.check_run('zeditor', args)
@@ -257,7 +273,7 @@ class TestZEditor(unittest.TestCase):
             'zeditor',
             [
                 '-package',
-                'quests/Z1 Recreations/classic_1st.qst',
+                root_dir / 'tests/replays/classic_1st.qst',
                 'package-test',
             ],
         )

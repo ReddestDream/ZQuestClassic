@@ -1104,7 +1104,7 @@ static bool init_section(zquestheader *Header, int32_t section_id, miscQdata *Mi
 
 bool init_tiles_for_190(bool validate, zquestheader *Header)
 {
-    return init_section(Header, ID_TILES, NULL, NULL, validate, "modules/classic/classic_1st.qst");
+    return init_section(Header, ID_TILES, NULL, NULL, validate, "assets/190_tiles.qst");
 }
 
 bool init_tiles(bool validate, zquestheader *Header)
@@ -1890,8 +1890,6 @@ void print_quest_metadata(zquestheader const& tempheader, char const* path, byte
 {
 	zprint2("\n");
 	zprint2("[QUEST METADATA]\n");
-	if(qst_num < moduledata.max_quest_files)
-		zprint2("Loading module quest %d\n", qst_num+1);
 	if(path)
 		zprint2("Path: %s\n", path);
 	zprint2("ZC Version: %s\n", tempheader.getVerStr());

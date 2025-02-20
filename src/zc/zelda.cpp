@@ -1389,23 +1389,13 @@ int32_t load_quest(gamedata *g, bool report, byte printmetadata)
 
 	if (!qst_num)
 	{
-		qst_num = g->header.qstpath.ends_with("classic_1st.qst") ? 1 : 0xFF;
+		qst_num = 0xFF;
 		g->set_quest(qst_num);
 	}
 
 	if (g->header.qstpath.empty() && qst_num)
 	{
-		char* cwd = al_get_current_directory();
-		fs::path path;
-		if      (qst_num == 1) path = fs::path(cwd) / "quests/Z1 Recreations/classic_1st.qst";
-		else if (qst_num == 2) path = fs::path(cwd) / "quests/Z1 Recreations/classic_2nd.qst";
-		else if (qst_num == 3) path = fs::path(cwd) / "quests/Old Contest Winners/classic_3rd.qst";
-		else if (qst_num == 4) path = fs::path(cwd) / "quests/Z1 Recreations/classic_4th.qst";
-		else if (qst_num == 5) path = fs::path(cwd) / "quests/Old Contest Winners/classic_5th.qst";
-		else return qe_no_qst;
-		al_free(cwd);
-		sprintf(qstpath, "%s", path.string().c_str());
-		g->header.qstpath = qstpath;
+		return qe_no_qst;
 	}
 
 	if (!g->header.qstpath.empty())
@@ -2001,10 +1991,11 @@ int32_t init_game()
 			Hero.setX(16 * 8);
 			Hero.setY(16 * 5);
 		}
-	}
 
-	Hero.x += region_scr_dx*256;
-	Hero.y += region_scr_dy*176;
+		Hero.x += region_scr_dx*256;
+		Hero.y += region_scr_dy*176;
+		update_viewport();
+	}
 
 	if(DMaps[cur_dmap].flags&dmfBUNNYIFNOPEARL)
 	{
@@ -2361,10 +2352,10 @@ int32_t cont_game()
 	{
 		Hero.setX(hero_scr->warpreturnx[testingqst_retsqr]);
 		Hero.setY(hero_scr->warpreturny[testingqst_retsqr]);
+		Hero.x += region_scr_dx*256;
+		Hero.y += region_scr_dy*176;
+		update_viewport();
 	}
-
-	Hero.x += region_scr_dx*256;
-	Hero.y += region_scr_dy*176;
 
 	if(DMaps[cur_dmap].flags&dmfBUNNYIFNOPEARL)
 	{
