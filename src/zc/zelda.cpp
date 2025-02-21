@@ -1006,11 +1006,9 @@ movingblock mblock2;
 portal mirror_portal;
 
 sprite_list  guys, items, Ewpns, Lwpns, chainlinks, decorations, portals;
-particle_list particles;
 
 #include "hero_tiles.h"
 #include "zc/hero.h"
-HeroClass   Hero;
 
 #include "zc/maps.h"
 #include "subscr.h"

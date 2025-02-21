@@ -83,10 +83,8 @@ static int32_t d_joylist_proc(int32_t msg,DIALOG *d,int32_t c);
 
 extern byte monochrome_console;
 
-extern HeroClass Hero;
 extern zcmodule moduledata;
 extern sprite_list  guys, items, Ewpns, Lwpns, chainlinks, decorations;
-extern particle_list particles;
 extern int32_t loadlast;
 extern char *sfx_string[WAV_COUNT];
 byte use_dwm_flush;

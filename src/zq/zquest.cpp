@@ -137,7 +137,6 @@
 #endif
 
 #define MIDI_TRACK_BUFFER_SIZE 50
-particle_list particles;
 void setZScriptVersion(int32_t) { } //bleh...
 extern CConsoleLoggerEx parser_console;
 
@@ -26956,10 +26955,6 @@ void FFScript::ZScriptConsole(int32_t attributes,const char *format, Params&&...
 }
 
 int32_t getpitfall(int32_t x, int32_t y){return 0;}
-
-int32_t iswaterexzq(int32_t combo, int32_t map, int32_t screen, int32_t layer, int32_t x, int32_t y, bool secrets, bool fullcheck, bool LayerCheck){return 0;}
-
-int32_t MAPCOMBOzq(int32_t x, int32_t y){return 0;}
 
 bool update_hw_pal = false;
 void update_hw_screen()
