@@ -115,7 +115,6 @@
 #include "zq/questReport.h"
 #include "zq/ffasmexport.h"
 #include <fstream>
-#include "base/module.h"
 #include "drawing.h"
 #include "zconsole/ConsoleLogger.h"
 #include "colorname.h"
@@ -193,7 +192,6 @@ extern byte monochrome_console;
 extern CConsoleLoggerEx zscript_coloured_console;
 
 uint8_t console_is_open = 0;
-uint8_t __isZQuest = 1; //Shared functionscan reference this. -Z
 bool is_zq_replay_test = false;
 
 #include "base/util.h"
@@ -24138,7 +24136,7 @@ int32_t main(int32_t argc,char **argv)
 		do_copy_qst_command(input_filename, output_filename);
 	}
 
-	Z_title("%s, %s",ZQ_EDITOR_NAME, getVersionString());
+	Z_title("ZQuest Classic Editor, %s", getVersionString());
 
 	if(!get_qst_buffers())
 	{
@@ -26231,9 +26229,6 @@ int32_t save_config_file()
     chop_path(midipath2);
     chop_path(imagepath2);
     chop_path(tmusicpath2);
-    
-	zc_set_config("ZCMODULE","current_module",moduledata.module_name);
-	//
 	write_includepaths();
 	
     zc_set_config("zquest",data_path_name,datapath2);
@@ -26905,9 +26900,6 @@ int32_t FFScript::getTime(int32_t type)
 }
 
 extern const char *itemclass_help_string_defaults[itype_max];
-//ZModule Functions
-
-
 
 /* end */
 

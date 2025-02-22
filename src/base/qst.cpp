@@ -12,6 +12,7 @@
 #include "base/combo.h"
 #include "base/msgstr.h"
 #include "base/flags.h"
+#include <bit>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -25,9 +26,6 @@
 
 
 #include "fmt/core.h"
-#include "metadata/sigs/devsig.h.sig"
-#include "metadata/sigs/compilersig.h.sig"
-#include "metadata/versionsig.h"
 #include "base/zc_alleg.h"
 #include "base/zdefs.h"
 #include "base/colors.h"
@@ -46,9 +44,6 @@
 #include "base/misctypes.h"
 #include "base/initdata.h"
 
-extern ZModule zcm;
-extern zcmodule moduledata;
-extern uint8_t __isZQuest;
 extern sprite_list  guys, items, Ewpns, Lwpns, chainlinks, decorations;
 extern void setZScriptVersion(int32_t s_version);
 
@@ -2643,7 +2638,7 @@ int32_t readheader(PACKFILE *f, zquestheader *Header, byte printmetadata)
 		}
 	}
 
-	if(printmetadata || __isZQuest)
+	if(printmetadata)
 	{
 		print_quest_metadata(tempheader, loading_qst_name, loading_qst_num);
 	}
@@ -16283,12 +16278,12 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 		word tempw;
 		temp_mapscr->ffcCountMarkDirty();
 		temp_mapscr->ffcs.clear();
-		temp_mapscr->resizeFFC(32);
+		temp_mapscr->resizeFFC(std::bit_width(bits));
 		for(m=0; m<32; m++)
 		{
-			ffcdata& tempffc = temp_mapscr->ffcs[m];
 			if((bits>>m)&1)
 			{
+				ffcdata& tempffc = temp_mapscr->ffcs[m];
 				if(!p_igetw(&tempw,f))
 				{
 					return qe_invalid;
@@ -16503,11 +16498,10 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 				}
 			}
 		}
+
+		temp_mapscr->shinkToFitFFCs();
 	}
 
-	temp_mapscr->ffcCountMarkDirty();
-	temp_mapscr->resizeFFC(temp_mapscr->numFFC());
-	temp_mapscr->ffcs.shrink_to_fit();
 	
 	//add in the new whistle flags
 	if(version<13)
@@ -16936,22 +16930,25 @@ int32_t readmapscreen(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr, wo
 		}
 		else
 		{
-			if(!p_igetw(&numffc,f))
+			if(!p_igetw(&numffc,f) || numffc > MAXFFCS)
 				return qe_invalid;
 		}
+
+		temp_mapscr->ffcCountMarkDirty();
+		temp_mapscr->ffcs.clear();
+		temp_mapscr->resizeFFC(numffc);
+
 		byte tempbyte;
 		word tempw;
 		static ffcdata nil_ffc;
-		temp_mapscr->ffcCountMarkDirty();
-		temp_mapscr->ffcs.clear();
-		temp_mapscr->resizeFFC(std::min(MAXFFCS, (int)numffc));
 		for(word m = 0; m < numffc; ++m)
 		{
+			if(old_ff && !(bits & (1<<m))) continue;
+
 			ffcdata& tempffc = (m < MAXFFCS)
 				? temp_mapscr->ffcs[m]
 				: nil_ffc; //sanity
-			if(old_ff && !(bits & (1<<m))) continue;
-			
+
 			if(!p_igetw(&tempw,f))
 				return qe_invalid;
 			if(!old_ff && !tempw) //empty ffc, nothing more to load
@@ -17026,9 +17023,7 @@ int32_t readmapscreen(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr, wo
 				return qe_invalid;
 	}
 
-	temp_mapscr->ffcCountMarkDirty();
-	temp_mapscr->resizeFFC(temp_mapscr->numFFC());
-	temp_mapscr->ffcs.shrink_to_fit();
+	temp_mapscr->shinkToFitFFCs();
 
 	return 0;
 }
@@ -22095,8 +22090,8 @@ static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Mi
         {
             for(int32_t j=0; j<MAPSCRS; j++)
             {
-                TheMaps[(i*MAPSCRS)+j].resizeFFC(32);
-                for(int32_t m=0; m<32; m++)
+                int c = TheMaps[(i*MAPSCRS)+j].numFFC();
+                for(int32_t m=0; m<c; m++)
                 {
                     if(combobuf[TheMaps[(i*MAPSCRS)+j].ffcs[m].data].type == cCHANGE)
                         TheMaps[(i*MAPSCRS)+j].ffcs[m].flags|=ffc_changer;

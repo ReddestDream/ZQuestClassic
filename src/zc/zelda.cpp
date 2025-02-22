@@ -84,8 +84,6 @@ extern bool epilepsyFlashReduction;
 	char* ptname = NULL;
 	std::ostringstream lxconsole_oss;
 #endif
-extern ZModule zcm; //modules
-extern zcmodule moduledata;
 extern char runningItemScripts[256];
 extern char modulepath[2048];
 
@@ -146,7 +144,6 @@ int32_t lens_hint_item[MAXITEMS][2]= {{0,0},{0,0}};                            /
 int32_t lens_hint_weapon[MAXWPNS][5] = {{0,0},{0,0}};                           //aclk, aframe, dir, x, y
 int32_t cheat_modifier_keys[4]; //two options each, default either control and either shift
 int32_t strike_hint_counter=0;
-uint8_t __isZQuest = 0; //shared functions can use this. -
 int32_t strike_hint_timer=0;
 int32_t strike_hint = 0;
 int32_t slot_arg = 0, slot_arg2 = 0;
@@ -4178,10 +4175,10 @@ int main(int argc, char **argv)
 	memset(zc_aboutstr,0,80);
 
 	sprintf(zc_builddate,"Build Date: %s %s, %d at @ %s %s", dayextension(BUILDTM_DAY).c_str(), (char*)months[BUILDTM_MONTH], BUILDTM_YEAR, __TIME__, __TIMEZONE__);
-	sprintf(zc_aboutstr,"%s, Version %s", ZC_PLAYER_NAME, getVersionString());
+	sprintf(zc_aboutstr,"%s, Version %s", "ZQuest Classic Player", getVersionString());
 	
 
-	Z_title("ZC Launched: %s, %s",ZC_PLAYER_NAME, getVersionString());
+	Z_title("ZC Launched: %s, %s","ZQuest Classic Player", getVersionString());
 	
 	if(!get_qst_buffers())
 	{
