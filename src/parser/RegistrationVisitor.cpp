@@ -531,13 +531,23 @@ void RegistrationVisitor::caseNamespace(ASTNamespace& host, void* param)
 	Namespace& namesp = *namesp_;
 	if (breakRecursion(host)) return;
 
+	// Options are set on an anonymous child scope of the namespace,
+	// which is attached to any function made within this namespace.
+	// See lookupOption.
+	{
+		ScopeReverter sr(&scope);
+		lexical_options_scope = scope->makeChild();
+		scope = lexical_options_scope;
+
+		block_regvisit_vec(host.options, param);
+		if (breakRecursion(host, param)) return;
+	}
+
 	// Recurse on script elements with its scope.
 	{
 		ScopeReverter sr(&scope);
 		scope = &namesp.getScope();
 
-		block_regvisit_vec(host.options, param);
-		if (breakRecursion(host, param)) return;
 		block_regvisit_vec(host.dataTypes, param);
 		if (breakRecursion(host, param)) return;
 		block_regvisit_vec(host.scriptTypes, param);
@@ -561,6 +571,8 @@ void RegistrationVisitor::caseNamespace(ASTNamespace& host, void* param)
 	{
 		doRegister(host);
 	}
+
+	lexical_options_scope = nullptr;
 }
 
 void RegistrationVisitor::caseImportDecl(ASTImportDecl& host, void* param)
@@ -1004,6 +1016,7 @@ void RegistrationVisitor::caseFuncDecl(ASTFuncDecl& host, void* param)
 		else host.parentScope = scope;
 		// Add an extra anonymous scope, used by templates
 		host.parentScope = scope = scope->makeChild();
+		scope->lexical_options_scope = lexical_options_scope;
 	}
 	Scope* extern_scope = scope;
 	Scope* func_lives_in = scope->getParent();
@@ -1105,18 +1118,9 @@ void RegistrationVisitor::caseFuncDecl(ASTFuncDecl& host, void* param)
 	for(auto it = host.optparams.begin(); it != host.optparams.end() && parcnt < paramTypes.size(); ++it, ++parcnt)
 	{
 		DataType const* getType = (*it)->getReadType(scope, this);
-		if(!getType) return;
-		checkCast(*getType, *paramTypes[parcnt], &host);
+		if(getType)
+			checkCast(*getType, *paramTypes[parcnt], *it);
 		if(breakRecursion(host)) return;
-		std::optional<int32_t> optVal = (*it)->getCompileTimeValue(this, scope);
-		if (!optVal)
-		{
-			handleError(CompileError::Error(*it, fmt::format("Function '{}' has an optional parameter whose default value is not a constant expression", host.getName())));
-			doRegister(host);
-			return;
-		}
-
-		host.optvals.push_back(*optVal);
 	}
 	if(breakRecursion(host)) return;
 	
@@ -1520,9 +1524,7 @@ void RegistrationVisitor::caseExprCall(ASTExprCall& host, void* param)
 	deprecWarn(host.binding, &host, "Function", host.binding->getUnaliasedSignature().asString());
 	if(host.binding->getFlag(FUNCFLAG_READ_ONLY))
 		handleError(CompileError::ReadOnly(&host, host.binding->getUnaliasedSignature().asString()));
-	
-	if(!host.binding->get_constexpr())
-		handleError(CompileError::GlobalVarFuncCall(&host));
+
 	doRegister(host);
 }
 

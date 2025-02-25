@@ -26,13 +26,13 @@ using std::unique_ptr;
 // Scope
 
 Scope::Scope(TypeStore& typeStore)
-	: typeStore_(typeStore), name_(std::nullopt)
+	: lexical_options_scope(nullptr), typeStore_(typeStore), name_(std::nullopt)
 {
 	id = ScopeID++;
 }
 
 Scope::Scope(TypeStore& typeStore, string const& name)
-	: typeStore_(typeStore), name_(name)
+	: lexical_options_scope(nullptr), typeStore_(typeStore), name_(name)
 {
 	id = ScopeID++;
 }
@@ -925,7 +925,7 @@ inline void ZScript::trimBadFunctions(std::vector<Function*>& functions, std::ve
 		
 		auto targetSize = parameterTypes.size();
 		auto maxSize = function->paramTypes.size() - (user_vargs ? 1 : 0);
-		auto minSize = maxSize - function->opt_vals.size();
+		auto minSize = maxSize - function->numOptionalParams;
 		// Match against parameter count, including optional params.
 		if (minSize > targetSize || (!vargs && maxSize < targetSize))
 		{
@@ -1085,15 +1085,33 @@ inline void ZScript::trimBadFunctions(std::vector<Function*>& functions, std::ve
 std::optional<int32_t> ZScript::lookupOption(Scope const& scope, CompileOption option)
 {
 	if (!option.isValid()) return std::nullopt;
-	for (Scope const* current = &scope;
-	     current; current = current->getParent())
+	for (Scope const* current = &scope; current;)
 	{
 		CompileOptionSetting setting = current->getLocalOption(option);
-		if (setting == CompileOptionSetting::Inherit) continue;
+		if (setting == CompileOptionSetting::Inherit)
+		{
+			if (current->lexical_options_scope)
+			{
+				CompileOptionSetting ns_setting = current->getParent()->getLocalOption(option);
+				if (ns_setting == CompileOptionSetting::Default)
+					return *option.getDefault();
+				if (ns_setting != CompileOptionSetting::Inherit)
+					return ns_setting.getValue();
+
+				current = current->lexical_options_scope;
+				continue;
+			}
+
+			current = current->getParent();
+			continue;
+		}
+
 		if (setting == CompileOptionSetting::Default)
 			return *option.getDefault();
+
 		return *setting.getValue();
 	}
+
 	return *option.getDefault();
 }
 std::optional<int32_t> ZScript::lookupOption(Scope const* scope, CompileOption option)
@@ -1649,10 +1667,7 @@ Function* BasicScope::addFunction(
 	fun->setInternalScope(subscope->makeFunctionChild(*fun));
 	if(node)
 	{
-		for(auto it = node->optvals.begin(); it != node->optvals.end(); ++it)
-		{
-			fun->opt_vals.push_back(*it);
-		}
+		fun->numOptionalParams = node->optparams.size();
 	}
 	if (flags&FUNCFLAG_INTERNAL)
 		initFunctionBinding(fun, handler);
@@ -2433,10 +2448,7 @@ Function* ClassScope::addFunction(
 	fun->setInternalScope(subscope->makeFunctionChild(*fun));
 	if(node)
 	{
-		for(auto it = node->optvals.begin(); it != node->optvals.end(); ++it)
-		{
-			fun->opt_vals.push_back(*it);
-		}
+		fun->numOptionalParams = node->optparams.size();
 	}
 	if (flags&FUNCFLAG_INTERNAL)
 	{
@@ -2484,7 +2496,7 @@ std::optional<int32_t> FunctionScope::getRootStackSize() const
 // NamespaceScope
 
 NamespaceScope::NamespaceScope(Scope* parent, FileScope* parentFile, Namespace* namesp)
-	: BasicScope(parent, parentFile, namesp->getName()), namesp(namesp)
+	: BasicScope(parent, parentFile, namesp->getName()), namesp(namesp), current_lexical_scope(nullptr)
 {}
 
 NamespaceScope::~NamespaceScope()
