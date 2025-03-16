@@ -35,7 +35,7 @@
 #include "defdata.h"
 #include "subscr.h"
 #include "sfx.h"
-#include "md5.h"
+#include "base/md5.h"
 #include "zc/replay.h"
 #include "zc/zelda.h"
 #include "zinfo.h"
@@ -330,7 +330,7 @@ int32_t get_version_and_build(PACKFILE *f, word *version, word *build)
     byte temp_midi_flags[MIDIFLAGS_SIZE];
     memcpy(temp_midi_flags, midi_flags, MIDIFLAGS_SIZE);
     
-    zquestheader tempheader;
+    zquestheader tempheader{};
     
     if(!f)
     {
@@ -1887,6 +1887,8 @@ void print_quest_metadata(zquestheader const& tempheader, char const* path, byte
 	zprint2("[QUEST METADATA]\n");
 	if(path)
 		zprint2("Path: %s\n", path);
+	if(tempheader.title[0])
+		zprint2("Title: %s\n", tempheader.title);
 	zprint2("ZC Version: %s\n", tempheader.getVerStr());
 	if(tempheader.new_version_id_date_day)
 		zprint2("ZC Build Date: %d-%d-%d %s %s\n", tempheader.new_version_id_date_year, tempheader.new_version_id_date_month, tempheader.new_version_id_date_day, tempheader.build_timestamp, tempheader.build_timezone);
@@ -1901,6 +1903,7 @@ int32_t readheader(PACKFILE *f, zquestheader *Header, byte printmetadata)
 {
 	int32_t dummy;
 	zquestheader tempheader{};
+	tempheader.filename = Header->filename;
 	char dummybuf[80];
 	byte temp_map_count;
 	byte temp_midi_flags[MIDIFLAGS_SIZE];
@@ -2695,7 +2698,7 @@ int32_t readheader(PACKFILE *f, zquestheader *Header, byte printmetadata)
 	
 	read_ext_zinfo = tempheader.external_zinfo;
 	
-	memcpy(Header, &tempheader, sizeof(tempheader));
+	*Header = tempheader;
 	map_count=temp_map_count;
 	memcpy(midi_flags, temp_midi_flags, MIDIFLAGS_SIZE);
 
@@ -2711,11 +2714,9 @@ int32_t readrules(PACKFILE *f, zquestheader *Header)
 		return 0;
 
 	int32_t dummy;
-	zquestheader tempheader;
+	zquestheader tempheader = *Header;
 	word s_version=0;
 	dword compatrule_version=0;
-	
-	memcpy(&tempheader, Header, sizeof(tempheader));
 	
 	if(tempheader.zelda_version >= 0x193)
 	{
@@ -3487,18 +3488,13 @@ int32_t readrules(PACKFILE *f, zquestheader *Header)
 	}
 	if (compatrule_version < 74 && tempheader.compareVer(2, 55, 9) < 0)
 		set_qr(qr_BROKEN_SCRIPTS_SCROLLING_HERO_POSITION, 1);
-	if (compatrule_version < 75 && tempheader.compareVer(2, 55, 9) < 0)
-	{
-		if (std::string(tempheader.title).starts_with("Yuurand"))
-			set_qr(qr_HIDE_BOTTOM_8_PIXELS, 1);
-	}
 
 	set_qr(qr_ANIMATECUSTOMWEAPONS,0);
 	if (s_version < 16)
 		set_qr(qr_BROKEN_HORIZONTAL_WEAPON_ANIM,1);
-	
-	memcpy(Header, &tempheader, sizeof(tempheader));
-	
+
+	*Header = tempheader;
+
 	return 0;
 }
 
@@ -21294,6 +21290,57 @@ static int maybe_skip_section(PACKFILE* f, dword& section_id, const byte* skip_f
 	return qe_OK;
 }
 
+// TODO: this was copied from zc/zasm_utils.cpp
+static void _zasm_for_every_script(std::function<void(zasm_script*)> fn)
+{
+	extern std::vector<std::shared_ptr<zasm_script>> zasm_scripts;
+
+	std::vector<zasm_script*> scripts;
+	scripts.reserve(zasm_scripts.size());
+	for (auto& script : zasm_scripts)
+		if (script->valid())
+			scripts.push_back(script.get());
+
+	std::for_each(scripts.begin(), scripts.end(), fn);
+}
+
+static bool compat_qr_hide_bottom_pixels(const zquestheader& header)
+{
+	// 2.55.9 or newer?
+	if (header.compareVer(2, 55, 9) >= 0)
+		return false; // defer to whatever was set
+
+	// Only a couple quests take any time (~7ms) on my intel mac to check all the ZASM... cache those.
+	std::string title = header.title;
+	if (title == "Stellar Seas")
+		return false;
+	if (title == "Yuurand: Tales of the Labyrinth")
+		return true;
+
+	// Look for ZASM setting values of 167, 168, etc. This is a sign that the script may be drawing something
+	// near the old "bottom" of the screen, or is attempting to fill the entire screen with a draw command.
+	// In these cases, the compat rule must be flipped on. As of writing, 72 quests in the PZC database match
+	// this query: https://gist.github.com/connorjclark/edd12f84c9aac0c924ed328d3f8efcfa
+	bool found = false;
+	_zasm_for_every_script([&](auto script){
+		if (found) return;
+
+		for (const auto& instr : script->zasm)
+		{
+			if (!(instr.command == SETV || instr.command == PUSHV)) continue;
+
+			int value = instr.arg2;
+			if (value == 167000000 || value == 168000000 || value == 167870000 || value == 167910000 || value == 168130000)
+			{
+				found = true;
+				break;
+			}
+		}
+	});
+
+	return found;
+}
+
 //Internal function for loadquest wrapper
 static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Misc, zctune *tunes, bool show_progress, byte *skip_flags, byte printmetadata)
 {
@@ -21428,8 +21475,8 @@ static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Mi
 		reset_scripts();
 	}
 	
-    zquestheader tempheader;
-    memset(&tempheader, 0, sizeof(zquestheader));
+    zquestheader tempheader{};
+	tempheader.filename = filename;
 	zinfo tempzi;
 	tempzi.clear();
 	load_tmp_zi = &tempzi;
@@ -22105,7 +22152,15 @@ static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Mi
             }
         }
     }
-    
+
+	if (!get_bit(skip_flags, skip_rules))
+	{
+		bool should_hide = compat_qr_hide_bottom_pixels(tempheader);
+		al_trace("Note: qr_HIDE_BOTTOM_8_PIXELS %s via compat rule\n", should_hide ? "enabled" : "disabled");
+		if (should_hide)
+			set_qr(qr_HIDE_BOTTOM_8_PIXELS, 1);
+	}
+
     if(get_qr(qr_CONTFULL_DEP) && !get_bit(skip_flags, skip_rules) && !get_bit(skip_flags, skip_initdata))
     {
         set_qr(qr_CONTFULL_DEP, 0);
@@ -22120,7 +22175,7 @@ static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Mi
     
     if(!get_bit(skip_flags, skip_header))
     {
-        memcpy(Header, &tempheader, sizeof(tempheader));
+        *Header = tempheader;
     }
     if(!get_bit(skip_flags, skip_zinfo))
     {
