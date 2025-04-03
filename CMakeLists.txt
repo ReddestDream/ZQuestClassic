@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.27)
+# Use -DCMAKE_POLICY_VERSION_MINIMUM=3.5 with Cmake 4
 set(CMAKE_CONFIGURATION_TYPES Asan Debug Release RelWithDebInfo Coverage CACHE STRING INTERNAL FORCE)
 project (ZeldaClassic)
 
