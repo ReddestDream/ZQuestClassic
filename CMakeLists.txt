@@ -94,7 +94,7 @@ set(BUILD_TESTING OFF CACHE BOOL "")
 
 if(APPLE)
 	# Makes binaries look in their directory for shared libraries.
-	list(APPEND CMAKE_BUILD_RPATH "@loader_path")
+	# list(APPEND CMAKE_BUILD_RPATH "@loader_path")
 elseif(LINUX)
 	# https://stackoverflow.com/a/71321163/2788187
 	SET(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
