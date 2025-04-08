@@ -44,7 +44,7 @@ contents="$mac_package_dir/ZQuest Classic.app/Contents"
 
 rm -rf "$mac_package_dir"
 mkdir -p "$contents/MacOS"
-cp "$DIR/mac_entry.sh" "$contents/MacOS"
+cp "$package_dir/zplayer" "$contents/MacOS"
 cp "$DIR/Info.plist" "$contents"
 mv "$package_dir" "$contents/Resources"
 
@@ -77,11 +77,11 @@ find "$contents/Resources" -name "*.dylib" -exec mv {} "$tmp_libs_dir" \;
 dylibbundler -od -b -d "$contents/libs/" -s "$tmp_libs_dir" \
     -x "$contents/Resources/zlauncher" -x "$contents/Resources/zeditor" \
     -x "$contents/Resources/zplayer" -x "$contents/Resources/zscript" \
-    -x "$contents/Resources/zupdater"
+    -x "$contents/Resources/zupdater" -x "$contents/MacOS/zplayer"
 rm -rf "$tmp_libs_dir"
 
 # Sign the app.
-codesign --force --deep --preserve-metadata=entitlements,requirements,flags,runtime --sign - "$contents/MacOS/mac_entry.sh"
+codesign --force --deep --preserve-metadata=entitlements,requirements,flags,runtime --sign - "$contents/MacOS/zplayer"
 
 if test "${PACKAGE_DEBUG_INFO+x}"; then
   xcrun dsymutil \
