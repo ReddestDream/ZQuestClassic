@@ -3505,7 +3505,12 @@ int32_t readrules(PACKFILE *f, zquestheader *Header)
 		set_qr(qr_BROKEN_SCRIPTS_BITMAP_DRAW_ORIGIN, 1);
 	if (compatrule_version < 76 && (tempheader.version_major >= 3 || tempheader.compareVer(2, 55, 10) < 0))
 		set_qr(qr_INVERTED_DARK_COMBO_TRIGGERS, 1);
-
+	if (compatrule_version < 77 && (tempheader.version_major >= 3 || tempheader.compareVer(2, 55, 10) < 0))
+	{
+		set_qr(qr_BROKEN_ICY_FLOOR_SIDEVIEW, 1);
+		set_qr(qr_LAYER6_STRINGS_OVER_SUBSCREEN, 1);
+	}
+	
 	set_qr(qr_ANIMATECUSTOMWEAPONS,0);
 	if (s_version < 16)
 		set_qr(qr_BROKEN_HORIZONTAL_WEAPON_ANIM,1);
@@ -17019,9 +17024,14 @@ int32_t readmapscreen(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr, wo
 				if(!p_igetl(&(tempffc.initd[q]),f))
 					return qe_invalid;
 			}
-			if(!p_getc(&(tempbyte),f))
-				return qe_invalid;
-			if(!p_getc(&(tempbyte),f))
+			if(version < 33)
+			{
+				if(!p_getc(&(tempbyte),f))
+					return qe_invalid;
+				if(!p_getc(&(tempbyte),f))
+					return qe_invalid;
+			}
+			else if(!p_getc(&(tempffc.layer),f))
 				return qe_invalid;
 			
 			if(loading_tileset_flags & TILESET_CLEARSCRIPTS)

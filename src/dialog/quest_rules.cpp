@@ -262,6 +262,8 @@ static GUI::ListData comboRulesList
 		" time, ALL blocks on triggers will click into place."},
 	{ "Blocks Drown In Liquid", qr_BLOCKS_DROWN,
 		"Pushable blocks can drown in liquid, similarly to the hero."},
+	{ "Pushblocks Fall In Sideview", qr_PUSHBLOCKS_FALL_IN_SIDEVIEW,
+		"Pushable blocks fall in sideview (after being pushed only)" },
 	{ "Burn Flags Are Triggered Instantly", qr_INSTABURNFLAGS, 
 		"Makes it so Fire weapons instantly trigger secrets upon touching"
 		" a burn spot. If this rule is disabled, fire weapons need to linger"
@@ -983,6 +985,13 @@ static GUI::ListData compatRulesList
 		" This only affects quests made in 2.55.9 or later."},
 	{ "Inverted Dark Combo Triggers", qr_INVERTED_DARK_COMBO_TRIGGERS,
 		"If enabled, the combo trigger conditions for darkness / no darkness are inverted."},
+	{ "Broken Sideview Icy Floor", qr_BROKEN_ICY_FLOOR_SIDEVIEW,
+		"If enabled, 'Icy Floor' combos will use the same collision checks in sideview as overview."
+		" If disabled, icy floor takes effect underneath your feet (the combo you are *standing on*) instead." },
+	{ "Strings on Layer 6 Draw Above Layer 7", qr_LAYER6_STRINGS_OVER_SUBSCREEN,
+		"If enabled, message strings set to draw to layer '6' will actually draw over the subscreen and layer 7 script draws."
+		"\nIf disabled, these strings draw directly UNDER the subscreen instead."
+		"\nHas no effect at all if `Subscreen Appears Above Sprites` is unchecked." + QRHINT({qr_SUBSCREENOVERSPRITES})},
 };
 
 static GUI::ListData enemiesRulesList

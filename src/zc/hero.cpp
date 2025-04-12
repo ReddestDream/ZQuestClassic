@@ -3197,7 +3197,7 @@ void HeroClass::draw(BITMAP* dest)
 herodraw_end:
 	xofs=oxofs;
 	yofs=oyofs;
-	do_primitives(dest, SPLAYER_PLAYER_DRAW, 0, playing_field_offset);
+	do_primitives(dest, SPLAYER_PLAYER_DRAW);
 }
 
 void HeroClass::masked_draw(BITMAP* dest)
@@ -19440,27 +19440,47 @@ newmove_slide:
 		dir = conv_forcedir;
 	if(!is_conveyor_stunned)
 	{
-		bool is_inair = (z > 0 || fakez > 0);
+		bool is_inair = (z > 0 || fakez > 0) || (sideview_mode() && !get_qr(qr_BROKEN_ICY_FLOOR_SIDEVIEW) && !isStanding(true));
 		auto ic = ice_combo;
 		if(!is_inair) //maintain momentum when jumping
 		{
 			const int sens = 2;
-			auto ty = y+(bigHitbox?0:8);
-			int xs[] = {x+7, x+sens, x+sens, x+15-sens, x+15-sens};
-			int ys[] = {y+(bigHitbox?8:12), ty+sens, y+15-sens, ty+sens, y+15-sens};
-			bool found = false;
-			for(int q = 0; q < 5; ++q)
+			if(sideview_mode() && !get_qr(qr_BROKEN_ICY_FLOOR_SIDEVIEW)) // check *below you* in sideview
 			{
-				auto ice = get_icy(xs[q], ys[q], ICY_PLAYER);
-				if(ice)
+				int xs[] = {x+sens, x+15-sens};
+				bool found = false;
+				for(int q = 0; q < 2; ++q)
 				{
-					ic = ice_combo = ice;
-					found = true;
-					break;
+					auto ice = get_icy(xs[q], y+16, ICY_PLAYER);
+					if(ice)
+					{
+						ic = ice_combo = ice;
+						found = true;
+						break;
+					}
 				}
+				if(!found)
+					ic = ice_combo = 0;
 			}
-			if(!found)
-				ic = ice_combo = 0;
+			else
+			{
+				auto ty = y+(bigHitbox?0:8);
+				int xs[] = {x+7, x+sens, x+sens, x+15-sens, x+15-sens};
+				int ys[] = {y+(bigHitbox?8:12), ty+sens, y+15-sens, ty+sens, y+15-sens};
+				bool found = false;
+				for(int q = 0; q < 5; ++q)
+				{
+					auto ice = get_icy(xs[q], ys[q], ICY_PLAYER);
+					if(ice)
+					{
+						ic = ice_combo = ice;
+						found = true;
+						break;
+					}
+				}
+				if(!found)
+					ic = ice_combo = 0;
+			}
 		}
 		if(script_ice_combo)
 		{
@@ -27990,7 +28010,6 @@ void HeroClass::run_scrolling_script_int(bool waitdraw)
 
 static zfix new_hero_x, new_hero_y;
 static int new_region_offset_x, new_region_offset_y;
-static int new_ffc_offset_x, new_ffc_offset_y;
 static region_t scrolling_new_region;
 
 void HeroClass::run_scrolling_script_old(int32_t scrolldir, int32_t cx, int32_t sx, int32_t sy, bool end_frames, bool waitdraw)
@@ -28569,7 +28588,7 @@ static void scrollscr_handle_dark(mapscr* newscr, mapscr* oldscr, const nearby_s
 	dither_offx = 0;
 	dither_offy = 0;
 
-	do_primitives(framebuf, SPLAYER_DARKROOM_UNDER, 0, playing_field_offset);
+	do_primitives(framebuf, SPLAYER_DARKROOM_UNDER);
 	set_clip_rect(framebuf, 0, playing_field_offset, framebuf->w, framebuf->h);
 	if (hero_scr->flags9 & fDARK_DITHER) //dither the entire bitmap
 	{
@@ -28592,7 +28611,30 @@ static void scrollscr_handle_dark(mapscr* newscr, mapscr* oldscr, const nearby_s
 	color_map = &trans_table;
 	
 	set_clip_rect(framebuf, 0, 0, framebuf->w, framebuf->h);
-	do_primitives(framebuf, SPLAYER_DARKROOM_OVER, 0, playing_field_offset);
+	do_primitives(framebuf, SPLAYER_DARKROOM_OVER);
+}
+
+static void do_ffc_scroll_layer(BITMAP* dest, int layer, const nearby_scrolling_screens_t& nearby_screens, int xoff, int yoff)
+{
+	if(!get_qr(qr_FFCSCROLL))
+		return;
+	// Draw all FFCs from the previous region.
+	for (int i = 0; i < FFCore.ScrollingScreensAll.size(); i += 7)
+	{
+		mapscr* scr = FFCore.ScrollingScreensAll[i];
+		if (!scr)
+			continue;
+
+		auto screen_handle = screen_handle_t{scr, scr, scr->screen, 0};
+		do_ffc_layer(dest, layer, screen_handle, 0, 0);
+	}
+
+	for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
+		if (!is_new_screen)
+			return;
+
+		do_ffc_layer(dest, layer, screen_handles[0], xoff, yoff);
+	});
 }
 
 void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdmap)
@@ -28773,12 +28815,12 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 	int step = get_scroll_step(scrolldir);
 	int delay = get_scroll_delay(scrolldir);
 
-	int scroll_counter, dx, dy;
+	int scroll_counter, scroll_amount, dx, dy;
 	int secondary_axis_alignment_amount;
 	auto calc_scroll_data = [&](){
 		int scroll_height = std::min(viewport.h, new_viewport.h);
 		int scroll_width = std::min(viewport.w, new_viewport.w);
-		int scroll_amount = scrolldir == up || scrolldir == down ? scroll_height : scroll_width;
+		scroll_amount = scrolldir == up || scrolldir == down ? scroll_height : scroll_width;
 		scroll_counter = scroll_amount / step;
 
 		dx = 0;
@@ -29109,20 +29151,32 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 
 	// 0 for change playing field offset, then scroll.
 	// 1 for scroll, then change playing field offset.
-	// Prefer changing the playing field offset first then scrolling...
 	int pfo_mode = 0;
-	// ... except for when the new region has a larger viewport than the old one AND moving down.
-	// That scenario can't change the playing field offset first because it would have to show
-	// portions of the screen above the old one, which is bad.
-	if (dy == 1 && sign(new_playing_field_offset - old_original_playing_field_offset) == -1)
+
+	if (dy == 1)
+		pfo_mode = 0;
+	else if (dy == -1)
 		pfo_mode = 1;
-	// ... or for the inverse.
-	if (dy == -1 && sign(new_playing_field_offset - old_original_playing_field_offset) == 1)
+	else if (dx && old_region_scr_dy == 0 && sign(new_playing_field_offset - old_original_playing_field_offset) == -1)
 		pfo_mode = 1;
-	// Similar.
-	if (dx && old_region_scr_dy == 0 && sign(new_playing_field_offset - old_original_playing_field_offset) == -1)
-		pfo_mode = 1;
+
 	int pfo_counter = abs(new_playing_field_offset - old_original_playing_field_offset);
+
+	// If scrolling first and the final pfo is less, reduce the scroll distance.
+	if (pfo_mode == 1 && new_playing_field_offset > old_original_playing_field_offset)
+	{
+		scroll_amount += new_playing_field_offset - old_original_playing_field_offset;
+		scroll_counter = scroll_amount / step;
+	}
+
+	// If adjusting pfo first and the final pfo is more, increase the scroll distance.
+	// Also make the pfo adjust instantly.
+	if (pfo_mode == 0 && new_playing_field_offset < old_original_playing_field_offset)
+	{
+		scroll_amount -= new_playing_field_offset - old_original_playing_field_offset;
+		scroll_counter = scroll_amount / step;
+		pfo_counter = 1;
+	}
 
 	viewport_t old_world_rect;
 	old_world_rect.x = 0;
@@ -29310,22 +29364,6 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 	viewport = initial_viewport;
 	if (is_unsmooth_vertical_scrolling) viewport.y += 3;
 
-	// FFCs coordinates are world positions, and so don't need an offset like when drawing a
-	// specific screen's combos in do_scrolling_layer. But since their coordinates are in the new
-	// region's coordinate system, an offset of the difference between the two coordinate systems is
-	// needed.
-	new_ffc_offset_x = new_region_offset_x;
-	new_ffc_offset_y = new_region_offset_y;
-	if (is_warping)
-	{
-		new_ffc_offset_x = 0;
-		new_ffc_offset_y = 0;
-		if (scrolling_dir == left) new_ffc_offset_x = -256;
-		if (scrolling_dir == right) new_ffc_offset_x = 256;
-		if (scrolling_dir == up) new_ffc_offset_y = -176;
-		if (scrolling_dir == down) new_ffc_offset_y = 176;
-	}
-
 	// These mark the top-left coordinate of the new screen and the old screen, in the old region
 	// coordinates.
 	int nx = 0;
@@ -29344,6 +29382,14 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 			oy = offy;
 		}
 	});
+
+	// FFCs coordinates are world positions, and so don't need an offset like when drawing a
+	// specific screen's combos in do_scrolling_layer. But since their coordinates are in the new
+	// region's coordinate system, an offset of the difference between the two coordinate systems is
+	// needed.
+	// TODO: figure out how to calculate this in calc_new_viewport_and_pos, before their first usage...
+	new_region_offset_x = nx - get_region_relative_dx(dest_screen)*256;
+	new_region_offset_y = ny - get_region_relative_dy(dest_screen)*176;
 
 	cur_dmap = new_dmap;
 	for (int i = 0; (scroll_counter >= 0 && delay != 0) || align_counter || pfo_counter; i++, scroll_counter--)
@@ -29536,14 +29582,18 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
 			mapscr* base_scr = screen_handles[0].base_scr;
 			if(XOR(base_scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG)) do_layer(framebuf, 0, screen_handles[2], offx, offy);
+		});
+		if(XOR((newscr->flags7&fLAYER2BG) || (oldscr->flags7&fLAYER2BG), DMaps[cur_dmap].flags&dmfLAYER2BG))
+			do_primitives(framebuf, 2);
+		do_ffc_scroll_layer(framebuf, -2, nearby_screens, new_region_offset_x, new_region_offset_y);
+		
+		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
+			mapscr* base_scr = screen_handles[0].base_scr;
 			if(XOR(base_scr->flags7&fLAYER3BG, DMaps[cur_dmap].flags&dmfLAYER3BG)) do_layer(framebuf, 0, screen_handles[3], offx, offy);
 		});
-
-		// Draw screens' background layer primitives together, after their layers' combos.
-		// Not ideal, but probably good enough for all realistic purposes.
-		// Note: Not drawing for every screen because the old scrolling code only did this for the new screen...
-		if(XOR((newscr->flags7&fLAYER2BG) || (oldscr->flags7&fLAYER2BG), DMaps[cur_dmap].flags&dmfLAYER2BG)) do_primitives(framebuf, 2, 0, playing_field_offset);
-		if(XOR((newscr->flags7&fLAYER3BG) || (oldscr->flags7&fLAYER3BG), DMaps[cur_dmap].flags&dmfLAYER3BG)) do_primitives(framebuf, 3, 0, playing_field_offset);
+		if(XOR((newscr->flags7&fLAYER3BG) || (oldscr->flags7&fLAYER3BG), DMaps[cur_dmap].flags&dmfLAYER3BG))
+			do_primitives(framebuf, 3);
+		do_ffc_scroll_layer(framebuf, -3, nearby_screens, new_region_offset_x, new_region_offset_y);
 
 		combotile_add_y = is_unsmooth_vertical_scrolling ? -3 : 0;
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
@@ -29554,33 +29604,16 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 		combotile_add_y = 0;
 
 		if (lenscheck(newscr, 0))
-			do_primitives(framebuf, 0, 0, playing_field_offset);
+			do_primitives(framebuf, 0);
 
+		do_ffc_scroll_layer(framebuf, 0, nearby_screens, new_region_offset_x, new_region_offset_y);
+		
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
 			do_layer(framebuf, 0, screen_handles[1], offx, offy);
 		});
 		do_layer_primitives(framebuf, 1);
-
-		if (get_qr(qr_FFCSCROLL))
-		{
-			// Draw all FFCs from the previous region.
-			for (int i = 0; i < FFCore.ScrollingScreensAll.size(); i += 7)
-			{
-				mapscr* scr = FFCore.ScrollingScreensAll[i];
-				if (!scr)
-					continue;
-
-				auto screen_handle = screen_handle_t{scr, scr, scr->screen, 0};
-				do_layer(framebuf, -3, screen_handle, 0, 0); // ffcs
-			}
-
-			for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
-				if (!is_new_screen)
-					return;
-
-				do_layer(framebuf, -3, screen_handles[0], new_ffc_offset_x, new_ffc_offset_y); // ffcs
-			});
-		}
+		
+		do_ffc_scroll_layer(framebuf, 1, nearby_screens, new_region_offset_x, new_region_offset_y);
 
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
 			mapscr* base_scr = screen_handles[0].base_scr;
@@ -29590,6 +29623,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 
 		if (!(oldscr->flags7&fLAYER2BG) && !(XOR(origin_scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG)))
 			do_layer_primitives(framebuf, 2);
+		do_ffc_scroll_layer(framebuf, 2, nearby_screens, new_region_offset_x, new_region_offset_y);
 
 		if (get_qr(qr_PUSHBLOCK_SPRITE_LAYER))
 		{
@@ -29602,7 +29636,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 				}
 			});
 
-			do_primitives(framebuf, SPLAYER_PUSHBLOCK, 0, playing_field_offset);
+			do_primitives(framebuf, SPLAYER_PUSHBLOCK);
 		}
 
 		if (show_walkflags || show_effectflags)
@@ -29668,12 +29702,14 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 
 		if (!(XOR(origin_scr->flags7&fLAYER3BG, DMaps[cur_dmap].flags&dmfLAYER3BG)))
 			do_layer_primitives(framebuf, 3);
+		do_ffc_scroll_layer(framebuf, 3, nearby_screens, new_region_offset_x, new_region_offset_y);
 
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
 			do_layer(framebuf, 0, screen_handles[4], offx, offy); //layer 4
 		});
 
 		do_layer_primitives(framebuf, 4);
+		do_ffc_scroll_layer(framebuf, 4, nearby_screens, new_region_offset_x, new_region_offset_y);
 
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
 			do_layer(framebuf, -1, screen_handles[0], offx, offy); //overhead combos
@@ -29689,18 +29725,16 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 		});
 
 		do_layer_primitives(framebuf, 5);
-
-		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
-			int draw_ffc_x = is_new_screen ? new_ffc_offset_x : 0;
-			int draw_ffc_y = is_new_screen ? new_ffc_offset_y : 0;
-			do_layer(framebuf, -4, screen_handles[0], draw_ffc_x, draw_ffc_y); //overhead FFCs
-		});
+		do_ffc_scroll_layer(framebuf, 5, nearby_screens, new_region_offset_x, new_region_offset_y);
+		
+		do_ffc_scroll_layer(framebuf, -1, nearby_screens, new_region_offset_x, new_region_offset_y);
 
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
 			do_layer(framebuf, 0, screen_handles[6], offx, offy); //layer 6
 		});
 
 		do_layer_primitives(framebuf, 6);
+		do_ffc_scroll_layer(framebuf, 6, nearby_screens, new_region_offset_x, new_region_offset_y);
 
 		if (draw_dark && get_qr(qr_NEW_DARKROOM) && get_qr(qr_NEWDARK_L6))
 		{
@@ -29710,7 +29744,8 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 		put_passive_subscr(framebuf, 0, 0, game->should_show_time(), sspUP);
 
 		if(get_qr(qr_SUBSCREENOVERSPRITES))
-			do_primitives(framebuf, 7, 0, playing_field_offset);
+			do_primitives(framebuf, 7);
+		do_ffc_scroll_layer(framebuf, 7, nearby_screens, new_region_offset_x, new_region_offset_y);
 		
 		if (draw_dark && get_qr(qr_NEW_DARKROOM) && !get_qr(qr_NEWDARK_L6))
 		{
@@ -29925,6 +29960,8 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 		auto sprite = (decoration*)decorations.spr(i);
 		if (!sprite->is_drawn_with_offset())
 			decorations.remove(sprite); // TODO: improve deletions by adding remove_by_index
+		else if (old_region.region_id || new_region.region_id)
+			sprite->yofs = playing_field_offset;
 	}
 
 	newscr_clk = frame;
@@ -33237,14 +33274,14 @@ void HeroClass::explode(int32_t type)
                     {
                         if(type==0)  // Twilight
                         {
-                            particles.add(new pTwilight(Hero.getX()+j, Hero.getY()-Hero.getZ()+i, 5, 0, 0, (zc_oldrand()%8)+i*4));
+                            particles.add(new pTwilight(Hero.getX()+j, Hero.getY()-Hero.getZ()+i, 6, 0, 0, (zc_oldrand()%8)+i*4));
                             int32_t k=particles.Count()-1;
                             particle *p = (particles.at(k));
                             p->step=3;
                         }
                         else if(type ==1)  // Sands of Hours
                         {
-                            particles.add(new pTwilight(Hero.getX()+j, Hero.getY()-Hero.getZ()+i, 5, 1, 2, (zc_oldrand()%16)+i*2));
+                            particles.add(new pTwilight(Hero.getX()+j, Hero.getY()-Hero.getZ()+i, 6, 1, 2, (zc_oldrand()%16)+i*2));
                             int32_t k=particles.Count()-1;
                             particle *p = (particles.at(k));
                             p->step=4;
@@ -33257,7 +33294,7 @@ void HeroClass::explode(int32_t type)
                         }
                         else
                         {
-                            particles.add(new pDivineEscapeDust(Hero.getX()+j, Hero.getY()-Hero.getZ()+i, 5, 6, herotilebuf[i*16+j], zc_oldrand()%96));
+                            particles.add(new pDivineEscapeDust(Hero.getX()+j, Hero.getY()-Hero.getZ()+i, 6, 6, herotilebuf[i*16+j], zc_oldrand()%96));
                             
                             int32_t k=particles.Count()-1;
                             particle *p = (particles.at(k));

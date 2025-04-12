@@ -3534,7 +3534,7 @@ void draw_lens_over()
 	}
 	
 	masked_blit(lens_scr, framebuf, w-(HeroX()+8)+viewport.x, h-(HeroY()+8)+viewport.y, 0, playing_field_offset, 256, viewport.h);
-	do_primitives(framebuf, SPLAYER_LENS_OVER, 0, playing_field_offset);
+	do_primitives(framebuf, SPLAYER_LENS_OVER);
 }
 
 static void update_bmp_size(BITMAP** bmp_ptr, int w, int h)
@@ -3866,14 +3866,29 @@ int32_t onSaveMapPic()
 			int xx = 0;
 			int yy = -playing_field_offset;
 
-			if(XOR(scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG)) do_layer(_screen_draw_buffer, 0, screen_handles[2], xx, yy);
+			if(XOR(scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG))
+			{
+				do_layer(_screen_draw_buffer, 0, screen_handles[2], xx, yy);
+				do_ffc_layer(_screen_draw_buffer, -2, screen_handles[0], xx, yy);
+			}
 
-			if(XOR(scr->flags7&fLAYER3BG, DMaps[cur_dmap].flags&dmfLAYER3BG)) do_layer(_screen_draw_buffer, 0, screen_handles[3], xx, yy);
+			if(XOR(scr->flags7&fLAYER3BG, DMaps[cur_dmap].flags&dmfLAYER3BG))
+			{
+				do_layer(_screen_draw_buffer, 0, screen_handles[3], xx, yy);
+				do_ffc_layer(_screen_draw_buffer, -3, screen_handles[0], xx, yy);
+			}
 
-			if(lenscheck(scr,0)) putscr(scr, _screen_draw_buffer, 0, 0);
+			if(lenscheck(scr,0))
+				putscr(scr, _screen_draw_buffer, 0, 0);
+			do_ffc_layer(_screen_draw_buffer, 0, screen_handles[0], xx, yy);
 			do_layer(_screen_draw_buffer, 0, screen_handles[1], xx, yy);
+			do_ffc_layer(_screen_draw_buffer, 1, screen_handles[0], xx, yy);
 			
-			if(!XOR(scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG)) do_layer(_screen_draw_buffer, 0, screen_handles[2], xx, yy);
+			if(!XOR(scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG))
+			{
+				do_layer(_screen_draw_buffer, 0, screen_handles[2], xx, yy);
+				do_ffc_layer(_screen_draw_buffer, 2, screen_handles[0], xx, yy);
+			}
 			
 			putscrdoors(scr, _screen_draw_buffer, xx, yy);
 			if(get_qr(qr_PUSHBLOCK_SPRITE_LAYER))
@@ -3885,11 +3900,15 @@ int32_t onSaveMapPic()
 					do_layer(_screen_draw_buffer, -2, screen_handles[2], xx, yy);
 				}
 			}
-			do_layer(_screen_draw_buffer, -3, screen_handles[0], xx, yy); // Freeform combos!
 			
-			if(!XOR(scr->flags7&fLAYER3BG, DMaps[cur_dmap].flags&dmfLAYER3BG)) do_layer(_screen_draw_buffer, 0, screen_handles[3], xx, yy);
+			if(!XOR(scr->flags7&fLAYER3BG, DMaps[cur_dmap].flags&dmfLAYER3BG))
+			{
+				do_layer(_screen_draw_buffer, 0, screen_handles[3], xx, yy);
+				do_ffc_layer(_screen_draw_buffer, 3, screen_handles[0], xx, yy);
+			}
 			
 			do_layer(_screen_draw_buffer, 0, screen_handles[4], xx, yy);
+			do_ffc_layer(_screen_draw_buffer, 4, screen_handles[0], xx, yy);
 			do_layer(_screen_draw_buffer, -1, screen_handles[0], xx, yy);
 			if(get_qr(qr_OVERHEAD_COMBOS_L1_L2))
 			{
@@ -3897,7 +3916,12 @@ int32_t onSaveMapPic()
 				do_layer(_screen_draw_buffer, -1, screen_handles[2], xx, yy);
 			}
 			do_layer(_screen_draw_buffer, 0, screen_handles[5], xx, yy);
+			do_ffc_layer(_screen_draw_buffer, 5, screen_handles[0], xx, yy);
+			if(replay_version_check(40))
+				do_ffc_layer(_screen_draw_buffer, -1, screen_handles[0], xx, yy);
 			do_layer(_screen_draw_buffer, 0, screen_handles[6], xx, yy);
+			do_ffc_layer(_screen_draw_buffer, 6, screen_handles[0], xx, yy);
+			do_ffc_layer(_screen_draw_buffer, 7, screen_handles[0], xx, yy);
 
 			blit(_screen_draw_buffer, mappic, 0, 0, x*256, y*176, 256, 176);
 		}
@@ -4040,37 +4064,37 @@ int32_t onSecretsCheatPerm()
 
 int32_t onShowLayer0()
 {
-	show_layer_0 = !show_layer_0;
+	show_layers[0] = !show_layers[0];
 	return D_O_K;
 }
 int32_t onShowLayer1()
 {
-	show_layer_1 = !show_layer_1;
+	show_layers[1] = !show_layers[1];
 	return D_O_K;
 }
 int32_t onShowLayer2()
 {
-	show_layer_2 = !show_layer_2;
+	show_layers[2] = !show_layers[2];
 	return D_O_K;
 }
 int32_t onShowLayer3()
 {
-	show_layer_3 = !show_layer_3;
+	show_layers[3] = !show_layers[3];
 	return D_O_K;
 }
 int32_t onShowLayer4()
 {
-	show_layer_4 = !show_layer_4;
+	show_layers[4] = !show_layers[4];
 	return D_O_K;
 }
 int32_t onShowLayer5()
 {
-	show_layer_5 = !show_layer_5;
+	show_layers[5] = !show_layers[5];
 	return D_O_K;
 }
 int32_t onShowLayer6()
 {
-	show_layer_6 = !show_layer_6;
+	show_layers[6] = !show_layers[6];
 	return D_O_K;
 }
 int32_t onShowLayerO()
@@ -7755,13 +7779,13 @@ void System()
 			cheat_menu.select_uid(MENUID_CHEAT_IGNORESV, ignoreSideview);
 			cheat_menu.select_uid(MENUID_CHEAT_GOFAST, gofast);
 			
-			show_menu.select_uid(MENUID_SHOW_L0, show_layer_0);
-			show_menu.select_uid(MENUID_SHOW_L1, show_layer_1);
-			show_menu.select_uid(MENUID_SHOW_L2, show_layer_2);
-			show_menu.select_uid(MENUID_SHOW_L3, show_layer_3);
-			show_menu.select_uid(MENUID_SHOW_L4, show_layer_4);
-			show_menu.select_uid(MENUID_SHOW_L5, show_layer_5);
-			show_menu.select_uid(MENUID_SHOW_L6, show_layer_6);
+			show_menu.select_uid(MENUID_SHOW_L0, show_layers[0]);
+			show_menu.select_uid(MENUID_SHOW_L1, show_layers[1]);
+			show_menu.select_uid(MENUID_SHOW_L2, show_layers[2]);
+			show_menu.select_uid(MENUID_SHOW_L3, show_layers[3]);
+			show_menu.select_uid(MENUID_SHOW_L4, show_layers[4]);
+			show_menu.select_uid(MENUID_SHOW_L5, show_layers[5]);
+			show_menu.select_uid(MENUID_SHOW_L6, show_layers[6]);
 			show_menu.select_uid(MENUID_SHOW_OVER, show_layer_over);
 			show_menu.select_uid(MENUID_SHOW_PUSH, show_layer_push);
 			show_menu.select_uid(MENUID_SHOW_SPR, show_sprites);
@@ -9330,8 +9354,3 @@ void update_keys()
 	}
 }
 
-void zc_putpixel(int32_t layer, int32_t x, int32_t y, int32_t cset, int32_t color, int32_t timer)
-{
-	timer=timer;
-	particles.add(new particle(zfix(x), zfix(y), layer, cset, color));
-}
