@@ -159,6 +159,7 @@ class Enum:
     loc: Location
     comment: Comment
     name: str
+    prefix: str
     members: list[EnumMember]
 
 
@@ -264,35 +265,30 @@ def parse_doc_type(type_str: str) -> Type:
 def parse_doc_comment(x) -> Optional[Comment]:
     if x.get('comment'):
         text = x['comment']['text']
-        tags = []
-        for k, v in x['comment']['tags'].items():
-            if v == True:
-                tags.append((k, True))
-                continue
+        tags = x['comment']['tags']
 
-            records = v.split('\x1f')
-            for record in records:
-                tags.append((k, record))
-
-            SINGLE_VALUE_TAGS = [
-                'delete',
-                'deprecated_getter',
-                'deprecated',
-                'exit',
-                'extends',
-                'index',
-                'length',
-                'reassign_ptr',
-                'value',
-                'vargs',
-                'zasm_internal_array',
-                'zasm_ref',
-                'zasm_var',
-            ]
-            if len(records) > 1 and k in SINGLE_VALUE_TAGS:
+        SINGLE_VALUE_TAGS = [
+            'delete',
+            'deprecated_getter',
+            'deprecated',
+            'exit',
+            'extends',
+            'index',
+            'length',
+            'reassign_ptr',
+            'value',
+            'vargs',
+            'zasm_internal_array',
+            'zasm_ref',
+            'zasm_var',
+        ]
+        for tag in SINGLE_VALUE_TAGS:
+            count = len([t for t in tags if t[0] == tag])
+            if count > 1:
                 raise Exception(
-                    f'tag cannot have multiple values: {x}\n\nTag: {v}\n\nComment: {text}'
+                    f'@{tag} cannot have multiple values.\n\nComment: {text}\n\nTags: {tags}'
                 )
+
         return Comment(text=text, tags=tags)
 
     return None
@@ -361,18 +357,26 @@ def parse_doc_symbol(x, parent=None) -> File:
         loc = parse_location(x)
         comment = parse_doc_comment(x)
         name = x['name']
+        prefix = x.get('prefix', None)
         members = [parse_doc_enum_member(m) for m in x['children']]
 
         # For now, give unnamed enums a fake name.
         # TODO: Eventually, let's just update enums to have names.
         if not name:
-            if members:
-                name = next((x for x in members[0].name.split('_') if x), 'UnknownEnum')
+            if prefix:
+                name = prefix[0:-1]  # remove trailing _
+            elif members:
+                name = members[0].name
             else:
                 name = 'UnknownEnum'
 
         return Enum(
-            symbol_id=symbol_id, loc=loc, comment=comment, name=name, members=members
+            symbol_id=symbol_id,
+            loc=loc,
+            comment=comment,
+            name=name,
+            prefix=prefix,
+            members=members,
         )
     elif kind in [SymbolKind.Function, SymbolKind.Constructor]:
         symbol_id = x['id']
