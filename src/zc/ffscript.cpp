@@ -110,7 +110,7 @@ extern byte monochrome_console;
 static std::map<script_id, ScriptDebugHandle> script_debug_handles;
 ScriptDebugHandle* runtime_script_debug_handle;
 // Values may be null.
-static std::map<std::pair<zasm_script*, refInfo*>, JittedScriptHandle*> jitted_scripts;
+static std::map<std::pair<script_data*, refInfo*>, JittedScriptHandle*> jitted_scripts;
 int32_t jitted_uncompiled_command_count;
 
 CScriptDrawingCommands scriptdraws;
@@ -171,62 +171,6 @@ int32_t CScriptDrawingCommands::GetCount()
 {
 	al_trace("current number of draws is: %d\n", count);
 	return count;
-}
-//Advances the game frame without checking 'Quit' variable status.
-//Used for making scripts such as Hero's onWin and onDeath scripts
-//run for multiple frames.
-
-void FFScript::Waitframe(bool allowwavy, bool sfxcleanup)
-{
-	if(zcmusic!=NULL)
-	{
-		zcmusic_poll();
-	}
-	zcmixer_update(zcmixer, emusic_volume, FFCore.usr_music_volume, get_qr(qr_OLD_SCRIPT_VOLUME));
-	
-	while(Paused && !Advance && !Quit)
-	{
-		// have to call this, otherwise we'll get an infinite loop
-		syskeys();
-		// to keep fps constant
-		updatescr(allowwavy);
-		
-#ifdef _WIN32
-		
-		if(use_dwm_flush)
-		{
-			do_DwmFlush();
-		}
-		
-#endif
-		
-		// to keep music playing
-		if(zcmusic!=NULL)
-		{
-			zcmusic_poll();
-		}
-		zcmixer_update(zcmixer, emusic_volume, FFCore.usr_music_volume, get_qr(qr_OLD_SCRIPT_VOLUME));
-
-		update_hw_screen();
-	}
-
-	Advance=false;
-	++frame;
-	
-	syskeys();
-	updatescr(allowwavy);
-	
-#ifdef _WIN32
-	
-	if(use_dwm_flush)
-	{
-		do_DwmFlush();
-	}
-	
-#endif
-	
-	if(sfxcleanup)
-		sfx_cleanup();
 }
 
 enum class mapdata_type
@@ -917,6 +861,37 @@ int32_t get_ref_map_index(int32_t ref)
 	return -1;
 }
 
+template <typename T>
+static T* ResolveSprite(int32_t uid, const char* name, const char* what)
+{
+	if (auto s = sprite::getByUID(uid))
+	{
+		if (auto s2 = dynamic_cast<T*>(s))
+			return s2;
+
+		Z_scripterrlog("Invalid sprite: tried to reference %s->%s, using UID = %ld - but that sprite is not a %s\n", name, what, uid, name);
+		return nullptr;
+	}
+
+	Z_scripterrlog("Invalid sprite: tried to reference %s->%s, using UID = %ld - but that sprite does not exist\n", name, what, uid);
+	return nullptr;
+}
+
+sprite* ResolveBaseSprite(int32_t uid, const char* what)
+{
+	return ResolveSprite<sprite>(uid, "sprite", what);
+}
+
+item* ResolveItemSprite(int32_t uid, const char* what)
+{
+	return ResolveSprite<item>(uid, "item", what);
+}
+
+enemy* ResolveNpc(int32_t uid, const char* what)
+{
+	return ResolveSprite<enemy>(uid, "npc", what);
+}
+
 ///------------------------------------------------//
 //           Pointer Handling Functions          //
 ///------------------------------------------------//
@@ -1010,39 +985,13 @@ public:
 		}
 	};
 	
-	static int32_t loadWeapon(const int32_t wid, const char * const funcvar)
+	static int32_t loadWeapon(const int32_t uid, const char* what)
 	{
-		if ( !wid ) 
-		{
-			//can never be zero?
-			Z_scripterrlog("The lweapon pointer used for %s is NULL or uninitialised.", funcvar);
+		tempweapon = ResolveSprite<weapon>(uid, "lweapon", what);
+		if (!tempweapon)
 			return _InvalidSpriteUID;
-		}
-		tempweapon = (weapon *) Lwpns.getByUID(wid);
-		
-		if(tempweapon == NULL)
-		{
-			Z_scripterrlog("Invalid lweapon with UID %ld passed to %s\nLWeapons on screen have UIDs ", wid, funcvar);
-			
-			for(word i = 0; i < Lwpns.Count(); i++)
-				Z_scripterrlog("%ld ", Lwpns.spr(i)->getUID());
-				
-			Z_scripterrlog("\n");
-			return _InvalidSpriteUID;
-		}
 		
 		return _NoError;
-	}
-	
-	static int32_t getLWeaponIndex(const int32_t lwid)
-	{
-		for(word i = 0; i < Lwpns.Count(); i++)
-		{
-			if(Lwpns.spr(i)->getUID() == lwid)
-				return i;
-		}
-		
-		return -1;
 	}
 	
 	static INLINE weapon *getWeapon()
@@ -1150,39 +1099,13 @@ public:
 		}
 	};
 
-	static int32_t loadWeapon(const int32_t wid, const char * const funcvar)
+	static int32_t loadWeapon(const int32_t uid, const char* what)
 	{
-		if ( !wid ) 
-		{
-			//can never be zero?
-			Z_scripterrlog("The eweapon pointer used for %s is NULL or uninitialised.", funcvar);
+		tempweapon = ResolveSprite<weapon>(uid, "eweapon", what);
+		if (!tempweapon)
 			return _InvalidSpriteUID;
-		}
-		tempweapon = (weapon *) Ewpns.getByUID(wid);
-		
-		if(tempweapon == NULL)
-		{
-			Z_scripterrlog("Invalid eweapon with UID %ld passed to %s\nEWeapons on screen have UIDs ", wid, funcvar);
-			
-			for(word i = 0; i < Ewpns.Count(); i++)
-				Z_scripterrlog("%ld ", Ewpns.spr(i)->getUID());
-				
-			Z_scripterrlog("\n");
-			return _InvalidSpriteUID;
-		}
 		
 		return _NoError;
-	}
-	
-	static int32_t getEWeaponIndex(const int32_t ewid)
-	{
-		for(word i = 0; i < Ewpns.Count(); i++)
-		{
-			if(Ewpns.spr(i)->getUID() == ewid)
-				return i;
-		}
-		
-		return -1;
 	}
 	
 	static INLINE weapon *getWeapon()
@@ -1207,6 +1130,7 @@ void clearScriptHelperData()
 	GuyH::clearTemp();
 	LwpnH::clearTemp();
 	EwpnH::clearTemp();
+	ItemH::clearTemp();
 }
 ////END HELPER FUNCTIONS
 
@@ -1346,8 +1270,7 @@ static bool set_current_script_engine_data(ScriptType type, int script, int inde
 		
 		case ScriptType::NPC:
 		{
-			auto indx = GuyH::getNPCIndex(index);
-			enemy *spr = (enemy*)guys.spr(indx);
+			enemy *spr = (enemy*)guys.getByUID(index);
 			curscript = guyscripts[script];
 			
 			if (!data.initialized)
@@ -1364,8 +1287,7 @@ static bool set_current_script_engine_data(ScriptType type, int script, int inde
 		
 		case ScriptType::Lwpn:
 		{
-			auto indx = LwpnH::getLWeaponIndex(index);
-			weapon *spr = (weapon*)Lwpns.spr(indx);
+			weapon *spr = (weapon*)Lwpns.getByUID(index);
 			curscript = lwpnscripts[script];
 			
 			if (!data.initialized)
@@ -1382,8 +1304,7 @@ static bool set_current_script_engine_data(ScriptType type, int script, int inde
 		
 		case ScriptType::Ewpn:
 		{
-			auto indx = EwpnH::getEWeaponIndex(index);
-			weapon *spr = (weapon*)Ewpns.spr(indx);
+			weapon *spr = (weapon*)Ewpns.getByUID(index);
 			curscript = ewpnscripts[script];
 			
 			if (!data.initialized)
@@ -1437,6 +1358,11 @@ static bool set_current_script_engine_data(ScriptType type, int script, int inde
 		case ScriptType::Global:
 		{
 			curscript = globalscripts[script];
+			if (!data.initialized)
+			{
+				got_initialized = true;
+				data.initialized = 1;
+			}
 		}
 		break;
 		
@@ -1473,6 +1399,11 @@ static bool set_current_script_engine_data(ScriptType type, int script, int inde
 		{
 			curscript = playerscripts[script];
 			ri->screenref = hero_screen;
+			if (!data.initialized)
+			{
+				got_initialized = true;
+				data.initialized = 1;
+			}
 		}
 		break;
 		
@@ -1600,7 +1531,10 @@ static bool set_current_script_engine_data(ScriptType type, int script, int inde
 			break;
 		}
 	}
-
+	
+	if (got_initialized)
+		ri->pc = curscript->pc;
+	
 	return got_initialized;
 }
 
@@ -1622,21 +1556,7 @@ static ffcdata *ResolveFFCWithID(ffc_id_t id, const char *what)
 static ffcdata *ResolveFFC(int32_t ffcref, const char *what)
 {
 	if (ZScriptVersion::ffcRefIsSpriteId())
-	{
-		if (auto s = sprite::getByUID(ffcref))
-		{
-			if (auto ffc = dynamic_cast<ffcdata*>(s))
-				return ffc;
-
-			Z_scripterrlog("Script attempted to reference a FFC, but the sprite found was not an FFC.\n");
-			Z_scripterrlog("You were trying to reference the %s of an FFC with UID = %ld\n", what, ffcref);
-			return nullptr;
-		}
-
-		Z_scripterrlog("Script attempted to reference a nonexistent FFC!\n");
-		Z_scripterrlog("You were trying to reference the %s of an FFC with UID = %ld\n", what, ffcref);
-		return nullptr;
-	}
+		return ResolveSprite<ffcdata>(ffcref, "ffc", what);
 
 	return ResolveFFCWithID(ffcref, what);
 }
@@ -2499,37 +2419,14 @@ void FFScript::deallocateAllScriptOwnedCont()
 	}
 }
 
-weapon *checkLWpn(int32_t eid, const char *what)
+weapon *checkLWpn(int32_t uid, const char *what)
 {
-	weapon *s = (weapon *)Lwpns.getByUID(eid);
-	if(s == NULL) //check lifted weapon
-	{
-		weapon* lw = Hero.lift_wpn;
-		if(lw && lw->getUID() == eid)
-			s = lw;
-	}
-	if(s == NULL)
-	{
-		Z_scripterrlog("Script attempted to reference a nonexistent LWeapon!\n");
-		Z_scripterrlog("You were trying to reference the %s of an LWeapon with UID = %ld\n", what, eid);
-		return NULL;
-	}
-	
-	return s;
+	return ResolveSprite<weapon>(uid, "lweapon", what);
 }
 
-weapon *checkEWpn(int32_t eid, const char *what)
+weapon *checkEWpn(int32_t uid, const char *what)
 {
-	weapon *s = (weapon *)Ewpns.getByUID(eid);
-	
-	if(s == NULL)
-	{
-		Z_scripterrlog("Script attempted to reference a nonexistent EWeapon!\n");
-		Z_scripterrlog("You were trying to reference the %s of an EWeapon with UID = %ld\n", what, eid);
-		return NULL;
-	}
-	
-	return s;
+	return ResolveSprite<weapon>(uid, "eweapon", what);
 }
 
 user_file *checkFile(int32_t ref, const char *what, bool req_file = false, bool skipError = false)
@@ -24335,12 +24232,13 @@ dword allocatemem(int32_t size, bool local, ScriptType type, const uint32_t UID,
 	if(local)
 	{
 		//localRAM[0] is used as an invalid container, so 0 can be the NULL pointer in ZScript
-		for(ptrval = 1; localRAM[ptrval].Valid(); ptrval++) ;
-		
+		for(ptrval = 1; ptrval < NUM_ZSCRIPT_ARRAYS && localRAM[ptrval].Valid(); ptrval++) ;
+
 		if(ptrval >= NUM_ZSCRIPT_ARRAYS)
 		{
 			Z_scripterrlog("%d local arrays already in use, no more can be allocated\n", NUM_ZSCRIPT_ARRAYS-1);
 			ptrval = 0;
+			DCHECK(false);
 		}
 		else
 		{
@@ -24361,14 +24259,17 @@ dword allocatemem(int32_t size, bool local, ScriptType type, const uint32_t UID,
 	else
 	{
 		//Globals are only allocated here at first play, otherwise in init_game
-		for(ptrval = 0; game->globalRAM[ptrval].Valid(); ptrval++) ;
+		for(ptrval = 0; ptrval < game->globalRAM.size() && game->globalRAM[ptrval].Valid(); ptrval++) ;
 		
 		if(ptrval >= game->globalRAM.size())
 		{
 			al_trace("Invalid pointer value of %u passed to global allocate\n", ptrval);
+			ptrval = 0;
 			//this shouldn't happen, unless people are putting ALLOCATEGMEM in their ZASM scripts where they shouldn't be
+			DCHECK(false);
+			return ptrval;
 		}
-		
+
 		ZScriptArray &a = game->globalRAM[ptrval];
 		
 		a.Resize(size);
@@ -30124,6 +30025,104 @@ void goto_err(char const* opname)
 	}
 }
 
+static void script_exit_cleanup(bool no_dealloc)
+{
+	ScriptType type = curScriptType;
+	word script = curScriptNum;
+	int32_t i = curScriptIndex;
+
+	switch(type)
+	{
+		case ScriptType::FFC:
+		{
+			if (auto ffc = ResolveFFCWithID(i, "QUIT"))
+				ffc->script = 0;
+			auto& data = get_script_engine_data(type, i);
+			data.doscript = false;
+		}
+		break;
+
+		case ScriptType::Screen:
+			get_scr(i)->script = 0;
+		case ScriptType::Global:
+		case ScriptType::Hero:
+		case ScriptType::DMap:
+		case ScriptType::OnMap:
+		case ScriptType::ScriptedActiveSubscreen:
+		case ScriptType::ScriptedPassiveSubscreen:
+		case ScriptType::EngineSubscreen:
+		case ScriptType::Combo:
+		{
+			auto& data = get_script_engine_data(type, i);
+			data.doscript = false;
+		}
+		break;
+		case ScriptType::Ewpn:
+		case ScriptType::Lwpn:
+		case ScriptType::NPC:
+		{
+			auto& data = get_script_engine_data(type, i);
+			data.doscript = false;
+			data.initialized = false;
+			if (auto spr = sprite::getByUID(i))
+				spr->weaponscript = 0;
+		}
+		break;
+		case ScriptType::ItemSprite:
+		{
+			auto& data = get_script_engine_data(type, i);
+			data.doscript = false;
+			data.initialized = false;
+			if (auto spr = sprite::getByUID(i))
+				spr->script = 0;
+		}
+		break;
+		
+		case ScriptType::Generic:
+			user_genscript::get(script).quit();
+			break;
+		
+		case ScriptType::GenericFrozen:
+			FFCore.doscript(ScriptType::GenericFrozen, gen_frozen_index-1) = false;
+			break;
+
+		case ScriptType::Item:
+		{
+			bool collect = ( ( i < 1 ) || (i == COLLECT_SCRIPT_ITEM_ZERO) );
+			int new_i = ( collect ) ? (( i != COLLECT_SCRIPT_ITEM_ZERO ) ? (i * -1) : 0) : i;
+			auto& data = get_script_engine_data(ScriptType::Item, i);
+			if ( !collect )
+			{
+				if ( (itemsbuf[i].flags&item_passive_script) && game->item[i] ) itemsbuf[i].script = 0; //Quit perpetual scripts, too.
+				data.doscript = 0;
+				data.ref.Clear();
+			}
+			else
+			{
+				data.doscript = 0;
+				data.ref.Clear();
+			}
+			data.initialized = false;
+			break;
+		}
+	}
+	if(!no_dealloc)
+		switch(type)
+		{
+			case ScriptType::Item:
+			{
+				bool collect = ( ( i < 1 ) || (i == COLLECT_SCRIPT_ITEM_ZERO) );
+				int new_i = ( collect ) ? (( i != COLLECT_SCRIPT_ITEM_ZERO ) ? (i * -1) : 0) : i;
+				FFScript::deallocateAllScriptOwned(ScriptType::Item, new_i);
+				break;
+			}
+			
+			default:
+				FFScript::deallocateAllScriptOwned(type, i);
+				break;
+		}
+}
+
 int32_t run_script(ScriptType type, word script, int32_t i)
 {
 	if(Quit==qRESET || Quit==qEXIT) // In case an earlier script hung
@@ -30178,24 +30177,23 @@ int32_t run_script(ScriptType type, word script, int32_t i)
 	// Because qst.cpp likes to write script_data without setting this.
 	curscript->meta.script_type = type;
 
-	// No need to do anything if the script is not valid.
-	// An example of this is found in `playground.qst` player scripts, which have scripts with
-	// a single 0xFFFF command.
-	// Can't actually do this because we must unset `doscript` via the `scommand == 0xFFFF` handling in run_script_int.
-	// Otherwise can get freeze, like in ending.cpp
-	// if (!curscript->valid())
-	// 	return RUNSCRIPT_OK;
+	// If script isn't valid, we don't have a `pc` to start from... just exit.
+	if(!curscript->valid())
+	{
+		script_exit_cleanup(false);
+		return RUNSCRIPT_OK;
+	}
 
 	script_funcrun = false;
 
 	JittedScriptHandle* jitted_script = nullptr;
 	if (jit_is_enabled())
 	{
-		auto key = std::make_pair(curscript->zasm_script.get(), ri);
+		auto key = std::make_pair(curscript, ri);
 		auto it = jitted_scripts.find(key);
 		if (it == jitted_scripts.end())
 		{
-			jitted_scripts[key] = jitted_script = jit_create_script_handle(curscript->zasm_script.get(), ri);
+			jitted_scripts[key] = jitted_script = jit_create_script_handle(curscript, ri);
 		}
 		else
 		{
@@ -30543,7 +30541,6 @@ int32_t run_script_int(bool is_jitted)
 				// No need to do a bounds check - the last command should always be 0xFFFF.
 				if (is_debugging)
 					break;
-
 				while (zasm[ri->pc + 1].command == NOP)
 					ri->pc++;
 				break;
@@ -32758,7 +32755,7 @@ int32_t run_script_int(bool is_jitted)
 				if(Hero.switchhookclk) break; //Already switching!
 				if(GuyH::loadNPC(ri->guyref, "npc->Switch()") == SH::_NoError)
 				{
-					switching_object = guys.spr(GuyH::getNPCIndex(ri->guyref));
+					switching_object = guys.getByUID(ri->guyref);
 					hooked_comborpos = rpos_t::None;
 					hooked_layerbits = 0;
 					switching_object->switch_hooked = true;
@@ -32775,7 +32772,7 @@ int32_t run_script_int(bool is_jitted)
 				if(Hero.switchhookclk) break; //Already switching!
 				if(ItemH::loadItem(ri->itemref, "item->Switch()") == SH::_NoError)
 				{
-					switching_object = items.spr(ItemH::getItemIndex(ri->itemref));
+					switching_object = ItemH::getItem();
 					hooked_comborpos = rpos_t::None;
 					hooked_layerbits = 0;
 					switching_object->switch_hooked = true;
@@ -32792,7 +32789,7 @@ int32_t run_script_int(bool is_jitted)
 				if(Hero.switchhookclk) break; //Already switching!
 				if(LwpnH::loadWeapon(ri->lwpn, "lweapon->Switch()") == SH::_NoError)
 				{
-					switching_object = Lwpns.spr(LwpnH::getLWeaponIndex(ri->lwpn));
+					switching_object = LwpnH::getWeapon();
 					hooked_comborpos = rpos_t::None;
 					hooked_layerbits = 0;
 					switching_object->switch_hooked = true;
@@ -32809,7 +32806,7 @@ int32_t run_script_int(bool is_jitted)
 				if(Hero.switchhookclk) break; //Already switching!
 				if(EwpnH::loadWeapon(ri->ewpn, "eweapon->Switch()") == SH::_NoError)
 				{
-					switching_object = Ewpns.spr(EwpnH::getEWeaponIndex(ri->lwpn));
+					switching_object = EwpnH::getWeapon();
 					hooked_comborpos = rpos_t::None;
 					hooked_layerbits = 0;
 					switching_object->switch_hooked = true;
@@ -33066,9 +33063,7 @@ int32_t run_script_int(bool is_jitted)
 			}
 			case NPCEXPLODER:
 			{
-				
 				int32_t mode = get_register(sarg1) / 10000;
-				al_trace("Called npc->Explode(%d), for enemy index %u\n", mode, ri->guyref);
 				if ( (unsigned) mode > 2 ) 
 				{
 					Z_scripterrlog("Invalid mode (%d) passed to npc->Explode(int32_t mode)\n",mode);
@@ -33077,14 +33072,7 @@ int32_t run_script_int(bool is_jitted)
 				{
 					if(GuyH::loadNPC(ri->guyref, "npc->Explode()") == SH::_NoError)
 					{
-						al_trace("npc->Explode() is loading the npc into a pointer.\n");
-						//enemy *e = (enemy*)guys.spr(ri->guyref);
-						al_trace("npc->Explode() is calling enemy::explode.\n");
-						//(enemy *) guys.explode(eid);
-						//e->explode(mode);
-						//enemy *en=GuyH::getNPC();
-						//en->stop_bgsfx(GuyH::getNPCIndex(ri->guyref));
-						guys.spr(GuyH::getNPCIndex(ri->guyref))->explode(mode);
+						GuyH::getNPC()->explode(mode);
 					}
 				}
 				break;
@@ -33094,7 +33082,6 @@ int32_t run_script_int(bool is_jitted)
 			{
 				
 				int32_t mode = get_register(sarg1) / 10000;
-				al_trace("Called item->Explode(%d), for item index %u\n", mode, ri->itemref);
 				if ( (unsigned) mode > 2 ) 
 				{
 					Z_scripterrlog("Invalid mode (%d) passed to item->Explode(int32_t mode)\n",mode);
@@ -33103,16 +33090,14 @@ int32_t run_script_int(bool is_jitted)
 				{
 					if(ItemH::loadItem(ri->itemref, "item->Explode()") == SH::_NoError)
 					{
-						items.spr(ItemH::getItemIndex(ri->itemref))->explode(mode);
+						ItemH::getItem()->explode(mode);
 					}
 				}
 				break;
 			}
 			case LWEAPONEXPLODER:
 			{
-				
 				int32_t mode = get_register(sarg1) / 10000;
-				al_trace("Called lweapon->Explode(%d), for lweapon index %u\n", mode, ri->lwpn);
 				if ( (unsigned) mode > 2 ) 
 				{
 					Z_scripterrlog("Invalid mode (%d) passed to lweapon->Explode(int32_t mode)\n",mode);
@@ -33121,16 +33106,14 @@ int32_t run_script_int(bool is_jitted)
 				{
 					if(LwpnH::loadWeapon(ri->lwpn, "lweapon->Explode()") == SH::_NoError)
 					{
-						Lwpns.spr(LwpnH::getLWeaponIndex(ri->lwpn))->explode(mode);
+						LwpnH::getWeapon()->explode(mode);
 					}
 				}
 				break;
 			}
 			case EWEAPONEXPLODER:
 			{
-				
 				int32_t mode = get_register(sarg1) / 10000;
-				al_trace("Called eweapon->Explode(%d), for eweapon index %u\n", mode, ri->ewpn);
 				if ( (unsigned) mode > 2 ) 
 				{
 					Z_scripterrlog("Invalid mode (%d) passed to eweapon->Explode(int32_t mode)\n",mode);
@@ -33139,7 +33122,7 @@ int32_t run_script_int(bool is_jitted)
 				{
 					if(EwpnH::loadWeapon(ri->ewpn, "eweapon->Explode()") == SH::_NoError)
 					{
-						Ewpns.spr(EwpnH::getEWeaponIndex(ri->lwpn))->explode(mode);
+						EwpnH::getWeapon()->explode(mode);
 					}
 				}
 				break;
@@ -34402,7 +34385,7 @@ int32_t run_script_int(bool is_jitted)
 			if ( ri->pc == MAX_PC ) //rolled over from overflow?
 			{
 				Z_scripterrlog("Script PC overflow! Too many ZASM lines?\n");
-				ri->pc = 0;
+				ri->pc = curscript->pc;
 				scommand = 0xFFFF;
 			}
 		}
@@ -34478,117 +34461,7 @@ int32_t run_script_int(bool is_jitted)
 	
 	if(scommand == 0xFFFF) //Quit/command list end reached/bad command
 	{
-		switch(type)
-		{
-			case ScriptType::FFC:
-			{
-				if (auto ffc = ResolveFFCWithID(i, "QUIT"))
-					ffc->script = 0;
-				auto& data = get_script_engine_data(type, i);
-				data.doscript = false;
-			}
-			break;
-
-			case ScriptType::Screen:
-				get_scr(i)->script = 0;
-			case ScriptType::Global:
-			case ScriptType::Hero:
-			case ScriptType::DMap:
-			case ScriptType::OnMap:
-			case ScriptType::ScriptedActiveSubscreen:
-			case ScriptType::ScriptedPassiveSubscreen:
-			case ScriptType::EngineSubscreen:
-			case ScriptType::Combo:
-			{
-				auto& data = get_script_engine_data(type, i);
-				data.doscript = false;
-			}
-			break;
-			case ScriptType::NPC:
-			{
-				auto& data = get_script_engine_data(type, i);
-				data.doscript = false;
-				data.initialized = false;
-				int index = GuyH::getNPCIndex(i);
-				if (index != -1)
-					guys.spr(index)->weaponscript = 0;
-			}
-			break;
-			case ScriptType::Lwpn:
-			{
-				auto& data = get_script_engine_data(type, i);
-				data.doscript = false;
-				data.initialized = false;
-				int index = LwpnH::getLWeaponIndex(i);
-				if (index != -1)
-					Lwpns.spr(index)->weaponscript = 0;
-			}
-			break;
-			case ScriptType::Ewpn:
-			{
-				auto& data = get_script_engine_data(type, i);
-				data.doscript = false;
-				data.initialized = false;
-				int index = ItemH::getItemIndex(i);
-				if (index != -1)
-					Ewpns.spr(index)->weaponscript = 0;
-			}
-			break;
-			case ScriptType::ItemSprite:
-			{
-				auto& data = get_script_engine_data(type, i);
-				data.doscript = false;
-				data.initialized = false;
-				int index = ItemH::getItemIndex(i);
-				if (index != -1)
-					items.spr(index)->script = 0;
-			}
-			break;
-			
-			case ScriptType::Generic:
-				user_genscript::get(script).quit();
-				break;
-			
-			case ScriptType::GenericFrozen:
-				FFCore.doscript(ScriptType::GenericFrozen, gen_frozen_index-1) = false;
-				break;
-
-			case ScriptType::Item:
-			{
-				bool collect = ( ( i < 1 ) || (i == COLLECT_SCRIPT_ITEM_ZERO) );
-				int new_i = ( collect ) ? (( i != COLLECT_SCRIPT_ITEM_ZERO ) ? (i * -1) : 0) : i;
-				auto& data = get_script_engine_data(ScriptType::Item, i);
-				if ( !collect )
-				{
-					if ( (itemsbuf[i].flags&item_passive_script) && game->item[i] ) itemsbuf[i].script = 0; //Quit perpetual scripts, too.
-					data.doscript = 0;
-					data.ref.Clear();
-				}
-				else
-				{
-					data.doscript = 0;
-					data.ref.Clear();
-				}
-				data.initialized = false;
-				break;
-			}
-		}
-		if(!no_dealloc)
-			switch(type)
-			{
-				case ScriptType::Item:
-				{
-					bool collect = ( ( i < 1 ) || (i == COLLECT_SCRIPT_ITEM_ZERO) );
-					int new_i = ( collect ) ? (( i != COLLECT_SCRIPT_ITEM_ZERO ) ? (i * -1) : 0) : i;
-					FFScript::deallocateAllScriptOwned(ScriptType::Item, new_i);
-					break;
-				}
-				
-				default:
-					FFScript::deallocateAllScriptOwned(type, i);
-					break;
-			}
-
+		script_exit_cleanup(no_dealloc);
 		return RUNSCRIPT_STOPPED;
 	}
 	else
@@ -34607,13 +34480,13 @@ script_data* load_scrdata(ScriptType type, word script, int32_t i)
 		case ScriptType::FFC:
 			return ffscripts[script];
 		case ScriptType::NPC:
-			return guyscripts[guys.spr(GuyH::getNPCIndex(i))->script];
+			return guyscripts[guys.getByUID(i)->script];
 		case ScriptType::Lwpn:
-			return lwpnscripts[Lwpns.spr(LwpnH::getLWeaponIndex(i))->weaponscript];
+			return lwpnscripts[Lwpns.getByUID(i)->weaponscript];
 		case ScriptType::Ewpn:
-			return ewpnscripts[Ewpns.spr(EwpnH::getEWeaponIndex(i))->weaponscript];
+			return ewpnscripts[Ewpns.getByUID(i)->weaponscript];
 		case ScriptType::ItemSprite:
-			return itemspritescripts[items.spr(ItemH::getItemIndex(i))->script];
+			return itemspritescripts[items.getByUID(i)->script];
 		case ScriptType::Item:
 			return itemscripts[script];
 		case ScriptType::Global:
@@ -35509,116 +35382,6 @@ bool FFScript::isSystemBitref(int32_t ref)
 }
 
 ///----------------------------------------------------------------------------------------------------
-
-void FFScript::set_screenwarpReturnY(mapscr *m, int32_t d, int32_t value)
-{
-	int32_t y = vbound(value, 0, 255); //should be screen hight max, except that we may be able to move the subscreen.
-	m->warpreturny[d] = y;
-}
-
-void FFScript::set_screenenemy(mapscr *m, int32_t index, int32_t value)
-{
-	int32_t enem_indx = vbound(index,0,9);
-	m->enemy[enem_indx] = vbound(value,0,511);
-}
-void FFScript::set_screenlayeropacity(mapscr *m, int32_t d, int32_t value)
-{
-	int32_t layer = vbound(d,0,6); int32_t op;
-	if ( value <= 64 ) op = 64; 
-	else op = 128;
-	m->layeropacity[layer] = op;
-}
-void FFScript::set_screensecretcombo(mapscr *m, int32_t d, int32_t value)
-{
-	int32_t indx = vbound(value,0,127);
-	int32_t cmb = vbound(value,0,MAXCOMBOS);
-	m->secretcombo[indx] = cmb;
-}
-void FFScript::set_screensecretcset(mapscr *m, int32_t d, int32_t value)
-{
-	int32_t indx = vbound(value,0,127);
-	int32_t cs = vbound(value,0,15);
-	m->secretcset[indx] = cs;
-}
-void FFScript::set_screensecretflag(mapscr *m, int32_t d, int32_t value)
-{
-	int32_t indx = vbound(d,0,127);
-	int32_t flag = vbound(value,0,MAX_FLAGS);
-	m->secretflag[indx] = flag;
-}
-void FFScript::set_screenlayermap(mapscr *m, int32_t d, int32_t value)
-{
-	int32_t layer = vbound(d, MIN_ZQ_LAYER, MAX_ZQ_LAYER);
-	int32_t mp = vbound(value,0, (map_count-1));
-	m->layermap[layer] = mp;
-}
-void FFScript::set_screenlayerscreen(mapscr *m, int32_t d, int32_t value)
-{
-	int32_t layer = vbound(d, MIN_ZQ_LAYER, MAX_ZQ_LAYER);
-	int32_t sc = vbound(value,0, 0x87);
-	m->layerscreen[layer] = sc;
-}
-void FFScript::set_screenpath(mapscr *m, int32_t d, int32_t value)
-{
-	int32_t indx = vbound(d,0,3);
-	m->path[indx] = value;
-}
-void FFScript::set_screenwarpReturnX(mapscr *m, int32_t d, int32_t value)
-{
-	int32_t x = vbound(value,0,255);
-	m->warpreturnx[d] = x;
-}
-
-
-void FFScript::set_screenGuy(mapscr *m, int32_t value)
-{
-	int32_t bloke = vbound(value,0,9); 
-	m->guy = bloke ;
-}
-void FFScript::set_screenString(mapscr *m, int32_t value)
-{
-	int32_t string = vbound(value, 0, msg_count-1); //Sanity check to keep it within the legal string IDs.
-	m->str = string;
-}
-void FFScript::set_screenRoomtype(mapscr *m, int32_t value)
-{
-	int32_t r = vbound(value, rNONE, (rMAX-1)); 
-	m->room = r;
-}
-void FFScript::set_screenEntryX(mapscr *m, int32_t value)
-{
-	int32_t x = vbound(value,0,255);
-	m->entry_x = x;
-}
-void FFScript::set_screenEntryY(mapscr *m, int32_t value)
-{
-	int32_t y = vbound(value,0,255);
-	m->entry_y = y;
-}
-void FFScript::set_screenitem(mapscr *m, int32_t value)
-{
-	int32_t itm = vbound(value,0,MAXITEMS);
-	m->item = itm;
-}
-void FFScript::set_screenundercombo(mapscr *m, int32_t value)
-{
-	int32_t cmb = vbound(value,0,MAXCOMBOS);
-	m->undercombo = cmb;
-}
-void FFScript::set_screenundercset(mapscr *m, int32_t value)
-{
-	int32_t cs = vbound(value,0,15);
-	m->undercset = cs;
-}
-void FFScript::set_screenatchall(mapscr *m, int32_t value)
-{
-	//What are ALL of the catchalls and their max (used) values?
-	int32_t ctch = vbound(value, 0, 65535); //It is a word type. 
-	m->catchall = ctch;
-}
-
-
-//One too many inputs here. -Z
 
 int32_t FFScript::GetQuestVersion()
 {
@@ -37652,7 +37415,7 @@ void FFScript::do_lweapon_delete()
 			delete s;
 			Hero.lift_wpn = nullptr;
 		}
-		else Lwpns.del(LwpnH::getLWeaponIndex(ri->lwpn));
+		else Lwpns.del(s);
 	}
 }
 
@@ -37660,7 +37423,7 @@ void FFScript::do_eweapon_delete()
 {
 	if(0!=(s=checkEWpn(ri->ewpn,"Remove()")))
 	{
-		Ewpns.del(EwpnH::getEWeaponIndex(ri->ewpn));
+		Ewpns.del(s);
 	}
 }
 
