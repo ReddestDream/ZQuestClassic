@@ -1672,8 +1672,6 @@ void game_over(int32_t type)
 		if (pos != 0)
 		{
 			if (replay_get_mode() == ReplayMode::Record) replay_save();
-			if (!replay_is_replaying())
-				replay_stop();
 		}
 	}
 }
@@ -1693,8 +1691,6 @@ void save_game(bool savepoint)
 	game->save_user_objects();
 	
 	flushItemCache();
-	
-	if(zqtesting_mode) return;
 	
 	saves_write();
 	if (replay_get_mode() == ReplayMode::Record) replay_save();
