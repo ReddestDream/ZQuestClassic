@@ -4599,37 +4599,41 @@ int32_t launchPicViewer(BITMAP **pictoview, PALETTE pal, int32_t *px2, int32_t *
 
 	if(isviewingmap)
 	{
+		set_center_root_rti(false);
+
 		int sw = rti_map_view.width / 16;
 		int sh = rti_map_view.height / 8;
 		int screen = Map.getCurrScr();
 		if (screen >= 0x00 && screen <= 0x7F)
 		{
-			int dw = al_get_display_width(all_get_display()) / get_root_rti()->get_transform().xscale;
-			int dh = al_get_display_height(all_get_display()) / get_root_rti()->get_transform().yscale;
+			auto root_transform = get_root_rti()->get_transform();
+			int dw = al_get_display_width(all_get_display()) / root_transform.xscale;
+			int dh = al_get_display_height(all_get_display()) / root_transform.yscale;
 			mapx = (-(screen % 16) * sw - sw/2 + dw/2);
 			mapy = (-(screen / 16) * sh - sh/2 + dh/2);
 		}
 	}
 
-	int w, h;
-	if (isviewingmap)
-	{
-		w = rti_map_view.width;
-		h = rti_map_view.height;
-	}
-	else
-	{
-		w = (*pictoview)->w;
-		h = (*pictoview)->h;
-	}
-
 	do
 	{
+		int w, h;
+		if (isviewingmap)
+		{
+			w = rti_map_view.width;
+			h = rti_map_view.height;
+		}
+		else
+		{
+			w = (*pictoview)->w;
+			h = (*pictoview)->h;
+		}
+
 		if (isviewingmap)
 		{
 			float scale = *scale2;
-			int dw = al_get_display_width(all_get_display()) / get_root_rti()->get_transform().xscale;
-			int dh = al_get_display_height(all_get_display()) / get_root_rti()->get_transform().yscale;
+			auto root_transform = get_root_rti()->get_transform();
+			int dw = al_get_display_width(all_get_display()) / root_transform.xscale;
+			int dh = al_get_display_height(all_get_display()) / root_transform.yscale;
 			mapx = std::max(mapx, (int)(-w*scale + dw));
 			mapy = std::max(mapy, (int)(-h*scale + dh));
 			mapx = std::min(mapx, 0);
@@ -4821,6 +4825,7 @@ int32_t launchPicViewer(BITMAP **pictoview, PALETTE pal, int32_t *px2, int32_t *
 	popup_zqdialog_end();
 	position_mouse_z(0);
 	viewer_overlay_rti.remove();
+	set_center_root_rti(true);
 	close_the_map();
 	return D_O_K;
 }
@@ -26144,12 +26149,6 @@ void ZQ_ClearQuestPath()
 
 //FFCore
 
-int32_t FFScript::GetScriptObjectUID(int32_t type)
-{
-	++script_UIDs[type];
-	return script_UIDs[type];
-}
-
 void FFScript::init()
 {
 	for ( int32_t q = 0; q < wexLast; q++ ) warpex[q] = 0;
@@ -26164,7 +26163,6 @@ void FFScript::init()
 	music_update_flags = 0;
 	for ( int32_t q = 0; q < susptLAST; q++ ) { system_suspend[q] = 0; }
 	
-	for ( int32_t q = 0; q < UID_TYPES; ++q ) { script_UIDs[q] = 0; }
 	//for ( int32_t q = 0; q < 512; q++ ) FF_rules[q] = 0;
 	int32_t usr_midi_volume = usr_digi_volume = usr_sfx_volume = usr_music_volume = usr_panstyle = 0;
 	FF_hero_action = 0;
