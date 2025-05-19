@@ -461,6 +461,9 @@ if(MSVC)
 	# Build in parallel - speeds up the build on multicore machines.
 	add_compile_options(/MP)
 
+	# Require for fmt.
+	add_compile_options(/utf-8)
+
 	add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 	
 	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB:LIBCD /SUBSYSTEM:WINDOWS /LARGEADDRESSAWARE /OPT:NOICF")
@@ -1051,9 +1054,9 @@ endif()
 #############################################################
 
 if (EMSCRIPTEN)
-	target_link_options(zplayer PRIVATE "SHELL:-s EXPORTED_FUNCTIONS=_main,_get_shareable_url,_create_synthetic_key_event,_em_do_commands,_em_get_register,_em_set_register,_em_runtime_script_debug")
+	target_link_options(zplayer PRIVATE "SHELL:-s EXPORTED_FUNCTIONS=_main,_get_shareable_url,_create_synthetic_key_event,_em_do_commands,_em_get_register,_em_set_register,_em_runtime_script_debug -s EXPORTED_RUNTIME_METHODS=cwrap,wasmMemory,HEAPU8,HEAP32")
 	target_link_options(zeditor PRIVATE "SHELL:-s EXPORTED_FUNCTIONS=_main,_get_shareable_url,_create_synthetic_key_event,_open_test_mode")
-	target_link_options(zscript PRIVATE "SHELL:-no-pthread -s EXPORTED_FUNCTIONS=_compile_script -s EXTRA_EXPORTED_RUNTIME_METHODS=['FS','PROXYFS']")
+	target_link_options(zscript PRIVATE "SHELL:-no-pthread -s EXPORTED_FUNCTIONS=_compile_script -s EXPORTED_RUNTIME_METHODS=FS,PROXYFS")
 	set_target_properties(zscript PROPERTIES SUFFIX ".mjs")
 endif()
 

@@ -14,6 +14,7 @@
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 //
 
 #include "base/expected.h"
@@ -5790,7 +5791,7 @@ int32_t get_register(int32_t arg)
 				
 			break;
 		case EWPNTOTALDYOFFS:
-			if(0!=(s=checkLWpn(ri->ewpn)))
+			if(0!=(s=checkLWpn(ri->lwpn)))
 				ret = ((int32_t)(((weapon*)(s))->yofs-(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset))
 					+ ((((weapon*)(s))->switch_hooked && Hero.switchhookstyle == swRISE)
 						? -(8-(abs(Hero.switchhookclk-32)/4)) : 0) * 10000);
@@ -6785,7 +6786,13 @@ int32_t get_register(int32_t arg)
 		{
 			mapscr* scr = get_scr(ri->screenref);
 			int32_t indx = ri->d[rINDEX] / 10000;
-			
+
+			if (BC::checkBounds(indx, 0, 3) != BC::_NoError)
+			{
+				ret = -10000;
+				break;
+			}
+
 			ret = (((scr->flags2 >> indx) & 1)
 				? (scr->sidewarpindex >> (2*indx)) & 3 //Return which warp is set
 				: -1 //Returns -1 if no warp is set
@@ -7625,7 +7632,7 @@ int32_t get_register(int32_t arg)
 		case MAPDATASIDEWARPID: 
 		{
 			int32_t indx = ri->d[rINDEX] / 10000;
-			if (mapscr *m = ResolveMapdata(ri->mapsref))
+			if (mapscr *m = ResolveMapdata(ri->mapsref); m && BC::checkBounds(indx, 0, 3) == BC::_NoError)
 			{
 				ret = (((m->flags2 >> indx) & 1)
 					? (m->sidewarpindex >> (2*indx)) & 3 //Return which warp is set
@@ -16547,8 +16554,6 @@ void set_register(int32_t arg, int32_t value)
 				(((weapon*)s)->yofs)=(zfix)(value/10000)+(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset);
 				
 			break;
-		case EWPNTOTALDYOFFS:
-			break; //READ-ONLY
 			
 		case EWPNSHADOWXOFS:
 			if(0!=(s=checkEWpn(ri->ewpn)))
@@ -17582,7 +17587,9 @@ void set_register(int32_t arg, int32_t value)
 		case SCREENSIDEWARPID:
 		{
 			int32_t indx = ri->d[rINDEX] / 10000; //dir
-			
+			if (BC::checkBounds(indx, 0, 3) != BC::_NoError)
+				break;
+
 			int32_t new_warp_return = vbound((value / 10000),-1,3); //none, A, B, C, D
 			auto scr = get_scr(ri->screenref);
 			if(new_warp_return == -1)
@@ -18370,7 +18377,7 @@ void set_register(int32_t arg, int32_t value)
 		{
 			
 			int32_t indx = ri->d[rINDEX] / 10000; //dir
-			if (mapscr *m = ResolveMapdata(ri->mapsref))
+			if (mapscr *m = ResolveMapdata(ri->mapsref); m && BC::checkBounds(indx, 0, 3) == BC::_NoError)
 			{
 				int32_t new_warp_return = vbound((value / 10000),-1,3); //none, A, B, C, D
 				if(new_warp_return == -1)
@@ -33202,8 +33209,8 @@ int32_t run_script_int(bool is_jitted)
 			
 			case GETNPCDATATILE: FFScript::getNPCData_tile(); break;
 			case GETNPCDATAEHEIGHT: FFScript::getNPCData_e_height(); break;
-			case GETNPCDATAFLAGS: FFScript::getNPCData_flags(); break; //fixme
-			case GETNPCDATAFLAGS2: FFScript::getNPCData_flags2(); break; //fixme
+			case GETNPCDATAFLAGS: FFScript::getNPCData_flags(); break;
+			case GETNPCDATAFLAGS2: FFScript::getNPCData_flags2(); break;
 			case GETNPCDATAWIDTH: FFScript::getNPCData_width(); break;
 			case GETNPCDATAHEIGHT: FFScript::getNPCData_height(); break;
 			case GETNPCDATASTILE: FFScript::getNPCData_s_tile(); break;
@@ -35690,8 +35697,34 @@ void FFScript::do_triggersecret(const bool v)
 		set_register(sarg1, (guysbuf[ID].member&flag) ? 10000 : 0); \
 }
 
-void FFScript::getNPCData_flags(){ GET_NPCDATA_FUNCTION_VAR_INT(flags); } //FIX ME
-void FFScript::getNPCData_flags2(){ GET_NPCDATA_FUNCTION_VAR_INT(flags); } //FIX ME
+uint32_t get_upper_half_uint64(uint64_t value)
+{
+	return value >> 32;
+}
+
+uint32_t get_lower_half_uint64(uint64_t value)
+{
+	return value & 0xFFFFFFFF;
+}
+
+// Defunct.
+void FFScript::getNPCData_flags(){
+	int32_t ID = get_register(sarg2) / 10000;
+	if(ID < 1 || ID > (MAXGUYS-1))
+		set_register(sarg1, -10000);
+	else
+		set_register(sarg1, get_upper_half_uint64(guysbuf[ID].flags) * 10000);
+}
+
+// Defunct.
+void FFScript::getNPCData_flags2(){ 
+	int32_t ID = get_register(sarg2) / 10000;
+	if(ID < 1 || ID > (MAXGUYS-1))
+		set_register(sarg1, -10000);
+	else
+		set_register(sarg1, get_lower_half_uint64(guysbuf[ID].flags) * 10000);
+}
+
 void FFScript::getNPCData_tile() { GET_NPCDATA_FUNCTION_VAR_INT(tile); }
 void FFScript::getNPCData_width(){ GET_NPCDATA_FUNCTION_VAR_INT(width); } 
 void FFScript::getNPCData_height(){ GET_NPCDATA_FUNCTION_VAR_INT(height); } 
@@ -35832,8 +35865,41 @@ void do_getdmapintro(const bool v)
 	}\
 }
 
-void FFScript::setNPCData_flags(){SET_NPCDATA_FUNCTION_VAR_ENUM(flags,ZS_DWORD);} //FIX ME
-void FFScript::setNPCData_flags2(){SET_NPCDATA_FUNCTION_VAR_ENUM(flags,ZS_DWORD);} //FIX ME
+static uint64_t set_upper_half_uint64(uint64_t num, uint32_t half)
+{
+	uint64_t lower = num & 0x00000000FFFFFFFF;
+	return lower | ((uint64_t)half << 32);
+}
+
+static uint64_t set_lower_half_uint64(uint64_t num, uint32_t half)
+{
+	uint64_t upper = num & 0xFFFFFFFF00000000;
+	return upper | half;
+}
+
+// Defunct.
+void FFScript::setNPCData_flags(){
+	int32_t ID = get_register(sarg1) / 10000;
+	int32_t val = get_register(sarg2) / 10000;
+	if(ID < 1 || ID > (MAXGUYS-1))
+		set_register(sarg1, -10000);
+	else
+	{
+		guysbuf[ID].flags = (guy_flags)set_upper_half_uint64(guysbuf[ID].flags, vbound(val, 0, 0x7FFFFFFF));
+	}
+}
+
+// Defunct.
+void FFScript::setNPCData_flags2(){
+	int32_t ID = get_register(sarg1) / 10000;
+	int32_t val = get_register(sarg2) / 10000;
+	if(ID < 1 || ID > (MAXGUYS-1))
+		set_register(sarg1, -10000);
+	else
+	{
+		guysbuf[ID].flags = (guy_flags)set_lower_half_uint64(guysbuf[ID].flags, vbound(val, 0, 0x7FFFFFFF));
+	}
+}
 void FFScript::setNPCData_tile() { SET_NPCDATA_FUNCTION_VAR_INT(tile, ZS_WORD); }
 void FFScript::setNPCData_width(){SET_NPCDATA_FUNCTION_VAR_INT(width,ZS_BYTE);}
 void FFScript::setNPCData_height(){SET_NPCDATA_FUNCTION_VAR_INT(height,ZS_BYTE);}
