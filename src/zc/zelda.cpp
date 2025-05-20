@@ -109,7 +109,6 @@ static zc_randgen drunk_rng;
 #include "init.h"
 #include <assert.h>
 #include "zc/rendertarget.h"
-#include "zconsole.h"
 #include "base/win32.h"
 
 #ifdef _MSC_VER
@@ -421,9 +420,6 @@ ArrayOwner arrayOwner[NUM_ZSCRIPT_ARRAYS];
 
 //script bitmap drawing
 ZScriptDrawingRenderTarget* zscriptDrawingRenderTarget;
-
-DebugConsole DebugConsole::singleton = DebugConsole();
-ZASMSTackTrace ZASMSTackTrace::singleton = ZASMSTackTrace();
 
 
 void setZScriptVersion(int32_t s_version)
@@ -1009,6 +1005,38 @@ void Z_scripterrlog(const char * const format,...)
 				CConsoleLoggerEx::COLOR_BACKGROUND_BLACK),"%s",buf);
 		}
     }
+}
+
+// TODO: remove if Z_scripterrlog ever is changed to ignore qr_SCRIPTERRLOG, at least for allegro.log.
+// Use this for logs that are too important to not show somewhere.
+void Z_scripterrlog_force_trace(const char * const format,...)
+{
+	char buf[2048];
+
+	if(get_qr(qr_SCRIPTERRLOG) || DEVLEVEL > 0)
+	{
+		FFCore.TraceScriptIDs(true);
+		
+		va_list ap;
+		va_start(ap, format);
+		vsnprintf(buf, 2048, format, ap);
+		va_end(ap);
+		al_trace("%s",buf);
+		
+		if ( console_enabled ) 
+		{
+			zscript_coloured_console.cprintf((CConsoleLoggerEx::COLOR_RED | CConsoleLoggerEx::COLOR_INTENSITY | 
+				CConsoleLoggerEx::COLOR_BACKGROUND_BLACK),"%s",buf);
+		}
+	}
+	else
+	{
+		va_list ap;
+		va_start(ap, format);
+		vsnprintf(buf, 2048, format, ap);
+		va_end(ap);
+		al_trace("%s",buf);
+	}
 }
 
 #include "sprite.h"
