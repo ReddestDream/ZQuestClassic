@@ -179,8 +179,64 @@ int old_ssc_to_new_ctr(int ssc)
 			return crNONE;
 	}
 }
+static int simplify_counter(int ctr)
+{
+	switch(ctr)
+	{
+		case sscBTNCTRA_0:
+		{
+			itemdata const& itm = itemsbuf[Awpn&0xFF];
+			if(!itm.cost_amount[0]) return crNONE;
+			return itm.cost_counter[0];
+		}
+		case sscBTNCTRA_1:
+		{
+			itemdata const& itm = itemsbuf[Awpn&0xFF];
+			if(!itm.cost_amount[1]) return crNONE;
+			return itm.cost_counter[1];
+		}
+		case sscBTNCTRB_0:
+		{
+			itemdata const& itm = itemsbuf[Bwpn&0xFF];
+			if(!itm.cost_amount[0]) return crNONE;
+			return itm.cost_counter[0];
+		}
+		case sscBTNCTRB_1:
+		{
+			itemdata const& itm = itemsbuf[Bwpn&0xFF];
+			if(!itm.cost_amount[1]) return crNONE;
+			return itm.cost_counter[1];
+		}
+		case sscBTNCTRX_0:
+		{
+			itemdata const& itm = itemsbuf[Xwpn&0xFF];
+			if(!itm.cost_amount[0]) return crNONE;
+			return itm.cost_counter[0];
+		}
+		case sscBTNCTRX_1:
+		{
+			itemdata const& itm = itemsbuf[Xwpn&0xFF];
+			if(!itm.cost_amount[1]) return crNONE;
+			return itm.cost_counter[1];
+		}
+		case sscBTNCTRY_0:
+		{
+			itemdata const& itm = itemsbuf[Ywpn&0xFF];
+			if(!itm.cost_amount[0]) return crNONE;
+			return itm.cost_counter[0];
+		}
+		case sscBTNCTRY_1:
+		{
+			itemdata const& itm = itemsbuf[Ywpn&0xFF];
+			if(!itm.cost_amount[1]) return crNONE;
+			return itm.cost_counter[1];
+		}
+	}
+	return ctr;
+}
 word get_ssc_ctrmax(int ctr)
 {
+	ctr = simplify_counter(ctr);
 	if(ctr == crNONE)
 		return 0;
 	if(zq_view_maxctr)
@@ -225,6 +281,7 @@ word get_ssc_ctrmax(int ctr)
 }
 word get_ssc_ctr(int ctr, bool* infptr = nullptr)
 {
+	ctr = simplify_counter(ctr);
 	if(ctr == crNONE)
 		return 0;
 	dword ret = 0;
@@ -2903,8 +2960,11 @@ void SW_MMap::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) c
 			{
 				int32_t c2 = c_cmp_off.get_color();
 				
-				if(!has_item(itype_triforcepiece, -1) && (frame&16))
-					c2 = c_cmp_blink.get_color();
+				if(frame&16)
+				{
+					if((game->lvlitems[get_dlevel()] & compass_litems) != compass_litems) // if you don't have all of them, keep blinking
+						c2 = c_cmp_blink.get_color();
+				}
 					
 				int32_t cx = ((thedmap.compass&15)<<3)+tx+10;
 				int32_t cy = ((thedmap.compass&0xF0)>>2)+ty+8;
@@ -2950,6 +3010,7 @@ bool SW_MMap::copy_prop(SubscrWidget const* src, bool all)
 	SW_MMap const* other = dynamic_cast<SW_MMap const*>(src);
 	if(!SubscrWidget::copy_prop(other,all))
 		return false;
+	compass_litems = other->compass_litems;
 	c_plr = other->c_plr;
 	c_cmp_blink = other->c_cmp_blink;
 	c_cmp_off = other->c_cmp_off;
@@ -2959,6 +3020,11 @@ int32_t SW_MMap::read(PACKFILE *f, word s_version)
 {
 	if(auto ret = SubscrWidget::read(f,s_version))
 		return ret;
+	if(s_version >= 13)
+	{
+		if(!p_getc(&compass_litems,f))
+			return qe_invalid;
+	}
 	if(auto ret = c_plr.read(f,s_version))
 		return ret;
 	if(auto ret = c_cmp_blink.read(f,s_version))
@@ -2971,6 +3037,8 @@ int32_t SW_MMap::write(PACKFILE *f) const
 {
 	if(auto ret = SubscrWidget::write(f))
 		return ret;
+	if(!p_putc(compass_litems,f))
+		new_return(1);
 	if(auto ret = c_plr.write(f))
 		return ret;
 	if(auto ret = c_cmp_blink.write(f))
@@ -4943,6 +5011,93 @@ int32_t SW_SelectedText::write(PACKFILE *f) const
 	return 0;
 }
 
+byte SW_CounterPercentBar::getType() const
+{
+	return widgCOUNTERPERCBAR;
+}
+void SW_CounterPercentBar::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) const
+{
+	auto c1 = c_fill.get_color();
+	auto c2 = c_bg.get_color();
+	if(!c1 && !c2) return;
+	
+	if(flags&SUBSCR_COUNTERPERCBAR_TRANSP)
+		drawing_mode(DRAW_MODE_TRANS, NULL, 0, 0);
+	
+	auto cur = get_ssc_ctr(counter);
+	auto max = get_ssc_ctrmax(counter);
+	zfix perc = max ? vbound((zfix(cur)/max), 1_zf, 0_zf) : 0_zf;
+	auto x2 = x+xofs, y2 = y+yofs;
+	bool vertical = (flags&SUBSCR_COUNTERPERCBAR_VERTICAL);
+	bool invert = bool(flags&SUBSCR_COUNTERPERCBAR_INVERT) != vertical; // vertical naturally inverts
+	if(invert)
+	{
+		perc = 1_zf - perc;
+		zc_swap(c1, c2);
+	}
+	if(flags&SUBSCR_COUNTERPERCBAR_VERTICAL)
+	{
+		word ys = word((perc * zfix(h)).getInt());
+		if(c1 > -1 && ys)
+			rectfill(dest, x2, y2, x2+w-1, y2+ys-1, c1);
+		if(c2 > -1)
+			rectfill(dest, x2, y2+ys, x2+w-1, y2+h-ys-1, c2);
+	}
+	else
+	{
+		word xs = word((perc * zfix(w)).getInt());
+		if(c1 > -1 && xs)
+			rectfill(dest, x2, y2, x2+xs-1, y2+h-1, c1);
+		if(c2 > -1)
+			rectfill(dest, x2+xs, y2, x2+w-xs-1, y2+h-1, c2);
+	}
+	
+	if(flags&SUBSCR_COUNTERPERCBAR_TRANSP)
+		drawing_mode(DRAW_MODE_SOLID, NULL, 0, 0);
+}
+SubscrWidget* SW_CounterPercentBar::clone() const
+{
+	return new SW_CounterPercentBar(*this);
+}
+bool SW_CounterPercentBar::copy_prop(SubscrWidget const* src, bool all)
+{
+	if(src->getType() != getType() || src == this)
+		return false;
+	SW_CounterPercentBar const* other = dynamic_cast<SW_CounterPercentBar const*>(src);
+	if(!SubscrWidget::copy_prop(other,all))
+		return false;
+	
+	counter = other->counter;
+	c_fill = other->c_fill;
+	c_bg = other->c_bg;
+	return true;
+}
+int32_t SW_CounterPercentBar::read(PACKFILE *f, word s_version)
+{
+	if(auto ret = SubscrWidget::read(f,s_version))
+		return ret;
+	
+	if(!p_igetw(&counter, f))
+		return qe_invalid;
+	if(auto ret = c_fill.read(f,s_version))
+		return ret;
+	if(auto ret = c_bg.read(f,s_version))
+		return ret;
+	return 0;
+}
+int32_t SW_CounterPercentBar::write(PACKFILE *f) const
+{
+	if(auto ret = SubscrWidget::write(f))
+		return ret;
+	if(!p_iputw(counter, f))
+		new_return(1);
+	if(auto ret = c_fill.write(f))
+		return ret;
+	if(auto ret = c_bg.write(f))
+		return ret;
+	return 0;
+}
+
 
 SubscrWidget* SubscrWidget::fromOld(subscreen_object const& old)
 {
@@ -5120,6 +5275,9 @@ SubscrWidget* SubscrWidget::newType(byte ty)
 			break;
 		case widgSELECTEDTEXT:
 			widg = new SW_SelectedText();
+			break;
+		case widgCOUNTERPERCBAR:
+			widg = new SW_CounterPercentBar();
 			break;
 		case widgNULL:
 			if(!ALLOW_NULL_WIDGET) break;

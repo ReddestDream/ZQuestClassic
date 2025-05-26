@@ -12314,6 +12314,9 @@ int32_t get_register(int32_t arg)
 					case widgBGCOLOR:
 						ret = 10000*((SW_Clear*)widg)->c_bg.get_int_color();
 						break;
+					case widgCOUNTERPERCBAR:
+						ret = 10000*((SW_CounterPercentBar*)widg)->c_bg.get_int_color();
+						break;
 					default:
 						bad_subwidg_type(false, ty);
 						break;
@@ -12415,6 +12418,9 @@ int32_t get_register(int32_t arg)
 					case widgRECT:
 						ret = 10000*((SW_Rect*)widg)->c_fill.get_int_color();
 						break;
+					case widgCOUNTERPERCBAR:
+						ret = 10000*((SW_CounterPercentBar*)widg)->c_fill.get_int_color();
+						break;
 					default:
 						bad_subwidg_type(false, ty);
 						break;
@@ -12455,7 +12461,7 @@ int32_t get_register(int32_t arg)
 					case widgCOUNTER:
 						sz = 3;
 						break;
-					case widgMISCGAUGE:
+					case widgMISCGAUGE: case widgCOUNTERPERCBAR:
 						sz = 1;
 						break;
 					default:
@@ -12478,6 +12484,9 @@ int32_t get_register(int32_t arg)
 						break;
 					case widgMISCGAUGE:
 						ret = ((SW_MiscGaugePiece*)widg)->counter*10000;
+						break;
+					case widgCOUNTERPERCBAR:
+						ret = ((SW_CounterPercentBar*)widg)->counter*10000;
 						break;
 				}
 			}
@@ -13140,6 +13149,24 @@ int32_t get_register(int32_t arg)
 						break;
 					case widgSELECTEDTEXT:
 						ret = 10000*((SW_SelectedText*)widg)->tabsize;
+						break;
+					default:
+						bad_subwidg_type(false, ty);
+						ret = -10000;
+						break;
+				}
+			}
+			break;
+		}
+		case SUBWIDGTY_LITEMS:
+		{
+			if(SubscrWidget* widg = checkSubWidg(ri->subwidgref))
+			{
+				auto ty = widg->getType();
+				switch(ty)
+				{
+					case widgMMAP:
+						ret = 10000*((SW_MMap*)widg)->compass_litems;
 						break;
 					default:
 						bad_subwidg_type(false, ty);
@@ -22741,6 +22768,9 @@ void set_register(int32_t arg, int32_t value)
 					case widgBGCOLOR:
 						((SW_Clear*)widg)->c_bg.set_int_color(val);
 						break;
+					case widgCOUNTERPERCBAR:
+						((SW_CounterPercentBar*)widg)->c_bg.set_int_color(val);
+						break;
 					default:
 						bad_subwidg_type(false, ty);
 						break;
@@ -22848,6 +22878,9 @@ void set_register(int32_t arg, int32_t value)
 				{
 					case widgRECT:
 						((SW_Rect*)widg)->c_fill.set_int_color(val);
+						break;
+					case widgCOUNTERPERCBAR:
+						((SW_CounterPercentBar*)widg)->c_fill.set_int_color(val);
 						break;
 					default:
 						bad_subwidg_type(false, ty);
@@ -23588,6 +23621,24 @@ void set_register(int32_t arg, int32_t value)
 						break;
 					case widgSELECTEDTEXT:
 						((SW_SelectedText*)widg)->tabsize = val;
+						break;
+					default:
+						bad_subwidg_type(false, ty);
+						break;
+				}
+			}
+			break;
+		}
+		case SUBWIDGTY_LITEMS:
+		{
+			if(SubscrWidget* widg = checkSubWidg(ri->subwidgref))
+			{
+				auto val = vbound(value/10000,0,255);
+				auto ty = widg->getType();
+				switch(ty)
+				{
+					case widgMMAP:
+						((SW_MMap*)widg)->compass_litems = val;
 						break;
 					default:
 						bad_subwidg_type(false, ty);

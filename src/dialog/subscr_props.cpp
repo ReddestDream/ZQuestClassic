@@ -493,9 +493,9 @@ std::shared_ptr<GUI::Widget> SubscrPropDialog::view()
 			{
 				SW_MMap* w = dynamic_cast<SW_MMap*>(local_subref);
 				col_grid = Column(
-					MISC_COLOR_SEL(w->c_plr, "Hero Color", 1),
-					MISC_COLOR_SEL(w->c_cmp_blink, "Compass Blink Color", 2),
-					MISC_COLOR_SEL(w->c_cmp_off, "Compass Const Color", 3));
+					MISC_COLOR_SEL_EX(w->c_plr, "Hero Color", 1, info = "The color of the 'you are here' position"),
+					MISC_COLOR_SEL_EX(w->c_cmp_blink, "Compass Blink Color", 2, info = "The color the compass marker blinks to, when active"),
+					MISC_COLOR_SEL_EX(w->c_cmp_off, "Compass Const Color", 3, info = "The color the compass marker stays when inactive, and blinks from while active"));
 				break;
 			}
 			case widgMMAPTITLE:
@@ -568,6 +568,14 @@ std::shared_ptr<GUI::Widget> SubscrPropDialog::view()
 			{
 				SW_McGuffin* w = dynamic_cast<SW_McGuffin*>(local_subref);
 				col_grid = Column(MISC_CSET_SEL(w->cs, "CSet", 1));
+				break;
+			}
+			case widgCOUNTERPERCBAR:
+			{
+				SW_CounterPercentBar* w = dynamic_cast<SW_CounterPercentBar*>(local_subref);
+				col_grid = Column(
+					MISC_COLOR_SEL(w->c_fill, "Fill Color", 1),
+					MISC_COLOR_SEL(w->c_bg, "BG Color", 2));
 				break;
 			}
 		}
@@ -1117,10 +1125,26 @@ std::shared_ptr<GUI::Widget> SubscrPropDialog::view()
 			{
 				SW_MMap* w = dynamic_cast<SW_MMap*>(local_subref);
 				mergetype = mtFORCE_TAB;
-				attrib_grid = Column(
-					CBOX(w->flags, SUBSCR_MMAP_SHOWMAP, "Show Map", 1),
-					CBOX(w->flags, SUBSCR_MMAP_SHOWPLR, "Show Hero", 1),
-					CBOX(w->flags, SUBSCR_MMAP_SHOWCMP, "Show Compass", 1)
+				attrib_grid = Row(
+					Rows<2>(
+						CBOX(w->flags, SUBSCR_MMAP_SHOWMAP, "Show Map", 1),
+						INFOBTN("Show the map itself. If unchecked, only the markers for 'Show Hero' and 'Show Compass' will be drawn."),
+						CBOX(w->flags, SUBSCR_MMAP_SHOWPLR, "Show Hero", 1),
+						INFOBTN("Show the hero's current position on the map."),
+						CBOX(w->flags, SUBSCR_MMAP_SHOWCMP, "Show Compass", 1),
+						INFOBTN("Show the compass marker, which points to the player's destination. Will blink between two colors until"
+							" all of the specified level items are collected.")
+					),
+					Frame(title = "Compass Blink Stops",
+						info = "The compass marker will stop blinking when all of these are collected for the current level",
+						Column(
+							CBOX(w->compass_litems, liTRIFORCE, "McGuffin", 1),
+							CBOX(w->compass_litems, liMAP, "Map", 1),
+							CBOX(w->compass_litems, liCOMPASS, "Compass", 1),
+							CBOX(w->compass_litems, liBOSS, "Boss Killed", 1),
+							CBOX(w->compass_litems, liBOSSKEY, "Boss Key", 1)
+						)
+					)
 				);
 				break;
 			}
@@ -1469,6 +1493,23 @@ std::shared_ptr<GUI::Widget> SubscrPropDialog::view()
 					Label(text = "Piece #:", hAlign = 1.0),
 					NUM_FIELD(w->number,0,999)
 				);
+				break;
+			}
+			case widgCOUNTERPERCBAR:
+			{
+				SW_CounterPercentBar* w = dynamic_cast<SW_CounterPercentBar*>(local_subref);
+				attrib_grid = Rows<3>(
+					Label(text = "Counter", hAlign = 1.0),
+					DDL(w->counter, list_counters),
+					INFOBTN("The counter for this percentage bar."),
+					CBOX(w->flags, SUBSCR_COUNTERPERCBAR_TRANSP, "Transparent", 2),
+					INFOBTN("If checked, the bar is drawn transparently (both empty and full parts)"),
+					CBOX(w->flags, SUBSCR_COUNTERPERCBAR_VERTICAL, "Vertical", 2),
+					INFOBTN("If checked, the bar is filled vertically instead of horizontally"),
+					CBOX(w->flags, SUBSCR_COUNTERPERCBAR_INVERT, "Invert", 2),
+					INFOBTN("If checked, the bar fill direction is reversed (top-to-bottom or right-to-left)")
+				);
+				
 				break;
 			}
 			default: attrib_grid = Column(Label(text = "ERROR")); break;
