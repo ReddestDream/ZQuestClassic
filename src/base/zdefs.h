@@ -151,25 +151,25 @@ enum {ENC_METHOD_192B104=0, ENC_METHOD_192B105, ENC_METHOD_192B185, ENC_METHOD_2
 #define V_MAPS            33
 #define V_DMAPS           22
 #define V_DOORS            1
-#define V_ITEMS           59
+#define V_ITEMS           60
 #define V_WEAPONS          8
 #define V_COLORS           4 //Misc Colours
 #define V_ICONS            10 //Game Icons
 #define V_GRAPHICSPACK     1
-#define V_INITDATA        41
+#define V_INITDATA        42
 #define V_GUYS            53
 #define V_MIDIS            4
 #define V_CHEATS           1
-#define V_SAVEGAME        42
+#define V_SAVEGAME        43
 #define V_COMBOALIASES     5
 #define V_HEROSPRITES      16
-#define V_SUBSCREEN        13
+#define V_SUBSCREEN        14
 #define V_ITEMDROPSETS     2
 #define V_FFSCRIPT         27
 #define V_SFX              8
 #define V_FAVORITES        4
 
-#define V_COMPATRULE       78
+#define V_COMPATRULE       79
 #define V_ZINFO            4
 
 //= V_SHOPS is under V_MISC
@@ -254,8 +254,10 @@ if(close_button_quit) \
 #define liCOMPASS       0x04
 #define liBOSS          0x08
 #define liBOSSKEY       0x10
+#define liCUSTOM01      0x20
+#define liCUSTOM02      0x40
+#define liCUSTOM03      0x80
 
-#define liALLUSED       0x1F
 #define liALL           0xFF
 
 // sprite drawing flag bits

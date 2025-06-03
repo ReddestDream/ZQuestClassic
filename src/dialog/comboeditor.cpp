@@ -2984,6 +2984,9 @@ std::shared_ptr<GUI::Widget> ComboEditorDialog::view()
 										{ "Compass", "The Hero has the Compass for the 'Trig DMap Level'" },
 										{ "Boss Killed", "The Hero has cleared the 'Dungeon Boss' room for the 'Trig DMap Level'" },
 										{ "Boss Key", "The Hero has the Boss Key for the 'Trig DMap Level'" },
+										{ "Custom 1", "The Hero has the Custom 1 state for the 'Trig DMap Level'" },
+										{ "Custom 2", "The Hero has the Custom 2 state for the 'Trig DMap Level'" },
+										{ "Custom 3", "The Hero has the Custom 3 state for the 'Trig DMap Level'" },
 									};
 									if(!call_checklist_dialog("Select 'Req Flags'",litem_names,flags))
 										return;
@@ -2999,7 +3002,7 @@ std::shared_ptr<GUI::Widget> ComboEditorDialog::view()
 								fitParent = true,
 								vPadding = 0_px,
 								type = GUI::TextField::type::INT_DECIMAL,
-								low = -1, high = MAXDMAPS, val = local_comboref.trigdmlevel,
+								low = -1, high = MAXLEVELS, val = local_comboref.trigdmlevel,
 								onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
 								{
 									local_comboref.trigdmlevel = val;

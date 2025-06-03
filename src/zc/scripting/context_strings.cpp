@@ -262,6 +262,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SCREENDATACATCHALL: return "Screen->Catchall";
 		case COMBOCD: return "Screen->ComboC[]";
 		case COMBODD: return "Screen->ComboD[]";
+		case COMBODATAD: return "Screen->ComboData[]";
 		case COMBOED: return "Screen->ComboE[]";
 		case COMBOFD: return "Screen->ComboF[]";
 		case COMBOID: return "Screen->ComboI[]";
@@ -627,6 +628,8 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case IDATAPSCRIPT: return "itemdata::PScript";
 		case IDATAPSTRING: return "itemdata::PString";
 		case IDATAPICKUP: return "itemdata::Pickup";
+		case IDATAPICKUPLITEMLEVEL: return "itemdata::PickupLItemLevel";
+		case IDATAPICKUPLITEMS: return "itemdata::PickupLItems";
 		case IDATAPSOUND: return "itemdata::PickupSound";
 		case IDATAPFLAGS: return "itemdata::PickupStringFlags";
 		case IDATAPOWER: return "itemdata::Power";
@@ -732,6 +735,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case MAPDATACATCHALL: return "mapdata::Catchall";
 		case MAPDATACOMBOCD: return "mapdata::ComboC[]";
 		case MAPDATACOMBODD: return "mapdata::ComboD[]";
+		case MAPDATACOMBODATAD: return "mapdata::ComboData[]";
 		case MAPDATACOMBOED: return "mapdata::ComboE[]";
 		case MAPDATACOMBOFD: return "mapdata::ComboF[]";
 		case MAPDATACOMBOID: return "mapdata::ComboI[]";
@@ -1158,6 +1162,14 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SUBWIDGPOSES: return "subscreenwidget::PosDirs[]";
 		case SUBWIDGPRESSINITD: return "subscreenwidget::PressInitD[]";
 		case SUBWIDGPRESSSCRIPT: return "subscreenwidget::PressScript";
+		case SUBWIDGREQCOUNTER: return "subscreenwidget::RequiredCounter";
+		case SUBWIDGREQCOUNTERCOND: return "subscreenwidget::RequiredCounterCond";
+		case SUBWIDGREQCOUNTERVAL: return "subscreenwidget::RequiredCounterValue";
+		case SUBWIDGREQLITEMLEVEL: return "subscreenwidget::RequiredLItemLevel";
+		case SUBWIDGREQLITEMS: return "subscreenwidget::RequiredLItems";
+		case SUBWIDGREQOWNITEMS: return "subscreenwidget::RequiredOwnedItems[]";
+		case SUBWIDGREQUNOWNITEMS: return "subscreenwidget::RequiredUnownedItems[]";
+		case SUBWIDGREQSCRIPTDISABLED: return "subscreenwidget::ScriptDisabled";
 		case SUBWIDGSELECTORASPD: return "subscreenwidget::SelectorASpeed[]";
 		case SUBWIDGSELECTORCSET: return "subscreenwidget::SelectorCSet[]";
 		case SUBWIDGSELECTORDELAY: return "subscreenwidget::SelectorDelay[]";
@@ -1935,6 +1947,8 @@ const char* scripting_get_zasm_command_context_string(ASM_DEFINE command)
 		case SUBPAGE_FIND_WIDGET_BY_LABEL: return "subscreenpage::GetWidget()";
 		case SUBPAGE_MOVE_SEL: return "subscreenpage::SelectorMove()";
 		case SUBPAGE_SWAP_WIDG: return "subscreenpage::SwapWidgets()";
+		case SUBWIDG_CHECK_CONDITIONS: return "subscreenwidget::CheckConditions()";
+		case SUBWIDG_CHECK_VISIBLE: return "subscreenwidget::CheckVisible()";
 		case SUBWIDG_GET_LABEL: return "subscreenwidget::GetLabel()";
 		case SUBWIDG_GET_SELTEXT_OVERRIDE: return "subscreenwidget::GetSelTextOverride()";
 		case SUBWIDG_TY_GETTEXT: return "subscreenwidget::GetText()";

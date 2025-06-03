@@ -57,7 +57,7 @@ extern int32_t draw_screen_clip_rect_y1;
 extern int32_t draw_screen_clip_rect_y2;
 
 int32_t hero_count = -1;
-int32_t hero_animation_speed = 1; //lower is faster animation
+extern int32_t hero_animation_speed; //lower is faster animation
 static int32_t z3step = 2;
 static zfix hero_newstep(1.5);
 static zfix hero_newstep_diag(1.5);
@@ -1778,7 +1778,7 @@ void HeroClass::init()
 	for ( int32_t q = 0; q < NUM_HIT_TYPES_USED; q++ ) lastHitBy[q][1] = 0; 
 	for ( int32_t q = 0; q < wMax; q++ ) 
 	{
-		defence[q] = hero_defence[q]; //we will need to have a Hero section in the quest load/save code! -Z Added 3/26/21 - Jman
+		defence[q] = hero_defenses[q]; //we will need to have a Hero section in the quest load/save code! -Z Added 3/26/21 - Jman
 	}
 	
 	clear_ice();
@@ -11573,13 +11573,29 @@ bool HeroClass::startwpn(int32_t itemid)
 				}
 				word max = std::max(toFill[0], std::max(toFill[1], toFill[2]));
 				bool run = max > 0;
+				bool check_jinxes = true;
 				if(get_qr(qr_NO_BOTTLE_IF_ANY_COUNTER_FULL))
-					run = ((bt->counter[0] > -1 && !toFill[0]) || (bt->counter[1] > -1 && !toFill[1]) || (bt->counter[2] > -1 && !toFill[2]));
-				else
+				{
+					for(int q = 0; q < 3; ++q)
+					{
+						if(bt->counter[q] > -1)
+						{
+							check_jinxes = false;
+							if(!toFill[q])
+							{
+								run = false;
+								break;
+							}
+						}
+					}
+				}
+				if(check_jinxes)
 				{
 					if((bt->flags & BTFLAG_CURESWJINX) && swordclk)
 						run = true;
 					else if((bt->flags & BTFLAG_CUREITJINX) && itemclk)
+						run = true;
+					else if((bt->flags & BTFLAG_CURESHJINX) && shieldjinxclk)
 						run = true;
 				}
 				if(run || (bt->flags&BTFLAG_ALLOWIFFULL))
@@ -11591,6 +11607,8 @@ bool HeroClass::startwpn(int32_t itemid)
 					}
 					if(bt->flags & BTFLAG_CUREITJINX)
 						itemclk = 0;
+					if(bt->flags & BTFLAG_CURESHJINX)
+						shieldjinxclk = 0;
 					if(!paidmagic)
 						paymagiccost(itemid);
 					stop_sfx(QMisc.miscsfx[sfxLOWHEART]); //stop heart beep!
@@ -30703,7 +30721,15 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 			}
 		}
 	}
-
+	
+	if(idat.pickup_litems)
+	{
+		auto lvl = idat.pickup_litem_level;
+		if(lvl < 0)
+			lvl = dlevel;
+		game->lvlitems[lvl] |= idat.pickup_litems;
+	}
+	
 	if(idat.playsound&&!nosound)
 	{
 		sfx(idat.playsound);
@@ -30767,14 +30793,20 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 			
 			clock_zoras.clear();
 				
-			clockclk=itemsbuf[id&0xFF].misc1;
+			clockclk=idat.misc1;
 			sfx(idat.usesound);
 		}
 		break;
 		
 		case itype_lkey:
-			if(game->lvlkeys[dlevel]<255) game->lvlkeys[dlevel]++;
+		{
+			auto lvl = dlevel;
+			if(idat.flags & item_flag1) // custom level
+				lvl = vbound(idat.misc1, 0, MAXLEVELS-1);
+			if(game->lvlkeys[lvl]<255)
+				game->lvlkeys[lvl]++;
 			break;
+		}
 			
 		case itype_ring:
 		case itype_magicring:
@@ -30934,8 +30966,14 @@ void takeitem(int32_t id)
 			break;
 			
 		case itype_lkey:
-			if(game->lvlkeys[dlevel]) game->lvlkeys[dlevel]--;
+		{
+			auto lvl = dlevel;
+			if(idat.flags & item_flag1) // custom level
+				lvl = vbound(idat.misc1, 0, MAXLEVELS-1);
+			if(game->lvlkeys[lvl])
+				game->lvlkeys[lvl]--;
 			break;
+		}
 			
 		case itype_ring:
 			if((get_qr(qr_OVERWORLDTUNIC) != 0) || (cur_screen<128 || dlevel))

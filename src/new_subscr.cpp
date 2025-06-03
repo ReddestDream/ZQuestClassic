@@ -590,7 +590,64 @@ int32_t SubscrColorInfo::get_color(byte type, int16_t color)
 	switch(type)
 	{
 		case ssctSYSTEM:
-			ret=(color==-1)?color:vc(color);
+			if(color == -1)
+				ret = -1;
+			else if(get_qr(qr_BROKEN_SYSTEM_COLORS))
+				ret = vc(color);
+			else
+			{
+				switch(color)
+				{
+					case 0:
+						ret = makecol(0, 0, 0);
+						break;
+					case 1:
+						ret = makecol(0, 0, 170);
+						break;
+					case 2:
+						ret = makecol(0, 157, 0);
+						break;
+					case 3:
+						ret = makecol(0, 170, 170);
+						break;
+					case 4:
+						ret = makecol(178, 36, 36);
+						break;
+					case 5:
+						ret = makecol(170, 0, 170);
+						break;
+					case 6:
+						ret = makecol(165, 105, 8);
+						break;
+					case 7:
+						ret = makecol(170, 170, 170);
+						break;
+					case 8:
+						ret = makecol(85, 85, 85);
+						break;
+					case 9:
+						ret = makecol(85, 85, 255);
+						break;
+					case 10:
+						ret = makecol(85, 255, 85);
+						break;
+					case 11:
+						ret = makecol(85, 255, 255);
+						break;
+					case 12:
+						ret = makecol(255, 85, 85);
+						break;
+					case 13:
+						ret = makecol(255, 85, 255);
+						break;
+					case 14:
+						ret = makecol(255, 255, 85);
+						break;
+					case 15:
+						ret = makecol(255, 255, 255);
+						break;
+				}
+			}
 			break;
 			
 		case ssctMISC:
@@ -1160,6 +1217,8 @@ bool SubscrWidget::visible(byte pos, bool showtime) const
 	if(msg_onscreen && (posflags&sspNOMSGSTR))
 		return false;
 	#endif
+	if(!check_conditions())
+		return false;
 	return !pos || (posflags&pos);
 }
 SubscrWidget* SubscrWidget::clone() const
@@ -1173,6 +1232,14 @@ bool SubscrWidget::copy_prop(SubscrWidget const* src, bool all)
 	flags = src->flags;
 	genflags = src->genflags;
 	posflags = src->posflags;
+	req_owned_items = src->req_owned_items;
+	req_unowned_items = src->req_unowned_items;
+	req_counter = src->req_counter;
+	req_counter_val = src->req_counter_val;
+	req_counter_cond_type = src->req_counter_cond_type;
+	req_litems = src->req_litems;
+	req_litem_level = src->req_litem_level;
+	is_disabled = src->is_disabled;
 	if(all)
 	{
 		x = src->x;
@@ -1274,6 +1341,44 @@ int32_t SubscrWidget::read(PACKFILE *f, word s_version)
 				return ret;
 		}
 	}
+	if(s_version >= 14)
+	{
+		word count;
+		byte iid;
+		if(!p_igetw(&count,f))
+			return qe_invalid;
+		req_owned_items.clear();
+		for(word q = 0; q < count; ++q)
+		{
+			if(!p_getc(&iid,f))
+				return qe_invalid;
+			req_owned_items.insert(iid);
+		}
+		if(!p_igetw(&count,f))
+			return qe_invalid;
+		req_unowned_items.clear();
+		for(word q = 0; q < count; ++q)
+		{
+			if(!p_getc(&iid,f))
+				return qe_invalid;
+			req_unowned_items.insert(iid);
+		}
+		if(!p_igetw(&req_counter,f))
+			return qe_invalid;
+		if(!p_igetw(&req_counter_val,f))
+			return qe_invalid;
+		if(!p_getc(&req_counter_cond_type,f))
+			return qe_invalid;
+		if(!p_getc(&req_litems,f))
+			return qe_invalid;
+		if(!p_igetw(&req_litem_level,f))
+			return qe_invalid;
+		byte tempb;
+		if(!p_getc(&tempb,f))
+			return qe_invalid;
+		is_disabled = tempb != 0;
+	}
+	
 	if(loading_tileset_flags & TILESET_CLEARSCRIPTS)
 	{
 		generic_script = 0;
@@ -1346,6 +1451,28 @@ int32_t SubscrWidget::write(PACKFILE *f) const
 				return ret;
 		}
 	}
+	if(!p_iputw(req_owned_items.size(),f))
+		new_return(1);
+	for(byte iid : req_owned_items)
+		if(!p_putc(iid,f))
+			new_return(1);
+	if(!p_iputw(req_unowned_items.size(),f))
+		new_return(1);
+	for(byte iid : req_unowned_items)
+		if(!p_putc(iid,f))
+			new_return(1);
+	if(!p_iputw(req_counter,f))
+		new_return(1);
+	if(!p_iputw(req_counter_val,f))
+		new_return(1);
+	if(!p_putc(req_counter_cond_type,f))
+		new_return(1);
+	if(!p_putc(req_litems,f))
+		new_return(1);
+	if(!p_iputw(req_litem_level,f))
+		new_return(1);
+	if(!p_putc(is_disabled?1:0,f))
+		new_return(1);
 	return 0;
 }
 void SubscrWidget::check_btns(byte btnflgs, ZCSubscreen& parent) const
@@ -1356,6 +1483,72 @@ void SubscrWidget::check_btns(byte btnflgs, ZCSubscreen& parent) const
 std::string SubscrWidget::getTypeName() const
 {
 	return GUI::ZCListData::subscr_widgets().findText(getType());
+}
+bool SubscrWidget::check_conditions() const
+{
+	// handle editor preview of conditions somehow?
+#ifdef IS_PLAYER
+	if(is_disabled) // script-disable condition
+		return false;
+	for(auto iid : req_owned_items)
+	{
+		if(!game->get_item(iid))
+			return false;
+	}
+	for(auto iid : req_unowned_items)
+	{
+		if(game->get_item(iid))
+			return false;
+	}
+	if(req_counter != crNONE && req_counter_cond_type != CONDTY_NONE)
+	{
+		zfix val = get_ssc_ctr(req_counter);
+		if(genflags&SUBSCRFLAG_REQ_COUNTER_PERC)
+			val = (val / get_ssc_ctrmax(req_counter)) * 100_zf;
+		else if(genflags&SUBSCRFLAG_REQ_COUNTER_MAX)
+			val = get_ssc_ctrmax(req_counter);
+		zfix targ_val = req_counter_val;
+		switch(req_counter_cond_type)
+		{
+			case CONDTY_EQ:
+				if(!(val == targ_val))
+					return false;
+				break;
+			case CONDTY_NEQ:
+				if(!(val != targ_val))
+					return false;
+				break;
+			case CONDTY_GREATER:
+				if(!(val > targ_val))
+					return false;
+				break;
+			case CONDTY_GREATEREQ:
+				if(!(val >= targ_val))
+					return false;
+				break;
+			case CONDTY_LESS:
+				if(!(val < targ_val))
+					return false;
+				break;
+			case CONDTY_LESSEQ:
+				if(!(val <= targ_val))
+					return false;
+				break;
+		}
+	}
+	if(req_litems)
+	{
+		auto target_lvl = req_litem_level < 0 ? get_dlevel() : req_litem_level;
+		if(!(target_lvl < 0 || target_lvl >= MAXLEVELS))
+		{
+			bool inverted = genflags&SUBSCRFLAG_REQ_INVERT_LITEM;
+			auto litems = game->lvlitems[target_lvl]&req_litems;
+			if(inverted ? litems != 0 : litems != req_litems)
+				return false;
+		}
+	}
+#endif
+	return true;
 }
 void SubscrWidget::replay_rand_compat(byte pos) const
 {
@@ -5367,7 +5560,7 @@ void SubscrPage::move_cursor(int dir, bool item_only)
 	
 	for(int32_t i=0; i < contents.size(); ++i)
 	{
-		if(contents[i]->genflags&SUBSCRFLAG_SELECTABLE)
+		if((contents[i]->genflags&SUBSCRFLAG_SELECTABLE) && contents[i]->check_conditions())
 		{
 			if(firstValidPos==-1 && contents[i]->pos>=0)
 				firstValidPos=i;
@@ -5434,7 +5627,7 @@ void SubscrPage::move_cursor(int dir, bool item_only)
 		oldPositions.insert(curpos);
 		
 		//Valid stop point?
-		if((widg->genflags & SUBSCRFLAG_SELECTABLE) && (!item_only || widg->getItemVal() > -1))
+		if((widg->genflags & SUBSCRFLAG_SELECTABLE) && (!item_only || widg->getItemVal() > -1) && widg->check_conditions())
 		{
 			cursor_pos = curpos;
 			return;
@@ -5468,6 +5661,7 @@ int32_t SubscrPage::movepos_legacy(int dir, word startp, word fp, word fp2, word
 		if(startp != fp && startp != fp2 && startp != fp3)
 			if(SubscrWidget* widg = get_widg_pos(startp>>8,item_only))
 				if(widg->getType() == widgITEMSLOT
+					&& widg->check_conditions()
 					&& !(widg->flags&SUBSCR_CURITM_NONEQP)
 					&& (widg->genflags & SUBSCRFLAG_SELECTABLE)
 					&& (!item_only || widg->getItemVal() > -1))
@@ -5481,7 +5675,8 @@ int32_t SubscrPage::movepos_legacy(int dir, word startp, word fp, word fp2, word
 	
 	for(int32_t i=0; i < contents.size(); ++i)
 	{
-		if(contents[i]->getType()==widgITEMSLOT && (contents[i]->genflags&SUBSCRFLAG_SELECTABLE))
+		if(contents[i]->getType()==widgITEMSLOT && (contents[i]->genflags&SUBSCRFLAG_SELECTABLE)
+			&& contents[i]->check_conditions())
 		{
 			if(firstValidPos==-1 && contents[i]->pos>=0)
 				firstValidPos=i;
@@ -5561,6 +5756,7 @@ int32_t SubscrPage::movepos_legacy(int dir, word startp, word fp, word fp2, word
 		//Valid stop point?
 		if((!stay_on_page||(cp2&0xFF)==index)
 			&& (widg->genflags & SUBSCRFLAG_SELECTABLE)
+			&& widg->check_conditions()
 			&& cp2 != fp && cp2 != fp2 && cp2 != fp3
 			&& (!equip_only || widg->getType()!=widgITEMSLOT || !(widg->flags & SUBSCR_CURITM_NONEQP))
 			&& (!item_only || widg->getItemVal()>-1))
