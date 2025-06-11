@@ -67,6 +67,7 @@ src/dialog/bottleshop.cpp
 src/dialog/spritedata.cpp
 src/dialog/comboeditor.cpp
 src/dialog/combowizard.cpp
+src/dialog/combo_trigger_editor.cpp
 src/dialog/misc_sfx.cpp
 src/dialog/misc_sprs.cpp
 src/dialog/scaletile.cpp
@@ -99,6 +100,7 @@ src/dialog/sfxdata.cpp
 src/dialog/midieditor.cpp
 src/dialog/mapstyles.cpp
 src/dialog/heroeditor.cpp
+src/dialog/door_sel.cpp
 
 ## End of ZQuest GUI module
 )
