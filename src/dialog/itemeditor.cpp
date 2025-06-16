@@ -1239,6 +1239,7 @@ std::shared_ptr<GUI::Widget> ItemEditorDialog::view()
 					Label(text = "Name:", hAlign = 1.0),
 					TextField(
 						fitParent = true,
+						maxwidth = 400_px,
 						maxLength = 63,
 						text = itemname,
 						onValChangedFunc = [&](GUI::TextField::type,std::string_view str,int32_t)
@@ -1264,6 +1265,7 @@ std::shared_ptr<GUI::Widget> ItemEditorDialog::view()
 					Label(text = "Display Name:", hAlign = 1.0),
 					TextField(
 						fitParent = true,
+						maxwidth = 400_px,
 						maxLength = 255,
 						text = local_itemref.display_name,
 						onValChangedFunc = [&](GUI::TextField::type,std::string_view str,int32_t)
@@ -1285,6 +1287,7 @@ std::shared_ptr<GUI::Widget> ItemEditorDialog::view()
 					Label(text = "Type:", hAlign = 1.0),
 					DropDownList(data = list_items,
 						fitParent = true, padding = 0_px,
+						maxwidth = 400_px,
 						selectedValue = local_itemref.family,
 						onSelectionChanged = message::ITEMCLASS
 					),
@@ -1902,10 +1905,10 @@ std::shared_ptr<GUI::Widget> ItemEditorDialog::view()
 								DropDownList(
 									fitParent = true,
 									data = list_deftypes,
-									selectedValue = local_itemref.usedefence,
+									selectedValue = local_itemref.usedefense,
 									onSelectFunc = [&](int32_t val)
 									{
-										local_itemref.usedefence = val;
+										local_itemref.usedefense = val;
 									}
 								), _d, _d,
 								Label(hAlign = 1.0, text = "Movement Pattern:"),

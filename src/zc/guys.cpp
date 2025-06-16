@@ -1162,7 +1162,12 @@ bool enemy::animate(int32_t index)
 			Hero.setY(y);
 			Hero.fallCombo = fallCombo;
 			Hero.fallclk = fallclk;
-			hashero = false; //Let Hero go if falling
+			
+			if(hashero)
+			{
+				hashero = false; //Let Hero go if falling
+				Hero.setEaten(0);
+			}
 		}
 		if (!didScriptThisFrame)
 		{
@@ -1185,7 +1190,12 @@ bool enemy::animate(int32_t index)
 			Hero.setX(x);
 			Hero.setY(y);
 			Hero.drownclk = drownclk;
-			hashero = false; //Let Hero go if falling
+			
+			if(hashero)
+			{
+				hashero = false; //Let Hero go if falling
+				Hero.setEaten(0);
+			}
 		}
 		if (!didScriptThisFrame)
 		{
@@ -2155,7 +2165,7 @@ int32_t enemy::resolveEnemyDefence(weapon *w)
 	//, 
 	int32_t weapondef = 0;
 	int32_t wdeftype = getDefType(w);
-	int32_t usedef = w->usedefence;
+	int32_t usedef = w->usedefense;
 	
 	if ( usedef > 0 && (wdeftype < 0 || wdeftype >= edefLAST255 || defense[wdeftype] == 0)) 
 	{
@@ -8916,9 +8926,7 @@ eLeever::eLeever(zfix X,zfix Y,int32_t Id,int32_t Clk) : enemy(X,Y,Id,Clk)
 
 bool eLeever::isSubmerged() const
 {
-	Z_scripterrlog("misc is: %d\n", misc);
 	return misc <= 0;
-	
 }
 
 bool eLeever::animate(int32_t index)
