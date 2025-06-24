@@ -316,7 +316,6 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SCREENDATANOCARRY: return "Screen->NoCarry";
 		case SCREENDATANORESET: return "Screen->NoReset";
 		case EWPNCOUNT: return "Screen->NumEWeapons";
-		case SCREENDATANUMFF: return "Screen->NumFFCs[]";
 		case ITEMCOUNT: return "Screen->NumItems";
 		case LWPNCOUNT: return "Screen->NumLWeapons";
 		case NPCCOUNT: return "Screen->NumNPCs";
@@ -388,7 +387,6 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case COMBODCSET: return "combodata::CSet2";
 		case COMBODCSET2FLAGS: return "combodata::CSet2Flags";
 		case COMBODEFFECT: return "combodata::Effect";
-		case COMBODEXPANSION: return "combodata::Expansion[]";
 		case COMBODFLAG: return "combodata::Flag";
 		case COMBODUSRFLAGARR: return "combodata::Flags[]";
 		case COMBODFLIP: return "combodata::Flip";
@@ -840,7 +838,6 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case MAPDATANEXTSCREEN: return "mapdata::NextScreen";
 		case MAPDATANOCARRY: return "mapdata::NoCarry";
 		case MAPDATANORESET: return "mapdata::NoReset";
-		case MAPDATANUMFF: return "mapdata::NumFFCs[]";
 		case MAPDATACOLOUR: return "mapdata::Palette";
 		case MAPDATAPATTERN: return "mapdata::Pattern";
 		case MAPDATAREGIONID: return "mapdata::RegionID";

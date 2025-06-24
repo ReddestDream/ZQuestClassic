@@ -5510,7 +5510,7 @@ void draw_screenunit_map_screen(VisibleScreen visible_screen)
 		for(int32_t i=num_ffcs-1; i>=0; i--)
 		{
 			ffcdata& ff = ffscr->ffcs[i];
-			if(ff.data !=0 && (CurrentLayer<2 || (ff.flags&ffc_overlay)))
+			if(ff.data !=0 && (ff.layer >= CurrentLayer || (ff.flags&ffc_overlay)))
 			{
 				auto x = ff.x+edge_xoff;
 				auto y = ff.y+edge_yoff;
@@ -9881,7 +9881,7 @@ void domouse()
 		bool did_ffttip = false;
 		int num_ffcs = scr->numFFC();
 		for(int32_t i=num_ffcs-1; i>=0; i--)
-			if(scr->ffcs[i].data !=0 && (CurrentLayer<2 || (scr->ffcs[i].flags&ffc_overlay)))
+			if(scr->ffcs[i].data !=0 && (scr->ffcs[i].layer >= CurrentLayer || (scr->ffcs[i].flags&ffc_overlay)))
 			{
 				int32_t ffx = scr->ffcs[i].x.getFloor() + active_visible_screen->dx * 256;
 				int32_t ffy = scr->ffcs[i].y.getFloor() + active_visible_screen->dy * 176;
@@ -10465,7 +10465,7 @@ void domouse()
 				// Move FFCs
 				int num_ffcs = scr->numFFC();
 				for(int32_t i=num_ffcs-1; i>=0; i--)
-					if(scr->ffcs[i].data !=0 && (CurrentLayer<2 || (scr->ffcs[i].flags&ffc_overlay)))
+					if(scr->ffcs[i].data !=0 && (scr->ffcs[i].layer >= CurrentLayer || (scr->ffcs[i].flags&ffc_overlay)))
 					{
 						int32_t ffx = scr->ffcs[i].x.getFloor() + active_visible_screen->dx * 256;
 						int32_t ffy = scr->ffcs[i].y.getFloor() + active_visible_screen->dy * 176;
@@ -10547,7 +10547,7 @@ void domouse()
 					if(clickedffc || !(scr->valid&mVALID))
 						continue;
 						
-					if(data!=0 && (CurrentLayer<2 || (scr->ffcs[i].flags&ffc_overlay)))
+					if(data!=0 && (scr->ffcs[i].layer >= CurrentLayer || (scr->ffcs[i].flags&ffc_overlay)))
 					{
 						int32_t ffx = scr->ffcs[i].x.getFloor() + active_visible_screen->dx * 256;
 						int32_t ffy = scr->ffcs[i].y.getFloor() + active_visible_screen->dy * 176;
@@ -25488,11 +25488,8 @@ finished:
 	reset_combo_animations2();
 	MouseSprite::set(ZQM_NORMAL);
 	prv_mode=0;
-	Map.set_prvcmb(0);
-	Map.set_prvadvance(0);
-	Map.set_prvfreeze(0);
-	Map.set_prvtime(0);
 	prv_warp=0;
+	Map.end_prv();
 	loadlvlpal(Map.getcolor());
 	rebuild_trans_table();
 	refresh(rMAP+rMENU);
@@ -26352,6 +26349,7 @@ bool replay_is_active() {return false;}
 bool replay_is_replaying() {return false;}
 bool replay_version_check(int min, int max) {return false;}
 bool replay_is_debug() {return false;}
+std::string replay_get_meta_str(std::string key){return "";}
 int32_t item::run_script(int32_t mode){return 0;};
 ffcdata* slopes_getFFC(int id)
 {

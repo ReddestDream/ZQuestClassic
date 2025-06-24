@@ -1486,56 +1486,6 @@ void reset_tunes(zctune *tune)
     }
 }
 
-
-/*void reset_midi(zcmidi_ *m)
-{
-  m->title[0]=0;
-  m->loop=1;
-  m->volume=144;
-  m->start=0;
-  m->loop_start=-1;
-  m->loop_end=-1;
-  if(m->midi)
-  {
-    destroy_midi(m->midi);
-  }
-  m->midi=NULL;
-}
-
-
-void reset_midis(zcmidi_ *m)
-{
-  for(int32_t i=0; i<MAXCUSTOMMIDIS; i++)
-  {
-      reset_midi(m+i);
-  }
-}
-*/
-
-void reset_scr(int32_t scr)
-{
-    /*
-      byte *di=((byte*)TheMaps)+(scr*sizeof(mapscr));
-      for(unsigned i=0; i<sizeof(mapscr); i++)
-      *(di++) = 0;
-      TheMaps[scr].valid=mVERSION;
-      */
-    
-    TheMaps[scr].zero_memory();
-    //byte *di=((byte*)TheMaps)+(scr*sizeof(mapscr));
-    
-    for(int32_t i=0; i<6; i++)
-    {
-        //these will be uncommented later
-        //TheMaps[scr].layerxsize[i]=16;
-        //TheMaps[scr].layerysize[i]=11;
-        TheMaps[scr].layeropacity[i]=255;
-    }
-    
-    TheMaps[scr].valid=mVERSION;
-    
-}
-
 int32_t doortranslations_u[9][4]=
 {
     {37,38,53,54},
@@ -21560,6 +21510,10 @@ static bool compat_qr_hide_bottom_pixels(const zquestheader& header)
 	// 2.55.9 or newer?
 	if (header.compareVer(2, 55, 9) >= 0)
 		return false; // defer to whatever was set
+
+	// Replays created in 2.55 for quests prior to 2.55.9 should continue hiding the bottom pixels.
+	if (replay_is_replaying() && replay_get_meta_str("zc_version_created").starts_with("2.55"))
+		return true;
 
 	// Only a couple quests take any time (~7ms) on my intel mac to check all the ZASM... cache those.
 	std::string title = header.title;

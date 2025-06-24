@@ -1685,15 +1685,16 @@ static mapscr* ResolveMapdata(int32_t mapref)
 static rpos_handle_t ResolveMapdataPos(int32_t mapref, int pos)
 {
 	auto result = decode_mapdata_ref(mapref);
-	if (!result.scr)
+
+	if (!screenscrolling && result.scrolling())
 	{
-		scripting_log_error_with_context("mapdata id is invalid: {}", mapref);
+		scripting_log_error_with_context("mapdata id is invalid: {} - screen is not scrolling right now", mapref);
 		return rpos_handle_t{};
 	}
 
-	if (result.scrolling())
+	if (!result.scr)
 	{
-		scripting_log_error_with_context("mapdata id is invalid: {} - screen is not scrolling right now", mapref);
+		scripting_log_error_with_context("mapdata id is invalid: {}", mapref);
 		return rpos_handle_t{};
 	}
 
@@ -1708,7 +1709,7 @@ static rpos_handle_t ResolveMapdataPos(int32_t mapref, int pos)
 	}
 
 	// mapdata loaded via `Game->LoadScrollingScreen(layer)` have access to the entire scrolling region.
-	if (result.type == mapdata_type::TemporaryScrollingScreen)
+	if (result.type == mapdata_type::TemporaryScrollingRegion)
 	{
 		rpos_t rpos = (rpos_t)pos;
 		rpos_t max = (rpos_t)(scrolling_region.screen_count * 176 - 1);
@@ -9316,7 +9317,6 @@ int32_t get_register(int32_t arg)
 		case COMBODNEXTTIMER:		GET_COMBO_VAR_DWORD(nexttimer); break;				//W
 		case COMBODAKIMANIMY:		GET_COMBO_VAR_BYTE(skipanimy); break;				//C
 		case COMBODANIMFLAGS:		GET_COMBO_VAR_BYTE(animflags); break;				//C
-		case COMBODEXPANSION:		GET_COMBO_BYTE_INDEX(expansion, 6); break;				//C , 6 INDICES
 		case COMBODATTRIBUTES:
 		{
 			int32_t indx = ri->d[rINDEX] / 10000;
@@ -9412,9 +9412,10 @@ int32_t get_register(int32_t arg)
 			}
 			else if(auto* trig = get_first_combo_trigger())
 			{
-				ret = trig->triggerflags[indx] * 10000;
+				ret = trig->triggerflags[indx];
 				if(indx == 0)
 					SETFLAG(ret, combotriggerONLYGENTRIG, combobuf[ri->combosref].only_gentrig);
+				ret *= 10000;
 			}
 			break;
 		}
@@ -20602,7 +20603,6 @@ void set_register(int32_t arg, int32_t value)
 		case COMBODNEXTTIMER:	SET_COMBO_VAR_DWORD(nexttimer); break;					//W
 		case COMBODAKIMANIMY:	SET_COMBO_VAR_BYTE(skipanimy); break;					//C
 		case COMBODANIMFLAGS:	SET_COMBO_VAR_BYTE(animflags); break;					//C
-		case COMBODEXPANSION:	SET_COMBO_BYTE_INDEX(expansion, 6); break;					//C , 6 INDICES
 		case COMBODATTRIBUTES:
 		{
 			int32_t indx = ri->d[rINDEX] / 10000;
@@ -20665,7 +20665,7 @@ void set_register(int32_t arg, int32_t value)
 			{
 				scripting_log_error_with_context("Invalid combodata ID: {}", ri->combosref);
 			}
-			else if (((unsigned)indx) > 0)
+			else if (((unsigned)indx) > 1)
 			{
 				scripting_log_error_with_context("Invalid Array Index: {}", indx);
 			}
@@ -34640,7 +34640,6 @@ int32_t run_script_int(bool is_jitted)
 			case GCDSKIPANIMY:  FFScript::getComboData_skipanimy(); break;
 			case GCDANIMFLAGS:  FFScript::getComboData_animflags(); break;
 			case GCDBLOCKWEAPON:  FFScript::getComboData_block_weapon(); break;
-			case GCDEXPANSION:  FFScript::getComboData_expansion(); break;
 			case GCDSTRIKEWEAPONS:  FFScript::getComboData_strike_weapons(); break;
 			case SCDBLOCKENEM:  FFScript::setComboData_block_enemies(); break;
 			case SCDBLOCKHOLE:  FFScript::setComboData_block_hole(); break;
@@ -34718,7 +34717,6 @@ int32_t run_script_int(bool is_jitted)
 			case SCDSKIPANIMY:  FFScript::setComboData_skipanimy(); break;
 			case SCDANIMFLAGS:  FFScript::setComboData_animflags(); break;
 			case SCDBLOCKWEAPON:  FFScript::setComboData_block_weapon(ri->d[rEXP1]); break;
-			case SCDEXPANSION:  FFScript::setComboData_expansion(ri->d[rEXP1]); break;
 			case SCDSTRIKEWEAPONS:  FFScript::setComboData_strike_weapons(ri->d[rEXP1]); break;
 
 			//SpriteData
@@ -37491,7 +37489,6 @@ void FFScript::getComboData_animflags(){ GET_COMBODATA_VAR_INT(animflags); } //n
 
 //two inputs, one return
 void FFScript::getComboData_block_weapon(){ GET_COMBODATA_TYPE_INDEX(block_weapon,32); } //byte array[32] d (ID of LWeapon)
-void FFScript::getComboData_expansion(){ GET_COMBODATA_VAR_INDEX(expansion,6); } //newcombo byte, arr[6]
 void FFScript::getComboData_strike_weapons(){ GET_COMBODATA_TYPE_INDEX(strike_weapons,32); } //byte at, arr[32]
 
 //Setters, two inputs no returns
@@ -37579,7 +37576,6 @@ void FFScript::setComboData_animflags(){ SET_COMBODATA_VAR_INT(animflags,ZS_BYTE
 //three inputs, no returns
 void FFScript::setComboData_block_weapon(int32_t v){ SET_COMBODATA_TYPE_INDEX(block_weapon,v,ZS_BYTE,32); } //byte array[32] d (ID of LWeapon)
 void FFScript::setComboData_strike_weapons(int32_t v){ SET_COMBODATA_TYPE_INDEX(strike_weapons,v,ZS_BYTE,32); } //byte at, arr[32]
-void FFScript::setComboData_expansion(int32_t v){ SET_COMBODATA_VAR_INDEX(expansion,v,ZS_BYTE,6); } //newcombo byte, arr[6]
 
 //SpriteData Macros
 #define GET_SPRITEDATA_TYPE_INT(member) \
