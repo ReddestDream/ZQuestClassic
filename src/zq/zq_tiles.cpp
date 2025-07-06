@@ -6819,10 +6819,10 @@ bool _handle_tile_move(TileMoveProcess dest_process, optional<TileMoveProcess> s
 		for(int32_t u=0; u<MAXDMAPS; u++)
 		{
 			auto& dm = DMaps[u];
-			movelist->add_tile(&dm.minimap_1_tile, 5, 3, fmt::format("DMap {} - Minimap (Empty)", u));
-			movelist->add_tile(&dm.minimap_2_tile, 5, 3, fmt::format("DMap {} - Minimap (Filled)", u));
-			movelist->add_tile(&dm.largemap_1_tile, BSZ2?7:9, 5, fmt::format("DMap {} - Large Map (Empty)", u));
-			movelist->add_tile(&dm.largemap_2_tile, BSZ2?7:9, 5, fmt::format("DMap {} - Large Map (Filled)", u));
+			movelist->add_tile(&dm.minimap_tile[0], 5, 3, fmt::format("DMap {} - Minimap (Empty)", u));
+			movelist->add_tile(&dm.minimap_tile[1], 5, 3, fmt::format("DMap {} - Minimap (Filled)", u));
+			movelist->add_tile(&dm.largemap_tile[0], BSZ2?7:9, 5, fmt::format("DMap {} - Large Map (Empty)", u));
+			movelist->add_tile(&dm.largemap_tile[1], BSZ2?7:9, 5, fmt::format("DMap {} - Large Map (Filled)", u));
 		}
 		if(!every_proc && !movelist->check_prot())
 			return false;
@@ -12681,6 +12681,7 @@ int32_t writecombo_loop(PACKFILE *f, word section_version, newcombo const& tmp_c
 int32_t readcombofile_old(PACKFILE *f, int32_t skip, byte nooverwrite, int32_t zversion,
 	dword section_version, int32_t index, int32_t count)
 {
+	byte tempbyte;
 	newcombo temp_combo;
 	for ( int32_t tilect = 0; tilect < count; tilect++ )
 	{
@@ -12808,10 +12809,9 @@ int32_t readcombofile_old(PACKFILE *f, int32_t skip, byte nooverwrite, int32_t z
 					{
 						return 0;
 					}
-					if(!p_getc(&temp_trigger.trigtimer,f))
-					{
+					if(!p_getc(&tempbyte, f))
 						return 0;
-					}
+					temp_trigger.trigtimer = tempbyte;
 				}
 				if(section_version >= 25)
 				{
@@ -12861,10 +12861,9 @@ int32_t readcombofile_old(PACKFILE *f, int32_t skip, byte nooverwrite, int32_t z
 					{
 						return qe_invalid;
 					}
-					if(!p_getc(&temp_trigger.trigctr,f))
-					{
+					if(!p_getc(&tempbyte,f))
 						return qe_invalid;
-					}
+					temp_trigger.trigctr = tempbyte;
 					if(!p_igetl(&temp_trigger.trigctramnt,f))
 					{
 						return qe_invalid;

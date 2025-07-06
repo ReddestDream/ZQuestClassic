@@ -159,8 +159,7 @@ class hero {
 	// @zasm_var LINKHELD
 	internal int HeldItem;
 
-	// Reading from, or writing to this array no longer causes lag.
-	//
+	// @index [enum ItemID]
 	// @zasm_var LINKITEMD
 	internal bool Item[];
 
@@ -241,7 +240,7 @@ class hero {
 	//
 	// @index [enum HitIndex]
 	// @zasm_var LINKHITBY
-	internal untyped HitBy[];
+	internal const untyped HitBy[];
 
 	// @zasm_var LINKLADDERX
 	internal const int LadderX;

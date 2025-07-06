@@ -998,6 +998,8 @@ static GUI::ListData compatRulesList
 		" which will look different in the editor than the player, and is not consistent."
 		"\nIf disabled, these colors still may look different in the editor than the player-"
 		" but they will be the closest matching color in the player's palette to the color in the editor." },
+	{ "Rope enemies speed is not configurable", qr_ROPE_ENEMIES_SPEED_NOT_CONFIGURABLE,
+		"If disabled, when misc attribute 10 is positive for rope enemies it will be used to configure the charging speed." },
 };
 
 static GUI::ListData enemiesRulesList
@@ -1694,7 +1696,8 @@ GUI::ListData objectRulesList
 	{ "Sprite Coordinates are Float", qr_SPRITEXY_IS_FLOAT },
 	{ "Weapons Have Shadows", qr_WEAPONSHADOWS },
 	{ "Items Have Shadows", qr_ITEMSHADOWS },
-	{ "Weapons Live One Extra Frame With WDS_DEAD", qr_WEAPONS_EXTRA_FRAME }
+	{ "Weapons Live One Extra Frame With WDS_DEAD", qr_WEAPONS_EXTRA_DEATH_FRAME },
+	{ "Weapons Scripts run an extra frame on spawning", qr_WEAPONS_EXTRA_SPAWN_FRAME },
 };
 
 GUI::ListData drawingRulesList
@@ -1796,7 +1799,7 @@ void applyRuleTemplate(int32_t ruleTemplate, byte* qrptr)
 				qr_COMBOSCRIPTS_LAYER_0, qr_PASSIVE_SUBSCRIPT_RUNS_WHEN_GAME_IS_FROZEN,
 				qr_FIXDRUNKINPUTS, qr_BITMAP_AND_FILESYSTEM_PATHS_ALWAYS_RELATIVE,
 				qr_STEP_IS_FLOAT, qr_WRITE_ENTRYPOINTS_AFFECTS_HEROCLASS,
-				qr_SPRITEXY_IS_FLOAT, qr_WEAPONS_EXTRA_FRAME, qr_FIXSCRIPTSDURINGSCROLLING,
+				qr_SPRITEXY_IS_FLOAT, qr_WEAPONS_EXTRA_DEATH_FRAME, qr_FIXSCRIPTSDURINGSCROLLING,
 				qr_ALWAYS_DEALLOCATE_ARRAYS,
 			};
 			int zsOffRules[] = {

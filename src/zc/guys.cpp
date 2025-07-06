@@ -423,7 +423,6 @@ enemy::enemy(zfix X,zfix Y,int32_t Id,int32_t Clk) : sprite()
 	hitsfx=d->hitsfx;
 	deadsfx=d->deadsfx;
 	bosspal=d->bosspal;
-	parent_uid = 0;
 	
 	frozentile = d->frozentile;
 	
@@ -594,7 +593,7 @@ bool enemy::scr_walkflag(int32_t dx,int32_t dy,int32_t special, int32_t dir, int
 {
 	int32_t yg = (special==spw_floater)?8:0;
 	int32_t nb = get_qr(qr_NOBORDER) ? 16 : 0;
-	//Z_eventlog("Checking x,y %d,%d\n",dx,dy);
+
 	if(input_x == -1000)
 		input_x = dx;
 	if(input_y == -1000)
@@ -1575,7 +1574,6 @@ bool enemy::m_walkflag(int32_t dx,int32_t dy,int32_t special, int32_t dir, int32
 			break;
 		}
 	}
-	//Z_eventlog("Checking x,y %d,%d\n",dx,dy);
 	
 	if(dx<16-nb || dy<zc_max(16-yg-nb,0) || dx>=world_w-16+nb || dy>=world_h-16+nb)
 		return true;
@@ -1984,7 +1982,7 @@ void enemy::FireWeapon()
 			
 			for(int32_t i=0; i<bats; i++)
 			{
-				if(addchild(screen_spawned,x,y,dmisc3,-10, this->getUID()))
+				if(addchild(screen_spawned,x,y,dmisc3,-10, this))
 				{
 					((enemy*)guys.spr(kids+i))->count_enemy = false;
 				}
@@ -2023,7 +2021,7 @@ void enemy::FireWeapon()
 					
 					if((!m_walkflag(x2,y2,0,dir))&&((abs(x2-Hero.getX())>=32)||(abs(y2-Hero.getY())>=32)))
 					{
-						if(addchild_z(screen_spawned,x2,y2,get_qr(qr_ENEMIESZAXIS) ? 64 : 0,id2,-10, this->getUID()))
+						if(addchild_z(screen_spawned,x2,y2,get_qr(qr_ENEMIESZAXIS) ? 64 : 0,id2,-10, this))
 						{
 							((enemy*)guys.spr(kids+i))->count_enemy = false;
 							if (get_qr(qr_ENEMIESZAXIS) && (((enemy*)guys.spr(kids+i))->moveflags & move_use_fake_z)) 
@@ -2927,7 +2925,7 @@ int32_t enemy::defendNew(int32_t wpnId, int32_t *power, int32_t edef, byte unblo
 					Z_scripterrlog("Replacing a gleeok.\n");
 					enemy *tempenemy = (enemy *) guys.getByUID(parentCore);
 					hp = -999;
-					tempenemy->hp = -999; 
+					if (tempenemy) tempenemy->hp = -999; 
 					break;
 					
 				}
@@ -4723,7 +4721,7 @@ bool enemy::canmove(int32_t ndir,zfix s,int32_t special,int32_t dx1,int32_t dy1,
 			dy = dy1-s;
 			special = (special==spw_clipbottomright)?spw_none:special;
 			tries = usewid/(offgrid ? 8 : 16);
-			//Z_eventlog("Trying move UP, dy=%d,usewid=%d,usehei=%d\n",int32_t(dy),usewid,usehei);
+
 			for ( ; tries > 0; --tries )
 			{
 				ok = !m_walkflag(x+usexoffs+try_x,y+useyoffs+dy,special, ndir, x+usexoffs+try_x, y+useyoffs, kb) && !flyerblocked(x+usexoffs+try_x,y+useyoffs+dy, special,kb);
@@ -4745,7 +4743,6 @@ bool enemy::canmove(int32_t ndir,zfix s,int32_t special,int32_t dx1,int32_t dy1,
 				
 			dy = dy2+s;
 			tries = usewid/(offgrid ? 8 : 16);
-			//Z_eventlog("Trying move DOWN, dy=%d,usewid=%d,usehei=%d\n",int32_t(dy),usewid,usehei);
 			for ( ; tries > 0; --tries )
 			{
 				ok = !m_walkflag(x+usexoffs+try_x,y+useyoffs+dy,special, ndir, x+usexoffs+try_x, y+useyoffs, kb) && !flyerblocked(x+usexoffs+try_x,y+useyoffs+dy+zc_max(usehei-16,0), special,kb);
@@ -4766,7 +4763,6 @@ bool enemy::canmove(int32_t ndir,zfix s,int32_t special,int32_t dx1,int32_t dy1,
 			sv = ((isSideViewGravity())?7:0);
 			special = (special==spw_clipbottomright||special==spw_clipright)?spw_none:special;
 			tries = usehei/(offgrid ? 8 : 16);
-			//Z_eventlog("Trying move LEFT, dx=%d,usewid=%d,usehei=%d\n",int32_t(dx),usewid,usehei);
 			for ( ; tries > 0; --tries )
 			{
 				ok = !m_walkflag(x+usexoffs+dx,y+useyoffs+try_y+sv,special, ndir, x+usexoffs, y+useyoffs+try_y, kb) && !flyerblocked(x+usexoffs+dx,y+8+useyoffs+try_y, special,kb);
@@ -4786,7 +4782,6 @@ bool enemy::canmove(int32_t ndir,zfix s,int32_t special,int32_t dx1,int32_t dy1,
 			dx = dx2+s;
 			sv = ((isSideViewGravity())?7:0);
 			tries = usehei/(offgrid ? 8 : 16);
-			//Z_eventlog("Trying move RIGHT, dx=%d,usewid=%d,usehei=%d\n",int32_t(dx),usewid,usehei);
 			for ( ; tries > 0; --tries )
 			{
 				ok = !m_walkflag(x+usexoffs+dx,y+useyoffs+try_y+sv,special, ndir, x+usexoffs, y+useyoffs+try_y, kb) && !flyerblocked(x+usexoffs+dx+zc_max(usewid-16,0),y+8+useyoffs+try_y, special,kb);
@@ -4992,7 +4987,7 @@ bool enemy::canmove(int32_t ndir,zfix s,int32_t special,int32_t dx1,int32_t dy1,
 			db=99;
 			return true;
 	}
-	//Z_eventlog("\n");
+
 	return ok;
 }
 
@@ -11373,7 +11368,7 @@ void eStalfos::charge_attack()
 			{
 				dir=ldir;
 				dashing=true;
-				if(dmisc10<=0 || replay_version_check(0,33))
+				if (dmisc10<=0 || replay_version_check(0,33) || get_qr(qr_ROPE_ENEMIES_SPEED_NOT_CONFIGURABLE))
 					step=zslongToFix(dstep*100)+1;
 				else
 					step=zslongToFix(dmisc10*100);
@@ -12071,7 +12066,7 @@ void eWizzrobe::wizzrobe_attack_for_real()
 			for(int32_t i=0; i<bats; i++)
 			{
 				// Summon bats (or anything)
-				if(addchild(screen_spawned, x,y,dmisc3,-10, this->getUID()))
+				if(addchild(screen_spawned, x,y,dmisc3,-10, this))
 					((enemy*)guys.spr(kids+i))->count_enemy = false;
 			}
 			sfx(firesfx, pan(int32_t(x)));
@@ -12104,7 +12099,7 @@ void eWizzrobe::wizzrobe_attack_for_real()
 					
 					if(!m_walkflag(x2,y2,0, dir) && (abs(x2-Hero.getX())>=32 || abs(y2-Hero.getY())>=32))
 					{
-						if(addchild_z(screen_spawned,x2,y2,get_qr(qr_ENEMIESZAXIS) ? 64 : 0,id2,-10, this->getUID()))
+						if(addchild_z(screen_spawned,x2,y2,get_qr(qr_ENEMIESZAXIS) ? 64 : 0,id2,-10, this))
 						{
 							((enemy*)guys.spr(kids+i))->count_enemy = false;
 							if (get_qr(qr_ENEMIESZAXIS) && (((enemy*)guys.spr(kids+i))->moveflags & move_use_fake_z)) 
@@ -13764,7 +13759,7 @@ bool eMoldorm::animate(int32_t index)
 			
 			segment->o_tile=tile; //I refuse to fuck with adding scripttile to segmented enemies. -Z
 		//Script your own blasted segmented bosses!! -Z
-			segment->parent_uid = this->getUID();
+			segment->setParent(this);
 			if((i==index+segcnt)&&(i!=index+1))                   //tail
 			{
 				segment->dummy_int[1]=2;
@@ -14070,7 +14065,7 @@ bool eLanmola::animate(int32_t index)
 		}
 		
 		segment->o_tile=o_tile;
-		segment->parent_uid = this->getUID();
+		segment->setParent(this);
 		if((i==index+segcnt)&&(i!=index+1))
 		{
 			segment->dummy_int[1]=1;                //tail
@@ -14333,12 +14328,12 @@ bool eManhandla::animate(int32_t index)
 			if(!dmisc2)
 			{
 				cur_arm->o_tile=o_tile+40;
-				cur_arm->parent_uid = this->getUID();
+				cur_arm->setParent(this);
 			}
 			else
 			{
 				cur_arm->o_tile=o_tile+160;
-				cur_arm->parent_uid = this->getUID();
+				cur_arm->setParent(this);
 			}
 		}
 	}
@@ -14853,7 +14848,7 @@ bool eGleeok::animate(int32_t index)
 	{
 		enemy *head = ((enemy*)guys.spr(index+i+1));
 		head->dummy_int[1]=necktile;
-		head->parent_uid = this->getUID();
+		head->setParent(this);
 		
 		if(get_qr(qr_NEWENEMYTILES))
 		{
@@ -15021,8 +15016,9 @@ void eGleeok::draw2(BITMAP *dest)
 	}
 }
 
-esGleeok::esGleeok(zfix X,zfix Y,int32_t Id,int32_t Clk, sprite * prnt) : enemy(X,Y,Id,Clk), parent(prnt)
+esGleeok::esGleeok(zfix X,zfix Y,int32_t Id,int32_t Clk, sprite * prnt) : enemy(X,Y,Id,Clk)
 {
+	setParent(prnt);
 	xoffset=0;
 	yoffset=(zfix)((dmisc5*4+2));
 //  dummy_bool[0]=false;
@@ -15417,7 +15413,9 @@ bool ePatra::animate(int32_t index)
 	{
 		for(int32_t i=index+1; i<index+flycnt+flycnt2+1; i++)
 		{
-			((enemy*)guys.spr(i))->hp = -1000;
+			auto segment = (enemy*)guys.spr(i);
+			if (segment && segment->parent == this)
+				segment->hp = -1000;
 		}
 		
 		return Dead(index);
@@ -15502,13 +15500,13 @@ bool ePatra::animate(int32_t index)
 			{
 				((enemy*)guys.spr(i))->o_tile=d->e_tile+dmisc8;
 				enemy *s = ((enemy*)guys.spr(i));
-				s->parent_uid = this->getUID();
+				s->setParent(this);
 			}
 			else
 			{
 				((enemy*)guys.spr(i))->o_tile=o_tile+1;
 				enemy *s = ((enemy*)guys.spr(i));
-				s->parent_uid = this->getUID();
+				s->setParent(this);
 			}
 			
 			((enemy*)guys.spr(i))->cs=dmisc9;
@@ -16193,9 +16191,10 @@ void ePatra::init_size_flags() {
 
 }
 
-esPatra::esPatra(zfix X,zfix Y,int32_t Id,int32_t Clk, sprite * prnt) : enemy(X,Y,Id,Clk), parent(prnt)
+esPatra::esPatra(zfix X,zfix Y,int32_t Id,int32_t Clk, sprite * prnt) : enemy(X,Y,Id,Clk)
 {
 	//cs=8;
+	setParent(prnt);
 	item_set=0;
 	misc=clk;
 	clk4 = 0;
@@ -16600,9 +16599,10 @@ void ePatraBS::init_size_flags()
 	if ((SIZEflags & OVERRIDE_DRAW_Z_OFFSET) != 0) zofs = (int32_t)d->zofs;
 }
 
-esPatraBS::esPatraBS(zfix X,zfix Y,int32_t Id,int32_t Clk, sprite * prnt) : enemy(X,Y,Id,Clk), parent(prnt)
+esPatraBS::esPatraBS(zfix X,zfix Y,int32_t Id,int32_t Clk, sprite * prnt) : enemy(X,Y,Id,Clk)
 {
 	//cs=csBOSS;
+	setParent(prnt);
 	item_set=0;
 	misc=clk;
 	clk = -((misc*21)>>1)-1;
@@ -16971,18 +16971,17 @@ int32_t addenemy(int32_t screen, int32_t x,int32_t y,int32_t id,int32_t clk)
 	return addenemy_z(screen,x,y,0,id,clk);
 }
 
-int32_t addchild(int32_t screen, int32_t x,int32_t y,int32_t id,int32_t clk, int32_t parent_uid)
+int32_t addchild(int32_t screen, int32_t x,int32_t y,int32_t id,int32_t clk, sprite* parent)
 {
-	return addchild_z(screen,x,y,0,id,clk, parent_uid);
+	return addchild_z(screen,x,y,0,id,clk, parent);
 }
 
-int32_t addchild_z(int32_t screen, int32_t x,int32_t y,int32_t z,int32_t id,int32_t clk, int32_t parent_uid)
+int32_t addchild_z(int32_t screen, int32_t x,int32_t y,int32_t z,int32_t id,int32_t clk, sprite* parent)
 {
 	if(id <= 0) return 0;
 	
 	int32_t ret = 0;
 	sprite *e=NULL;
-	al_trace("Adding child\n");
 	
 	switch(guysbuf[id&0xFFF].family)
 	{
@@ -17247,8 +17246,7 @@ int32_t addchild_z(int32_t screen, int32_t x,int32_t y,int32_t z,int32_t id,int3
 	}
 	
 	((enemy*)e)->ceiling = (z && canfall(id));
-	((enemy*)e)->parent_uid = parent_uid;
-			
+	e->setParent(parent);
 	
 	if(!guys.add(e))
 	{
@@ -21359,3 +21357,83 @@ const char *old_guy_string[OLDMAXGUYS] =
 	// 175
 	"Grappler Bug (HP) ", "Grappler Bug (MP) "
 };
+
+int32_t enemy::get_dmisc(byte index)
+{
+	switch (index)
+	{
+		case 0: return dmisc1;
+		case 1: return dmisc2;
+		case 2: return dmisc3;
+		case 3: return dmisc4;
+		case 4: return dmisc5;
+		case 5: return dmisc6;
+		case 6: return dmisc7;
+		case 7: return dmisc8;
+		case 8: return dmisc9;
+		case 9: return dmisc10;
+		case 10: return dmisc11;
+		case 11: return dmisc12;
+		case 12: return dmisc13;
+		case 13: return dmisc14;
+		case 14: return dmisc15;
+		case 15: return dmisc16;
+		case 16: return dmisc17;
+		case 17: return dmisc18;
+		case 18: return dmisc19;
+		case 19: return dmisc20;
+		case 20: return dmisc21;
+		case 21: return dmisc22;
+		case 22: return dmisc23;
+		case 23: return dmisc24;
+		case 24: return dmisc25;
+		case 25: return dmisc26;
+		case 26: return dmisc27;
+		case 27: return dmisc28;
+		case 28: return dmisc29;
+		case 29: return dmisc30;
+		case 30: return dmisc31;
+		case 31: return dmisc32;
+	}
+	
+	return 0;
+}
+
+void enemy::set_dmisc(byte index, int32_t value)
+{
+	switch (index)
+	{
+		case 0: dmisc1 = value; break;
+		case 1: dmisc2 = value; break;
+		case 2: dmisc3 = value; break;
+		case 3: dmisc4 = value; break;
+		case 4: dmisc5 = value; break;
+		case 5: dmisc6 = value; break;
+		case 6: dmisc7 = value; break;
+		case 7: dmisc8 = value; break;
+		case 8: dmisc9 = value; break;
+		case 9: dmisc10 = value; break;
+		case 10: dmisc11 = value; break;
+		case 11: dmisc12 = value; break;
+		case 12: dmisc13 = value; break;
+		case 13: dmisc14 = value; break;
+		case 14: dmisc15 = value; break;
+		case 15: dmisc16 = value; break;
+		case 16: dmisc17 = value; break;
+		case 17: dmisc18 = value; break;
+		case 18: dmisc19 = value; break;
+		case 19: dmisc20 = value; break;
+		case 20: dmisc21 = value; break;
+		case 21: dmisc22 = value; break;
+		case 22: dmisc23 = value; break;
+		case 23: dmisc24 = value; break;
+		case 24: dmisc25 = value; break;
+		case 25: dmisc26 = value; break;
+		case 26: dmisc27 = value; break;
+		case 27: dmisc28 = value; break;
+		case 28: dmisc28 = value; break;
+		case 29: dmisc30 = value; break;
+		case 30: dmisc31 = value; break;
+		case 31: dmisc32 = value; break;
+	}
+}

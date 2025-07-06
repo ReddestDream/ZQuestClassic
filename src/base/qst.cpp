@@ -3458,6 +3458,9 @@ int32_t readrules(PACKFILE *f, zquestheader *Header)
 	if (compatrule_version < 80)
 		set_qr(qr_ZS_OLD_SUSPEND_FFC, 1);
 
+	if (tempheader.version_major >= 3 || tempheader.compareVer(2, 55, 6) < 0)
+		set_qr(qr_ROPE_ENEMIES_SPEED_NOT_CONFIGURABLE, 1);
+
 	set_qr(qr_ANIMATECUSTOMWEAPONS,0);
 	if (s_version < 16)
 		set_qr(qr_BROKEN_HORIZONTAL_WEAPON_ANIM,1);
@@ -4228,10 +4231,10 @@ int32_t count_dmaps()
                 (DMaps[i].intro[0]!=0)||(DMaps[i].tmusic[0]!=0))
             found=true;
             
-        if((DMaps[i].minimap_1_tile!=0)||(DMaps[i].minimap_2_tile!=0)||
-                (DMaps[i].largemap_1_tile!=0)||(DMaps[i].largemap_2_tile!=0)||
-                (DMaps[i].minimap_1_cset!=0)||(DMaps[i].minimap_2_cset!=0)||
-                (DMaps[i].largemap_1_cset!=0)||(DMaps[i].largemap_2_cset!=0))
+        if((DMaps[i].minimap_tile[0]!=0)||(DMaps[i].minimap_tile[1]!=0)||
+                (DMaps[i].largemap_tile[0]!=0)||(DMaps[i].largemap_tile[1]!=0)||
+                (DMaps[i].minimap_cset[0]!=0)||(DMaps[i].minimap_cset[1]!=0)||
+                (DMaps[i].largemap_cset[0]!=0)||(DMaps[i].largemap_cset[1]!=0))
             found=true;
             
         if(!found)
@@ -4608,20 +4611,20 @@ int32_t readdmaps(PACKFILE *f, zquestheader *Header, word, word, word start_dmap
 			}
 			if ( s_version >= 11 )
 			{
-				if(!p_igetl(&tempDMap.minimap_1_tile,f))
+				if(!p_igetl(&tempDMap.minimap_tile[0],f))
 				{
 					return qe_invalid;
 				}
 			}
 			else
 			{
-				if(!p_igetw(&tempDMap.minimap_1_tile,f))
+				if(!p_igetw(&tempDMap.minimap_tile[0],f))
 				{
 					return qe_invalid;
 				}
 			}
 			
-			if(!p_getc(&tempDMap.minimap_1_cset,f))
+			if(!p_getc(&tempDMap.minimap_cset[0],f))
 			{
 				return qe_invalid;
 			}
@@ -4636,19 +4639,19 @@ int32_t readdmaps(PACKFILE *f, zquestheader *Header, word, word, word start_dmap
 			
 			if ( s_version >= 11 )
 			{
-				if(!p_igetl(&tempDMap.minimap_2_tile,f))
+				if(!p_igetl(&tempDMap.minimap_tile[1],f))
 				{
 					return qe_invalid;
 				}
 			}
 			else
 			{
-				if(!p_igetw(&tempDMap.minimap_2_tile,f))
+				if(!p_igetw(&tempDMap.minimap_tile[1],f))
 				{
 					return qe_invalid;
 				}
 			}
-			if(!p_getc(&tempDMap.minimap_2_cset,f))
+			if(!p_getc(&tempDMap.minimap_cset[1],f))
 			{
 				return qe_invalid;
 			}
@@ -4663,20 +4666,20 @@ int32_t readdmaps(PACKFILE *f, zquestheader *Header, word, word, word start_dmap
 			
 			if ( s_version >= 11 )
 			{
-				if(!p_igetl(&tempDMap.largemap_1_tile,f))
+				if(!p_igetl(&tempDMap.largemap_tile[0],f))
 				{
 					return qe_invalid;
 				}
 			}
 			else
 			{
-				if(!p_igetw(&tempDMap.largemap_1_tile,f))
+				if(!p_igetw(&tempDMap.largemap_tile[0],f))
 				{
 					return qe_invalid;
 				}
 			}
 			
-			if(!p_getc(&tempDMap.largemap_1_cset,f))
+			if(!p_getc(&tempDMap.largemap_cset[0],f))
 			{
 				return qe_invalid;
 			}
@@ -4692,19 +4695,19 @@ int32_t readdmaps(PACKFILE *f, zquestheader *Header, word, word, word start_dmap
 			
 			if ( s_version >= 11 )
 			{
-				if(!p_igetl(&tempDMap.largemap_2_tile,f))
+				if(!p_igetl(&tempDMap.largemap_tile[1],f))
 				{
 					return qe_invalid;
 				}
 			}
 			else
 			{
-				if(!p_igetw(&tempDMap.largemap_2_tile,f))
+				if(!p_igetw(&tempDMap.largemap_tile[1],f))
 				{
 					return qe_invalid;
 				}
 			}
-			if(!p_getc(&tempDMap.largemap_2_cset,f))
+			if(!p_getc(&tempDMap.largemap_cset[1],f))
 			{
 				return qe_invalid;
 			}
@@ -6958,6 +6961,32 @@ int32_t readitems(PACKFILE *f, word version, word build)
 				return qe_invalid;
 			if(!p_igetw(&tempitem.pickup_litem_level,f))
 				return qe_invalid;
+		}
+		
+		if ( s_version >= 62 )
+		{
+			if (!p_igetl(&tempitem.moveflags, f))
+				return qe_invalid;
+			if (!p_igetl(&tempitem.wmoveflags, f))
+				return qe_invalid;
+		}
+		else
+		{
+			tempitem.moveflags = (move_obeys_grav | move_can_pitfall);
+			switch(tempitem.family)
+			{
+				case itype_bomb:
+				case itype_sbomb:
+				case itype_bait:
+				case itype_liftglove:
+				case itype_candle:
+				case itype_book:
+					tempitem.wmoveflags = (move_obeys_grav | move_can_pitfall);
+					break;
+				default:
+					tempitem.wmoveflags = move_none;
+					break;
+			}
 		}
         
 		if (!should_skip)
@@ -11939,6 +11968,8 @@ extern script_data *subscreenscripts[NUMSCRIPTSSUBSCREEN];
 
 static std::vector<const script_data*> read_scripts;
 
+static script_data fake_script_data(ScriptType::None, 0);
+
 int32_t readffscript(PACKFILE *f, zquestheader *Header)
 {
 	int32_t dummy;
@@ -12033,17 +12064,15 @@ int32_t readffscript(PACKFILE *f, zquestheader *Header)
 			}
 		}
 		
-		script_data *fake = new script_data(ScriptType::None, 0);
 		for(int32_t i = 0; i < NUMSCRIPTWEAPONS; i++)
 		{
-			ret = read_one_ffscript(f, Header, i, s_version, fake, zmeta_version);
+			ret = read_one_ffscript(f, Header, i, s_version, &fake_script_data, zmeta_version);
 			
 			if (ret)
 			{
 				return qe_invalid;
 			}
 		}
-		delete fake;
 	
 		for(int32_t i = 0; i < NUMSCRIPTSCREEN; i++)
 		{
@@ -12939,6 +12968,9 @@ int32_t read_one_ffscript(PACKFILE *f, zquestheader *, int32_t script_index, wor
 	if(!p_igetl(&script->end_pc, f))
 		return qe_invalid;
 
+	if (script == &fake_script_data)
+		return 0;
+
 	assert(zasm_scripts.size() == 1);
 	auto& zs = zasm_scripts[0];
 	script->zasm_script = zs;
@@ -13206,6 +13238,9 @@ int32_t read_old_ffscript(PACKFILE *f, int32_t script_index, word s_version, scr
 			}
 		}
 	}
+	
+	if (script == &fake_script_data)
+		return 0;
 
 	// If the first command is unknown, invalidate the whole thing.
 	// Saw this for https://www.purezc.net/index.php?page=quests&id=411 hero script 0
@@ -17405,7 +17440,7 @@ void update_combo(newcombo& cmb, word section_version)
 int32_t readcombos_old(word section_version, PACKFILE *f, zquestheader *, word version, word build, word start_combo, word max_combos)
 {
 	bool should_skip = legacy_skip_flags && get_bit(legacy_skip_flags, skip_combos);
-
+	byte tempbyte;
 	if (!should_skip)
 	{
 		reset_all_combo_animations();
@@ -17573,8 +17608,9 @@ int32_t readcombos_old(word section_version, PACKFILE *f, zquestheader *, word v
 			{
 				if(!p_getc(&temp_trigger.triggeritem,f))
 					return qe_invalid;
-				if(!p_getc(&temp_trigger.trigtimer,f))
+				if(!p_getc(&tempbyte, f))
 					return qe_invalid;
+				temp_trigger.trigtimer = tempbyte;
 			}
 			if(section_version >= 25)
 				if(!p_getc(&temp_trigger.trigsfx,f))
@@ -17587,8 +17623,9 @@ int32_t readcombos_old(word section_version, PACKFILE *f, zquestheader *, word v
 			{
 				if(!p_igetw(&temp_trigger.trigprox,f))
 					return qe_invalid;
-				if(!p_getc(&temp_trigger.trigctr,f))
+				if(!p_getc(&tempbyte,f))
 					return qe_invalid;
+				temp_trigger.trigctr = tempbyte;
 				if(!p_igetl(&temp_trigger.trigctramnt,f))
 					return qe_invalid;
 			}
@@ -17909,6 +17946,7 @@ int32_t readcombos_old(word section_version, PACKFILE *f, zquestheader *, word v
 
 int32_t readcombo_triggers_loop(PACKFILE* f, word s_version, combo_trigger& temp_trigger)
 {
+	byte tempbyte;
 	if(s_version >= 52)
 		if(!p_getcstr(&temp_trigger.label,f))
 			return qe_invalid;
@@ -17923,16 +17961,34 @@ int32_t readcombo_triggers_loop(PACKFILE* f, word s_version, combo_trigger& temp
 		return qe_invalid;
 	if(!p_getc(&temp_trigger.triggeritem,f))
 		return qe_invalid;
-	if(!p_getc(&temp_trigger.trigtimer,f))
-		return qe_invalid;
+	if(s_version >= 53)
+	{
+		if(!p_igetw(&temp_trigger.trigtimer,f))
+			return qe_invalid;
+	}
+	else
+	{
+		if(!p_getc(&tempbyte, f))
+			return qe_invalid;
+		temp_trigger.trigtimer = tempbyte;
+	}
 	if(!p_getc(&temp_trigger.trigsfx,f))
 		return qe_invalid;
 	if(!p_igetl(&temp_trigger.trigchange,f))
 		return qe_invalid;
 	if(!p_igetw(&temp_trigger.trigprox,f))
 		return qe_invalid;
-	if(!p_getc(&temp_trigger.trigctr,f))
-		return qe_invalid;
+	if(s_version >= 53)
+	{
+		if(!p_igetw(&temp_trigger.trigctr,f))
+			return qe_invalid;
+	}
+	else
+	{
+		if(!p_getc(&tempbyte,f))
+			return qe_invalid;
+		temp_trigger.trigctr = tempbyte;
+	}
 	if(!p_igetl(&temp_trigger.trigctramnt,f))
 		return qe_invalid;
 	if(!p_getc(&temp_trigger.triglbeam,f))
@@ -18037,6 +18093,34 @@ int32_t readcombo_triggers_loop(PACKFILE* f, word s_version, combo_trigger& temp
 	{
 		if (!p_igetw(&temp_trigger.trig_shieldjinxtime, f))
 			return qe_invalid;
+	}
+	if(s_version >= 53)
+	{
+		if(!p_igetl(&temp_trigger.req_level_state, f))
+			return qe_invalid;
+		if(!p_igetl(&temp_trigger.unreq_level_state, f))
+			return qe_invalid;
+		if(!p_getbitstr(&temp_trigger.req_global_state, f))
+			return qe_invalid;
+		if(!p_getbitstr(&temp_trigger.unreq_global_state, f))
+			return qe_invalid;
+		if(!p_igetw(&temp_trigger.fail_prompt_cid,f))
+			return qe_invalid;
+		if(!p_getc(&temp_trigger.fail_prompt_cs,f))
+			return qe_invalid;
+		if(!p_igetl(&temp_trigger.trig_msgstr, f))
+			return qe_invalid;
+		if(!p_igetl(&temp_trigger.fail_msgstr, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.player_bounce, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.req_player_z, f))
+			return qe_invalid;
+	}
+	else
+	{
+		temp_trigger.fail_prompt_cid = temp_trigger.prompt_cid;
+		temp_trigger.fail_prompt_cs = temp_trigger.prompt_cs;
 	}
 	return 0;
 }

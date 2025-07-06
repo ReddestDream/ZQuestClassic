@@ -781,7 +781,6 @@ weapon::weapon(weapon const & other):
     isLWeapon(other.isLWeapon),
 	linkedItem(other.linkedItem),
 	//weaponscript(other.weaponscript),
-	parent_uid(other.parent_uid), //Theoretical: Should the parent remain the same, or change to the weapon that spawned the copy?
 	//If the cloned weapon is not getting an incremented UID for ZASM, then it needs one below.
 	weapon_dying_frame(other.weapon_dying_frame),
 	weap_timeout(other.weap_timeout),
@@ -1028,6 +1027,7 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 	screen_spawned=get_screen_for_world_xy(x.getInt(), y.getInt());
 	id=Id;
 	type=Type;
+	isolated_freeze_viewport = true;
 	power=pow;
 	parentitem=Parentitem;
 	parentid=prntid;
@@ -1054,7 +1054,6 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 	quantity_iterator = 0;
 	weapon_dying_frame = false;
 	weap_timeout = 0;
-	parent_uid = 0;
 	unblockable = 0;
 	misc_wflags = WFLAG_NONE;
 	last_burnstate = 0;
@@ -1101,7 +1100,7 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 	{
 		enemy *s = (enemy *)guys.getByUID(prntid);
 		weaponscript = guysbuf[s->id & 0xFFF].weaponscript;
-		parent_uid = s->getUID();
+		setParent(s);
 		for ( int32_t q = 0; q < 8; q++ )
 		{
 			weap_initd[q] = guysbuf[s->id & 0xFFF].weap_initiald[q];
@@ -1176,6 +1175,18 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 		case wBait:
 		case wThrown:
 			moveflags |= move_obeys_grav | move_can_pitfall;
+	}
+	if(parentitem >= 0)
+	{
+		switch(id)
+		{
+			case wSword: case wHammer: case wBugNet: case wWand: case wBomb: case wSBomb: case wWhistle:
+			case wCatching: case wHookshot: case wHSHandle: case wHSChain: case wSSparkle: case wFSparkle:
+			case wSmack: case wPhantom: case wStomp:
+				break; // melee or special cases, leave flags as they are
+			default:
+				moveflags = parent.wmoveflags;
+		}
 	}
 	
 	switch(id) //flags
@@ -3654,6 +3665,13 @@ void weapon::limited_animate()
 }
 bool weapon::animate(int32_t index)
 {
+	if(weapon_start_frame)
+	{
+		if(get_qr(qr_WEAPONS_EXTRA_SPAWN_FRAME))
+			if(runscript_do_earlyret(run_script(MODE_NORMAL)))
+				return 0;
+		weapon_start_frame = false;
+	}
 	if(dead != 0) weapon_dying_frame = false; //reset dying frame if weapon revived
 	if(switch_hooked)
 	{
@@ -3673,7 +3691,7 @@ bool weapon::animate(int32_t index)
 		if(fallclk == PITFALL_FALL_FRAMES && fallCombo) sfx(combobuf[fallCombo].attribytes[0], pan(x.getInt()));
 		if(!--fallclk)
 		{
-			if(!weapon_dying_frame && get_qr(qr_WEAPONS_EXTRA_FRAME))
+			if(!weapon_dying_frame && get_qr(qr_WEAPONS_EXTRA_DEATH_FRAME))
 			{
 				if(id==wSword || id==wBrang)
 				{
@@ -3711,7 +3729,7 @@ bool weapon::animate(int32_t index)
 		//!TODO: Drown SFX
 		if(!--drownclk)
 		{
-			if(!weapon_dying_frame && get_qr(qr_WEAPONS_EXTRA_FRAME))
+			if(!weapon_dying_frame && get_qr(qr_WEAPONS_EXTRA_DEATH_FRAME))
 			{
 				if(id==wSword || id==wBrang)
 				{
@@ -6609,7 +6627,7 @@ bool weapon::animate(int32_t index)
 				if(dead>0)
 					--dead;
 				
-				if(dead == 0 && !weapon_dying_frame && get_qr(qr_WEAPONS_EXTRA_FRAME))
+				if(dead == 0 && !weapon_dying_frame && get_qr(qr_WEAPONS_EXTRA_DEATH_FRAME))
 				{
 					weapon_dying_frame = true;
 					return false;
@@ -6917,7 +6935,7 @@ bool weapon::animate(int32_t index)
 	}
 	
 	bool ret = dead==0;
-	if(ret && !weapon_dying_frame && get_qr(qr_WEAPONS_EXTRA_FRAME))
+	if(ret && !weapon_dying_frame && get_qr(qr_WEAPONS_EXTRA_DEATH_FRAME))
 	{
 		if(id!=wSword)
 		{

@@ -426,8 +426,8 @@ int get_screen_for_world_xy(int x, int y)
 	if (!is_in_scrolling_region())
 		return cur_screen;
 
-	int dx = vbound(x, 0, world_w - 1) / 256;
-	int dy = vbound(y, 0, world_h - 1) / 176;
+	int dx = std::clamp(x, 0, world_w - 1) / 256;
+	int dy = std::clamp(y, 0, world_h - 1) / 176;
 	int origin_screen_x = cur_screen % 16;
 	int origin_screen_y = cur_screen / 16;
 	int scr_x = origin_screen_x + dx;
@@ -455,8 +455,13 @@ rpos_handle_t get_rpos_handle(rpos_t rpos, int layer)
 	return {scr, screen, layer, rpos, RPOS_TO_POS(rpos)};
 }
 
+// x, y are world coordinates (aka, in relation to origin screen at the top-left).
+// Coordinates are clamped to the world bounds.
 rpos_handle_t get_rpos_handle_for_world_xy(int x, int y, int layer)
 {
+	x = std::clamp(x, 0, world_w - 1);
+    y = std::clamp(y, 0, world_h - 1);
+
 	DCHECK_LAYER_ZERO_INDEX(layer);
 	if (!is_in_scrolling_region())
 	{
@@ -488,9 +493,14 @@ void change_rpos_handle_layer(rpos_handle_t& rpos_handle, int layer)
 	rpos_handle.scr = get_scr_layer(rpos_handle.screen, layer);
 }
 
+// x, y are world coordinates (aka, in relation to origin screen at the top-left).
+// Coordinates are clamped to the world bounds.
 combined_handle_t get_combined_handle_for_world_xy(int x, int y, int layer)
 {
 	DCHECK_LAYER_ZERO_INDEX(layer);
+
+	x = std::clamp(x, 0, world_w - 1);
+    y = std::clamp(y, 0, world_h - 1);
 
 	auto maybe_ffc_handle = getFFCAt(x, y);
 	if (maybe_ffc_handle)
@@ -1171,15 +1181,35 @@ static void apply_state_changes_to_screen(mapscr& scr, int32_t map, int32_t scre
 	clear_xstatecombos_mi(screen_handles, mi);
 	
 	for_every_combo_in_screen(screen_handles, [&](const auto& handle) {
+		// This is duplicated 3 places... can this be reduced?
 		auto cid = handle.data();
-		auto& cmb = handle.combo();	
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
+		auto* cmb = &handle.combo();
+		bool done = false;
+		std::set<int32_t> visited;
+		while(!done)
 		{
-			auto& trig = cmb.triggers[idx];
-			if (trig.triggerflags[4] & combotriggerSCREENLOAD)
+			if(visited.contains(cid))
 			{
-				do_trigger_combo(handle, idx);
-				if(handle.data() != cid) break;
+				Z_error("Combo '%d' was part of an infinite trigger loop, breaking out of loop", cid);
+				break; // prevent infinite loop
+			}
+			visited.insert(cid);
+			
+			done = true; // don't loop again unless something changes
+			for(size_t idx = 0; idx < cmb->triggers.size(); ++idx)
+			{
+				auto& trig = cmb->triggers[idx];
+				if (trig.triggerflags[4] & combotriggerSCREENLOAD)
+					do_trigger_combo(handle, idx);
+				else continue; // can skip checking handle.data()
+				
+				if(handle.data() != cid)
+				{
+					cid = handle.data();
+					cmb = &handle.combo();
+					done = false; // loop again for the new combo
+					break;
+				}
 			}
 		}
 	});
@@ -1662,19 +1692,19 @@ void set_doorstate(uint screen, uint dir)
 	set_doorstate_mi(mi, dir);
 }
 
-void set_xdoorstate_mi(uint mi, uint dir, uint ind)
+void set_xdoorstate_mi(uint mi, uint dir, uint ind, bool state)
 {
 	if(mi >= game->xdoors.size() || dir >= 4 || ind >= 8)
 		return;
-	setxdoor_mi(mi, dir, ind, true);
+	setxdoor_mi(mi, dir, ind, state);
 	if(auto di = nextscr_mi(mi, dir))
-		setxdoor_mi(*di, oppositeDir[dir], ind);
+		setxdoor_mi(*di, oppositeDir[dir], ind, state);
 }
 
-void set_xdoorstate(int32_t screen,uint dir, uint ind)
+void set_xdoorstate(int32_t screen,uint dir, uint ind, bool state)
 {
 	int mi = mapind(cur_map, screen);
-	set_xdoorstate_mi(mi, dir, ind);
+	set_xdoorstate_mi(mi, dir, ind, state);
 }
 
 int32_t WARPCODE(int32_t dmap,int32_t screen,int32_t dw)
@@ -5870,15 +5900,35 @@ static void load_a_screen_and_layers_post(int dmap, int screen, int ldir)
 		clear_xdoors_mi(screen_handles, mi, true);
 		clear_xstatecombos_mi(screen_handles, mi, true);
 		for_every_combo_in_screen(screen_handles, [&](const auto& handle) {
+			// This is duplicated 3 places... can this be reduced?
 			auto cid = handle.data();
-			auto& cmb = handle.combo();	
-			for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
+			auto* cmb = &handle.combo();
+			bool done = false;
+			std::set<int32_t> visited;
+			while(!done)
 			{
-				auto& trig = cmb.triggers[idx];
-				if (trig.triggerflags[4] & combotriggerSCREENLOAD)
+				if(visited.contains(cid))
 				{
-					do_trigger_combo(handle, idx);
-					if(handle.data() != cid) break;
+					Z_error("Combo '%d' was part of an infinite trigger loop, breaking out of loop", cid);
+					break; // prevent infinite loop
+				}
+				visited.insert(cid);
+				
+				done = true; // don't loop again unless something changes
+				for(size_t idx = 0; idx < cmb->triggers.size(); ++idx)
+				{
+					auto& trig = cmb->triggers[idx];
+					if (trig.triggerflags[4] & combotriggerSCREENLOAD)
+						do_trigger_combo(handle, idx);
+					else continue; // can skip checking handle.data()
+					
+					if(handle.data() != cid)
+					{
+						cid = handle.data();
+						cmb = &handle.combo();
+						done = false; // loop again for the new combo
+						break;
+					}
 				}
 			}
 		});
@@ -6084,10 +6134,10 @@ void loadscr(int32_t destdmap, int32_t screen, int32_t ldir, bool origin_screen_
 	hero_screen = screen;
 
 	cpos_clear_all();
-	FFCore.clear_script_engine_data_of_type(ScriptType::Screen);
-	FFCore.clear_combo_scripts();
 	FFCore.deallocateAllScriptOwnedOfType(ScriptType::Screen);
 	FFCore.deallocateAllScriptOwnedOfType(ScriptType::Combo);
+	FFCore.clear_script_engine_data_of_type(ScriptType::Screen);
+	FFCore.clear_combo_scripts();
 
 	if (is_in_scrolling_region())
 	{
@@ -6328,15 +6378,35 @@ void loadscr_old(int32_t destdmap, int32_t screen,int32_t ldir,bool overlay)
 	clear_xstatecombos(screen_handles, true);
 	
 	for_every_combo_in_screen(screen_handles, [&](const auto& handle) {
+		// This is duplicated 3 places... can this be reduced?
 		auto cid = handle.data();
-		auto& cmb = handle.combo();	
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
+		auto* cmb = &handle.combo();
+		bool done = false;
+		std::set<int32_t> visited;
+		while(!done)
 		{
-			auto& trig = cmb.triggers[idx];
-			if (trig.triggerflags[4] & combotriggerSCREENLOAD)
+			if(visited.contains(cid))
 			{
-				do_trigger_combo(handle, idx);
-				if(handle.data() != cid) break;
+				Z_error("Combo '%d' was part of an infinite trigger loop, breaking out of loop", cid);
+				break; // prevent infinite loop
+			}
+			visited.insert(cid);
+			
+			done = true; // don't loop again unless something changes
+			for(size_t idx = 0; idx < cmb->triggers.size(); ++idx)
+			{
+				auto& trig = cmb->triggers[idx];
+				if (trig.triggerflags[4] & combotriggerSCREENLOAD)
+					do_trigger_combo(handle, idx);
+				else continue; // can skip checking handle.data()
+				
+				if(handle.data() != cid)
+				{
+					cid = handle.data();
+					cmb = &handle.combo();
+					done = false; // loop again for the new combo
+					break;
+				}
 			}
 		}
 	});

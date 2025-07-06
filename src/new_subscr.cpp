@@ -279,7 +279,7 @@ word get_ssc_ctrmax(int ctr)
 		return game->get_maxcounter(ctr);
 	return zc_min(65535,ret);
 }
-word get_ssc_ctr(int ctr, bool* infptr = nullptr)
+word get_ssc_ctr(int ctr, bool* infptr)
 {
 	ctr = simplify_counter(ctr);
 	if(ctr == crNONE)
@@ -357,6 +357,108 @@ word get_ssc_ctr(int ctr, bool* infptr = nullptr)
 	if(ctr > -1)
 		return inf ? game->get_maxcounter(ctr) : game->get_counter(ctr);
 	return inf ? 65535 : zc_min(65535,ret);
+}
+void modify_ssc_ctr(int ctr, int amnt)
+{
+	ctr = simplify_counter(ctr);
+	if(ctr == crNONE)
+		return;
+	bool inf = false;
+	
+	switch(ctr)
+	{
+		case crMONEY:
+			if(current_item_power(itype_wallet))
+				inf = true;
+			break;
+		case crBOMBS:
+			if(current_item_power(itype_bombbag))
+				inf = true;
+			break;
+		case crSBOMBS:
+		{
+			int32_t itemid = get_subscr_item_id(itype_bombbag, true);
+			if(itemid>-1 && itemsbuf[itemid].power>0 && itemsbuf[itemid].flags & item_flag1)
+				inf = true;
+			break;
+		}
+		case crARROWS:
+			if(current_item_power(itype_quiver))
+				inf = true;
+			if(!get_qr(qr_TRUEARROWS))
+			{
+				if(current_item_power(itype_wallet))
+					inf = true;
+				ctr = crMONEY;
+			}
+			break;
+		
+		case sscMAXHP:
+		{
+			game->change_maxlife(amnt);
+			break;
+		}
+		case sscMAXMP:
+		{
+			game->change_maxmagic(amnt);
+			break;
+		}
+		case sscGENKEYMAGIC:
+		case sscLEVKEYMAGIC:
+		case sscANYKEYMAGIC:
+		{
+			int32_t itemid = get_subscr_item_id(itype_magickey, true);
+			if(itemid>-1)
+			{
+				if(itemsbuf[itemid].flags&item_flag1)
+					inf = itemsbuf[itemid].power>=get_dlevel();
+				else
+					inf = itemsbuf[itemid].power==get_dlevel();
+			}
+		}
+		[[fallthrough]];
+		case sscANYKEYNOMAGIC:
+		case sscLEVKEYNOMAGIC:
+		case sscGENKEYNOMAGIC:
+			if(inf && amnt < 0) return;
+				
+			if(ctr == sscLEVKEYNOMAGIC || ctr == sscANYKEYNOMAGIC
+				|| ctr == sscLEVKEYMAGIC || ctr == sscANYKEYMAGIC)
+			{
+				if(amnt > 0 || -amnt < game->lvlkeys[dlevel])
+				{
+					game->lvlkeys[dlevel] += amnt;
+					amnt = 0;
+					break; // modification fulfilled
+				}
+				else
+				{
+					amnt += game->lvlkeys[dlevel];
+					game->lvlkeys[dlevel] = 0;
+					// fallthrough to general keys
+				}
+			}
+			
+			if(ctr == sscGENKEYNOMAGIC || ctr == sscANYKEYNOMAGIC
+				|| ctr == sscGENKEYMAGIC || ctr == sscANYKEYMAGIC)
+			{
+				if(amnt > 0 || -amnt < game->get_keys())
+				{
+					game->change_keys(amnt);
+					amnt = 0;
+				}
+				else
+				{
+					amnt += game->get_keys();
+					game->set_keys(0);
+				}
+			}
+				
+			break;
+	}
+	if(inf && amnt < 0) return;
+	if(ctr > -1)
+		game->change_counter(amnt, ctr);
 }
 void add_ssc_ctr(int ctr, bool& infinite, int32_t& value)
 {
@@ -3086,8 +3188,8 @@ void SW_MMap::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) c
 		case dmOVERW:
 		case dmBSOVERW:
 		{
-			int32_t maptile=(!get_qr(qr_BROKEN_OVERWORLD_MINIMAP) && has_item(itype_map, -1))?thedmap.minimap_2_tile:thedmap.minimap_1_tile;
-			int32_t mapcset=(!get_qr(qr_BROKEN_OVERWORLD_MINIMAP) && has_item(itype_map, -1))?thedmap.minimap_2_cset:thedmap.minimap_1_cset;
+			int32_t maptile=(!get_qr(qr_BROKEN_OVERWORLD_MINIMAP) && has_item(itype_map, -1))?thedmap.minimap_tile[1]:thedmap.minimap_tile[0];
+			int32_t mapcset=(!get_qr(qr_BROKEN_OVERWORLD_MINIMAP) && has_item(itype_map, -1))?thedmap.minimap_cset[1]:thedmap.minimap_cset[0];
 			//What a mess. The map drawing is based on a variable that can change states during a scrolling transition when warping. -Z
 			if(maptile)
 			{
@@ -3102,7 +3204,7 @@ void SW_MMap::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) c
 				rectfill(dest,tx+8,ty+8,tx+71,ty+39,c.overw_bg);
 			}
 			
-			if(!thedmap.minimap_1_tile && ((thedmap.type&dmfTYPE) == dmBSOVERW))
+			if(!thedmap.minimap_tile[0] && ((thedmap.type&dmfTYPE) == dmBSOVERW))
 			{
 				drawgrid(dest,tx+8,ty+8,c.bs_goal,c.bs_dk);
 			}
@@ -3112,8 +3214,8 @@ void SW_MMap::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) c
 		case dmDNGN:
 		case dmCAVE:
 		{
-			int32_t maptile=has_item(itype_map, -1)?thedmap.minimap_2_tile:thedmap.minimap_1_tile;
-			int32_t mapcset=has_item(itype_map, -1)?thedmap.minimap_2_cset:thedmap.minimap_1_cset;
+			int32_t maptile=has_item(itype_map, -1)?thedmap.minimap_tile[1]:thedmap.minimap_tile[0];
+			int32_t mapcset=has_item(itype_map, -1)?thedmap.minimap_cset[1]:thedmap.minimap_cset[0];
 			//What a mess. The map drawing is based on a variable that can change states during a scrolling transition when warping. -Z
 			if(maptile)
 			{
@@ -3128,7 +3230,7 @@ void SW_MMap::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) c
 				rectfill(dest,tx+8,ty+8,tx+71,ty+39,c.dngn_bg);
 			}
 			//Marking this as a possible area for the scrolling warp map bug reported by Lut. -Z
-			if(!thedmap.minimap_2_tile && has_item(itype_map, -1))
+			if(!thedmap.minimap_tile[1] && has_item(itype_map, -1))
 			{
 				if((thedmap.flags&dmfMINIMAPCOLORFIX) != 0)
 				{

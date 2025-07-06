@@ -23,6 +23,10 @@ extern bool subscr_itemless, subscr_pg_animating;
 void subscrpg_clear_animation();
 bool subscrpg_animate(byte from, byte to, SubscrTransition const& transition, ZCSubscreen& parent);
 
+word get_ssc_ctrmax(int ctr);
+word get_ssc_ctr(int ctr, bool* infptr = nullptr);
+void modify_ssc_ctr(int ctr, int amnt);
+
 enum
 {
 	CONDTY_NONE,
@@ -398,6 +402,9 @@ public:
 	static byte numFlags(byte type);
 	byte numFlags();
 };
+
+// Only exists to support `resolveScriptingObject` in src/zc/scripting/arrays.h.
+struct SubscrWidgetActive : SubscrWidget {};
 
 #define SUBSCR_2X2FR_TRANSP           SUBSCRFLAG_SPEC_01
 #define SUBSCR_2X2FR_OVERLAY          SUBSCRFLAG_SPEC_02
@@ -1178,5 +1185,9 @@ struct ZCSubscreen
 private:
 	bool wrap_pg(int& pg, bool nowrap);
 };
+
+// Only exists to support `resolveScriptingObject` in src/zc/scripting/arrays.h.
+struct ZCSubscreenActive : ZCSubscreen{};
+
 #endif
 

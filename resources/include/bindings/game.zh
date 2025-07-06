@@ -487,6 +487,11 @@ class Game {
 	// @zasm_var GAMESTANDALONE
 	internal bool Standalone;
 
+	// True if running in test mode ('Quest->Test' from the editor).
+	//
+	// @zasm_var DEBUGTESTING
+	internal const bool Testing;
+
 	// The last entrance point the [Hero] used, and will be reset to by some
 	// mechanics.
 	//
@@ -744,11 +749,11 @@ class Game {
 
 	// @deprecated Use [dmapdata::Offset] instead!
 	// @zasm_var DMAPOFFSET
-	internal int DMapOffset[];
+	internal const int DMapOffset[];
 
 	// @deprecated Use [dmapdata::Map] instead!
 	// @zasm_var DMAPMAP
-	internal int DMapMap[];
+	internal const int DMapMap[];
 
 	// @zasm_var SETGAMEOVERELEMENT
 	internal int GameOverScreen[];

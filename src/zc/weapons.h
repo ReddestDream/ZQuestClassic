@@ -107,7 +107,6 @@ public:
      int32_t wpn_misc_d[FFSCRIPT_MISC];
     //! End weapon editor. -Z
     
-    int32_t parent_uid;
     bool isHeroWeapon();
     bool isHeroMelee();
     //2.6 ZScript -Z
@@ -120,6 +119,7 @@ public:
     byte ScriptGenerated; //Used to permit creating HeroClass weapons, or other weapon types that the engine does not control.
     byte isLWeapon;
 	bool weapon_dying_frame; //a last_hurrah for weapons -Em
+	bool weapon_start_frame = true; //a ... first hurrah. Used for running scripts earlier on the first frame.
 	bool rundeath; //run death effects
 	int weap_timeout;
     byte specialinfo;

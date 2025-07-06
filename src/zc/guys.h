@@ -98,7 +98,6 @@ public:
 	word weaponscript;
 	int32_t weap_initiald[8];
 	byte stickclk;
-	int32_t parent_uid;
    
 	int32_t editorflags; //Enemy editor flags 1 to 16
 	
@@ -268,6 +267,10 @@ public:
 	bool IsBigAnim();
 	int32_t getFlashingCSet();
 	bool is_hitflickerframe(bool olddrawing);
+
+	int32_t get_dmisc(byte index);
+	void set_dmisc(byte index, int32_t value);
+
 	virtual int32_t run_script(int32_t mode);
 	virtual ALLEGRO_COLOR hitboxColor(byte opacity = 255) const;
 	virtual optional<ScriptType> get_scrtype() const {return ScriptType::NPC;}
@@ -767,7 +770,6 @@ public:
 	int32_t headtile;
 	int32_t flyingheadtile;
 	int32_t necktile;
-	sprite * parent; //parent Gleeok to whose neck this segment is attached
 	zfix xoffset, yoffset; //coords relative to the parent Gleeok
 	int32_t nxoffset[255], nyoffset[255]; //random "jiggling" of the next tiles
 	esGleeok(zfix X,zfix Y,int32_t Id,int32_t Clk, sprite * prnt);                   // : enemy(X,Y,Id,Clk)
@@ -804,7 +806,6 @@ public:
 	int32_t clk4, //Breath clock
 		clk5; //Firing clock
 	esPatra(zfix X,zfix Y,int32_t Id,int32_t Clk,sprite * prnt);                    // : enemy(X,Y,Id,Clk)
-	sprite * parent;
 	virtual bool animate(int32_t index);
 	virtual void draw(BITMAP *dest);
 };
@@ -832,7 +833,6 @@ public:
 	int32_t clk4, //Unused
 		clk5; //Firing clock
 	esPatraBS(zfix X,zfix Y,int32_t Id,int32_t Clk,sprite * prnt);                  // : enemy(X,Y,Id,Clk)
-	sprite * parent;
 	virtual bool animate(int32_t index);
 	virtual void draw(BITMAP *dest);
 };
@@ -867,8 +867,8 @@ int32_t getGuyIndex(const int32_t eid);
 void killfairynew(item const &itemfairy);
 int32_t addenemy(int32_t screen,int32_t x,int32_t y,int32_t id,int32_t clk);
 int32_t addenemy_z(int32_t screen, int32_t x,int32_t y,int32_t z,int32_t id,int32_t clk);
-int32_t addchild(int32_t screen, int32_t x,int32_t y,int32_t id,int32_t clk, int32_t parent_uid);
-int32_t addchild_z(int32_t screen, int32_t x,int32_t y,int32_t z,int32_t id,int32_t clk, int32_t parent_uid);
+int32_t addchild(int32_t screen, int32_t x,int32_t y,int32_t id,int32_t clk, sprite* parent);
+int32_t addchild_z(int32_t screen, int32_t x,int32_t y,int32_t z,int32_t id,int32_t clk, sprite* parent);
 bool isjumper(int32_t id);
 bool canfall(int32_t id);
 void addfires();

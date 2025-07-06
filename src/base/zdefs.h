@@ -146,12 +146,12 @@ enum {ENC_METHOD_192B104=0, ENC_METHOD_192B105, ENC_METHOD_192B185, ENC_METHOD_2
 #define V_STRINGS         10
 #define V_MISC            16
 #define V_TILES            3 //2 is a int32_t, max 214500 tiles (ZScript upper limit)
-#define V_COMBOS          52
+#define V_COMBOS          53
 #define V_CSETS            6 //palette data
 #define V_MAPS            33
 #define V_DMAPS           22
 #define V_DOORS            1
-#define V_ITEMS           61
+#define V_ITEMS           62
 #define V_WEAPONS          8
 #define V_COLORS           4 //Misc Colours
 #define V_ICONS            10 //Game Icons
@@ -1401,14 +1401,12 @@ public:
 	uint32_t ffcref;
 	int32_t idata;
 	dword itemref, guyref, lwpn, ewpn;
-	dword screenref, npcdataref, bitmapref, spriteref, spritedataref, dmapsref, zmsgref, shopsref, untypedref;
+	dword screenref, npcdataref, bitmapref, spriteref, spritedataref, dmapsref, zmsgref, shopsref;
 	DrawOrigin screen_draw_origin;
 	int32_t screen_draw_origin_target;
 	int32_t mapsref;
-	//to implement
-	dword dropsetref, pondref, warpringref, doorsref, zcoloursref, rgbref, paletteref, palcycleref, tunesref;
-	dword gamedataref, cheatsref; 
-	dword fileref, comboidref, directoryref, rngref, stackref, paldataref;
+	dword dropsetref;
+	dword fileref, directoryref, rngref, stackref, paldataref;
 	dword bottletyperef, bottleshopref, genericdataref;
 	int32_t combosref, comboposref;
 	dword combotrigref;
