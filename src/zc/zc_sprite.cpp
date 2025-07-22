@@ -93,7 +93,7 @@ void sprite::check_conveyor()
 	if(cmbid < 0) return;
 	newcombo const* cmb = &combobuf[cmbid];
 	bool custom_spd = (cmb->usrflags&cflag2);
-    if(((z==0&&fakez==0) || (hero_scr->flags2&fAIRCOMBOS)))
+    if(((z==0&&fakez==0) || (get_scr_for_world_xy(x, y)->flags2&fAIRCOMBOS)))
     {
         int32_t ctype=(combobuf[cmbid].type);
         deltax=combo_class_buf[ctype].conveyor_x_speed;
@@ -916,7 +916,7 @@ bool movingblock::animate(int32_t)
 						if (no_trig_replace)
 							for (auto lyr2 = 0; lyr2 <= maxLayer; ++lyr2)
 							{
-								mapscr* lyr2_scr = get_scr_for_rpos_layer(rpos_handle.rpos, lyr2 - 1);
+								mapscr* lyr2_scr = get_scr_for_rpos_layer(rpos_handle.rpos, lyr2);
 								if (is_push(lyr2_scr, rpos_handle.pos))
 								{
 									found = true;

@@ -1124,6 +1124,56 @@ int32_t MAPCOMBO2(int32_t layer, int32_t x, int32_t y)
 	return rpos_handle.data();
 }
 
+static void _handle_screen_load_trigger(const combined_handle_t& handle)
+{
+	auto cid = handle.data();
+	auto* cmb = &handle.combo();
+	bool done = false;
+	std::set<int32_t> visited;
+	while(!done)
+	{
+		if(visited.contains(cid))
+		{
+			Z_error("Combo '%d' was part of an infinite trigger loop, breaking out of loop", cid);
+			break; // prevent infinite loop
+		}
+		visited.insert(cid);
+		
+		done = true; // don't loop again unless something changes
+		for(size_t idx = 0; idx < cmb->triggers.size(); ++idx)
+		{
+			auto& trig = cmb->triggers[idx];
+			if (trig.triggerflags[4] & combotriggerSCREENLOAD)
+				do_trigger_combo(handle, idx);
+			else continue; // can skip checking handle.data()
+			
+			if(handle.data() != cid)
+			{
+				cid = handle.data();
+				cmb = &handle.combo();
+				done = false; // loop again for the new combo
+				break;
+			}
+		}
+	}
+}
+static void handle_screen_load_trigger(const screen_handles_t& screen_handles)
+{
+	for_every_combo_in_screen(screen_handles, _handle_screen_load_trigger);
+}
+void handle_region_load_trigger()
+{
+	if (is_in_scrolling_region())
+	{
+		for (int screen = 0; screen < 128; screen++)
+		{
+			if (is_in_current_region(screen))
+				handle_screen_load_trigger(create_screen_handles_one(get_scr(screen)));
+		}
+	}
+	else handle_screen_load_trigger(create_screen_handles_one(get_scr(hero_screen)));
+}
+
 static void apply_state_changes_to_screen(mapscr& scr, int32_t map, int32_t screen, int32_t flags, bool secrets_do_replay_comment)
 {
 	auto screen_handles = create_screen_handles_one(&scr);
@@ -1180,39 +1230,7 @@ static void apply_state_changes_to_screen(mapscr& scr, int32_t map, int32_t scre
 	clear_xdoors_mi(screen_handles, mi);
 	clear_xstatecombos_mi(screen_handles, mi);
 	
-	for_every_combo_in_screen(screen_handles, [&](const auto& handle) {
-		// This is duplicated 3 places... can this be reduced?
-		auto cid = handle.data();
-		auto* cmb = &handle.combo();
-		bool done = false;
-		std::set<int32_t> visited;
-		while(!done)
-		{
-			if(visited.contains(cid))
-			{
-				Z_error("Combo '%d' was part of an infinite trigger loop, breaking out of loop", cid);
-				break; // prevent infinite loop
-			}
-			visited.insert(cid);
-			
-			done = true; // don't loop again unless something changes
-			for(size_t idx = 0; idx < cmb->triggers.size(); ++idx)
-			{
-				auto& trig = cmb->triggers[idx];
-				if (trig.triggerflags[4] & combotriggerSCREENLOAD)
-					do_trigger_combo(handle, idx);
-				else continue; // can skip checking handle.data()
-				
-				if(handle.data() != cid)
-				{
-					cid = handle.data();
-					cmb = &handle.combo();
-					done = false; // loop again for the new combo
-					break;
-				}
-			}
-		}
-	});
+	handle_screen_load_trigger(screen_handles);
 }
 
 std::optional<mapscr> load_temp_mapscr_and_apply_secrets(int32_t map, int32_t screen, int32_t layer, bool secrets, bool secrets_do_replay_comment)
@@ -1905,15 +1923,15 @@ int32_t iswaterexzq(int32_t combo, int32_t map, int32_t screen, int32_t layer, i
 }
 
 // (x, y) are world coordinates
-int32_t iswaterex_z3(int32_t combo, int32_t layer, int32_t x, int32_t y, bool secrets, bool fullcheck, bool LayerCheck, bool ShallowCheck, bool hero)
+int32_t iswaterex_z3(int32_t combo, int32_t layer, int32_t x, int32_t y, bool secrets, bool fullcheck, bool LayerCheck, bool ShallowCheck, bool hero, optional<combined_handle_t>* out_handle)
 {
 	if (x<0 || x>=world_w || y<0 || y>=world_h)
 		return false;
 
-	return iswaterex(combo, cur_map, cur_screen, layer, x, y, secrets, fullcheck, LayerCheck, ShallowCheck, hero);
+	return iswaterex(combo, cur_map, cur_screen, layer, x, y, secrets, fullcheck, LayerCheck, ShallowCheck, hero, out_handle);
 }
 
-int32_t iswaterex(int32_t combo, int32_t map, int32_t screen, int32_t layer, int32_t x, int32_t y, bool secrets, bool fullcheck, bool LayerCheck, bool ShallowCheck, bool hero)
+int32_t iswaterex(int32_t combo, int32_t map, int32_t screen, int32_t layer, int32_t x, int32_t y, bool secrets, bool fullcheck, bool LayerCheck, bool ShallowCheck, bool hero, optional<combined_handle_t>* out_handle)
 {
 	DCHECK_LAYER_NEG1_INDEX(layer);
 	//Honestly, fullcheck is kinda useless... I made this function back when I thought it was checking the entire combo and not just a glorified x/y value.
@@ -1933,6 +1951,7 @@ int32_t iswaterex(int32_t combo, int32_t map, int32_t screen, int32_t layer, int
 					int32_t checkwater = iswaterex(combo, map, screen, m, x, y, secrets, fullcheck, false, ShallowCheck);
 					if (checkwater > 0) 
 					{
+						if(out_handle) *out_handle = get_rpos_handle_for_world_xy(x, y, m+1);
 						return checkwater;
 					}
 				}
@@ -2010,14 +2029,22 @@ int32_t iswaterex(int32_t combo, int32_t map, int32_t screen, int32_t layer, int
 
 						return false;
 					});
-					if (found_ffc_water) return found_ffc_water->data();
+					if (found_ffc_water)
+					{
+						if(out_handle) *out_handle = *found_ffc_water;
+						return found_ffc_water->data();
+					}
 				}
 
 				int32_t checkcombo = MAPCOMBO3(map, screen, layer, tx2, ty2, secrets);
 				if (!(combobuf[checkcombo].walk&(1<<(b+4)))) return 0;
 				if (iswater_type(combobuf[checkcombo].type)||(ShallowCheck && (combobuf[checkcombo].type == cSHALLOWWATER || (iswater_type(combobuf[checkcombo].type) && (combobuf[checkcombo].walk&(1<<b)) && (combobuf[checkcombo].usrflags&cflag4))))) 
 				{
-					if (i == 0) return checkcombo;
+					if (i == 0)
+					{
+						if(out_handle) *out_handle = get_rpos_handle_for_world_xy(tx2, ty2, layer+1);
+						return checkcombo;
+					}
 				}
 			}
 			return 0;
@@ -2036,7 +2063,12 @@ int32_t iswaterex(int32_t combo, int32_t map, int32_t screen, int32_t layer, int
 			}						
 		}
 		if (!(combobuf[combo].walk&(1<<(b+4)))) return 0;
-		return (((iswater_type(combobuf[combo].type) || (ShallowCheck && combobuf[combo].type == cSHALLOWWATER)) && !DRIEDLAKE)?combo:0);//These used to return booleans; returning the combo id of the water combo it caught is essential for Emily's proposed water changes.
+		if((iswater_type(combobuf[combo].type) || (ShallowCheck && combobuf[combo].type == cSHALLOWWATER)) && !DRIEDLAKE)
+		{
+			if(out_handle) *out_handle = get_rpos_handle_for_world_xy(x, y, 0); //NOTE: This is only correct assuming 'combo' is 'MAPCOMBO(x,y)'
+			return combo;
+		}
+		return 0;
 	}
 }
 
@@ -2124,6 +2156,42 @@ int32_t getpitfall(int32_t x, int32_t y) //Return the highest-layer active pit c
 	c = MAPCOMBO(x,y);
 	if(ispitfall(c)) return c;
 	return 0;
+}
+optional<combined_handle_t> get_pitfall_handle(int32_t x, int32_t y) //Return the highest-layer active pit combo handle at the given position
+{
+	if(int32_t c = MAPFFCOMBO(x,y))
+	{
+		return ispitfall(c) ? getFFCAt(x,y) : nullopt;
+	}
+	int32_t c = MAPCOMBOL(2,x,y);
+	if(ispitfall(c)) return get_rpos_handle_for_world_xy(x, y, 2);
+
+	if (get_qr(qr_OLD_BRIDGE_COMBOS))
+	{
+		if (combobuf[MAPCOMBO2(1,x,y)].type == cBRIDGE && !_walkflag_layer(x,y,1))
+			return nullopt;
+	}
+	else
+	{
+		if (combobuf[MAPCOMBO2(1,x,y)].type == cBRIDGE && _effectflag_layer(x,y,1))
+			return nullopt;
+	}
+	c = MAPCOMBOL(1,x,y);
+	if(ispitfall(c)) return get_rpos_handle_for_world_xy(x, y, 1);
+
+	if (get_qr(qr_OLD_BRIDGE_COMBOS))
+	{
+		if (combobuf[MAPCOMBO2(0,x,y)].type == cBRIDGE && !_walkflag_layer(x,y,0))
+			return nullopt;
+	}
+	else
+	{
+		if (combobuf[MAPCOMBO2(0,x,y)].type == cBRIDGE && _effectflag_layer(x,y,0))
+			return nullopt;
+	}
+	c = MAPCOMBO(x,y);
+	if(ispitfall(c)) return get_rpos_handle_for_world_xy(x, y, 0);
+	return nullopt;
 }
 bool check_icy(newcombo const& cmb, int type)
 {
@@ -2530,17 +2598,16 @@ bool remove_xdoors_mi(const screen_handles_t& screen_handles, int32_t mi, uint d
 
 void clear_xdoors(const screen_handles_t& screen_handles, bool triggers)
 {
-	mapscr* scr = screen_handles[0].scr;
-	int mi = mapind(cur_map, scr->screen >= 0x80 ? home_screen : scr->screen);
-	clear_xdoors_mi(screen_handles, mi, triggers);
+	int screen = screen_handles[0].screen;
+	int mi = mapind(cur_map, screen >= 0x80 ? home_screen : screen);
+	return clear_xdoors_mi(screen_handles, mi, triggers);
 }
 
 void clear_xdoors_mi(const screen_handles_t& screen_handles, int32_t mi, bool triggers)
 {
-	for (int q = 0; q < 32; ++q)
-	{
-		remove_xdoors(screen_handles, mi, q, triggers);
-	}
+	for (int dir = 0; dir < 4; ++dir)
+		for (int q = 0; q < 8; ++q)
+			remove_xdoors_mi(screen_handles, mi, dir, q, triggers);
 }
 
 bool remove_lockblocks(const screen_handles_t& screen_handles)
@@ -3534,9 +3601,12 @@ void bombdoor(int32_t x,int32_t y)
 void draw_cmb(BITMAP* dest, int32_t x, int32_t y, int32_t cid, int32_t cset,
 	bool over, bool transp)
 {
+	auto& cmb = combobuf[cid];
+	if(cmb.animflags & AF_EDITOR_ONLY)
+		return;
 	if(over)
 	{
-		if(combobuf[cid].animflags & AF_TRANSPARENT)
+		if(cmb.animflags & AF_TRANSPARENT)
 			transp = !transp;
 		if(transp)
 			overcombotranslucent(dest, x, y, cid, cset, 128);
@@ -5899,39 +5969,6 @@ static void load_a_screen_and_layers_post(int dmap, int screen, int ldir)
 		
 		clear_xdoors_mi(screen_handles, mi, true);
 		clear_xstatecombos_mi(screen_handles, mi, true);
-		for_every_combo_in_screen(screen_handles, [&](const auto& handle) {
-			// This is duplicated 3 places... can this be reduced?
-			auto cid = handle.data();
-			auto* cmb = &handle.combo();
-			bool done = false;
-			std::set<int32_t> visited;
-			while(!done)
-			{
-				if(visited.contains(cid))
-				{
-					Z_error("Combo '%d' was part of an infinite trigger loop, breaking out of loop", cid);
-					break; // prevent infinite loop
-				}
-				visited.insert(cid);
-				
-				done = true; // don't loop again unless something changes
-				for(size_t idx = 0; idx < cmb->triggers.size(); ++idx)
-				{
-					auto& trig = cmb->triggers[idx];
-					if (trig.triggerflags[4] & combotriggerSCREENLOAD)
-						do_trigger_combo(handle, idx);
-					else continue; // can skip checking handle.data()
-					
-					if(handle.data() != cid)
-					{
-						cid = handle.data();
-						cmb = &handle.combo();
-						done = false; // loop again for the new combo
-						break;
-					}
-				}
-			}
-		});
 	}
 
 	// check doors
@@ -6134,9 +6171,7 @@ void loadscr(int32_t destdmap, int32_t screen, int32_t ldir, bool origin_screen_
 	hero_screen = screen;
 
 	cpos_clear_all();
-	FFCore.deallocateAllScriptOwnedOfType(ScriptType::Screen);
-	FFCore.deallocateAllScriptOwnedOfType(ScriptType::Combo);
-	FFCore.clear_script_engine_data_of_type(ScriptType::Screen);
+	FFCore.destroyScriptableObjectsOfType(ScriptType::Screen);
 	FFCore.clear_combo_scripts();
 
 	if (is_in_scrolling_region())
@@ -6183,8 +6218,7 @@ void loadscr(int32_t destdmap, int32_t screen, int32_t ldir, bool origin_screen_
 
 	for (int index : loadscr_ffc_script_ids_to_remove)
 	{
-		FFCore.deallocateAllScriptOwned(ScriptType::FFC, index);
-		FFCore.reset_script_engine_data(ScriptType::FFC, index);
+		FFCore.destroyScriptableObject(ScriptType::FFC, index);
 	}
 
 	// "extended height mode" includes the top 56 pixels as part of the visible mapscr viewport,
@@ -6376,40 +6410,6 @@ void loadscr_old(int32_t destdmap, int32_t screen,int32_t ldir,bool overlay)
 	
 	clear_xdoors(screen_handles, true);
 	clear_xstatecombos(screen_handles, true);
-	
-	for_every_combo_in_screen(screen_handles, [&](const auto& handle) {
-		// This is duplicated 3 places... can this be reduced?
-		auto cid = handle.data();
-		auto* cmb = &handle.combo();
-		bool done = false;
-		std::set<int32_t> visited;
-		while(!done)
-		{
-			if(visited.contains(cid))
-			{
-				Z_error("Combo '%d' was part of an infinite trigger loop, breaking out of loop", cid);
-				break; // prevent infinite loop
-			}
-			visited.insert(cid);
-			
-			done = true; // don't loop again unless something changes
-			for(size_t idx = 0; idx < cmb->triggers.size(); ++idx)
-			{
-				auto& trig = cmb->triggers[idx];
-				if (trig.triggerflags[4] & combotriggerSCREENLOAD)
-					do_trigger_combo(handle, idx);
-				else continue; // can skip checking handle.data()
-				
-				if(handle.data() != cid)
-				{
-					cid = handle.data();
-					cmb = &handle.combo();
-					done = false; // loop again for the new combo
-					break;
-				}
-			}
-		}
-	});
 
 	// check doors
 	if (isdungeon(destdmap, screen))

@@ -248,6 +248,7 @@ int32_t FFORCOMBOTYPE(int32_t x, int32_t y);
 int32_t FFORCOMBO_L(int32_t layer, int32_t x, int32_t y);
 int32_t FFORCOMBOTYPE_L(int32_t layer, int32_t x, int32_t y);
 int32_t MAPCOMBO2(int32_t layer,int32_t x,int32_t y);
+void handle_region_load_trigger();
 std::optional<mapscr> load_temp_mapscr_and_apply_secrets(int32_t map, int32_t screen, int32_t layer, bool secrets, bool secrets_do_replay_comment = true);
 int32_t MAPCOMBO3(int32_t map, int32_t screen, int32_t layer, int32_t x, int32_t y, bool secrets = false);
 int32_t MAPCOMBO3(int32_t map, int32_t screen, int32_t layer, rpos_t rpos, bool secrets = false);
@@ -302,8 +303,8 @@ bool isSVLadder(int32_t x, int32_t y);
 bool isSVPlatform(int32_t x, int32_t y);
 bool checkSVLadderPlatform(int32_t x, int32_t y);
 bool iswater(int32_t combo);
-int32_t iswaterex_z3(int32_t combo, int32_t layer, int32_t x, int32_t y, bool secrets = true, bool fullcheck = false, bool LayerCheck = true, bool ShallowCheck = false, bool hero = true);
-int32_t iswaterex(int32_t combo, int32_t map, int32_t screen, int32_t layer, int32_t x, int32_t y, bool secrets = true, bool fullcheck = false, bool LayerCheck = true, bool ShallowCheck = false, bool hero = true);
+int32_t iswaterex_z3(int32_t combo, int32_t layer, int32_t x, int32_t y, bool secrets = true, bool fullcheck = false, bool LayerCheck = true, bool ShallowCheck = false, bool hero = true, optional<combined_handle_t>* out_handle = nullptr);
+int32_t iswaterex(int32_t combo, int32_t map, int32_t screen, int32_t layer, int32_t x, int32_t y, bool secrets = true, bool fullcheck = false, bool LayerCheck = true, bool ShallowCheck = false, bool hero = true, optional<combined_handle_t>* out_handle = nullptr);
 int32_t iswaterexzq(int32_t combo, int32_t map, int32_t screen, int32_t layer, int32_t x, int32_t y, bool secrets = true, bool fullcheck = false, bool LayerCheck = true);
 bool iswater_type(int32_t type);
 bool ispitfall(int32_t combo);
@@ -311,6 +312,7 @@ bool ispitfall_type(int32_t type);
 bool isdamage_type(int32_t type);
 bool ispitfall(int32_t x, int32_t y);
 int32_t getpitfall(int32_t x, int32_t y);
+optional<combined_handle_t> get_pitfall_handle(int32_t x, int32_t y);
 enum
 {
 	ICY_BLOCK,

@@ -440,13 +440,10 @@ enemy::enemy(zfix X,zfix Y,int32_t Id,int32_t Clk) : sprite()
 	for ( int32_t q = 0; q < 32; q++ ) new_weapon[q] = d->new_weapon[q];
 	
 	script = d->script;
-	weaponscript = d->weaponscript;
 	
 	for ( int32_t q = 0; q < 8; q++ ) 
 	{
 		initD[q] = d->initD[q];
-		//Z_scripterrlog("(enemy::enemy(zfix)): Loading weapon InitD[%d] to an enemy with a value of (%d)\n",q,d->weap_initiald[q]);
-		weap_initiald[q] = d->weap_initiald[q];
 	}
 	
 	stickclk = 0;
@@ -551,32 +548,14 @@ enemy::enemy(zfix X,zfix Y,int32_t Id,int32_t Clk) : sprite()
 	}
 
 	shieldCanBlock = get_qr(qr_GOHMA_UNDAMAGED_BUG)?true:false;
-
-	if (((d->weapoverrideFLAGS & OVERRIDE_TILE_WIDTH) != 0) && d->weap_tilew > 0) { weap_tilew = d->weap_tilew; if (weap_tilew > 1) extend = 3; }
-	if (((d->weapoverrideFLAGS & OVERRIDE_TILE_HEIGHT) != 0) && d->weap_tileh > 0) { weap_tileh = d->weap_tileh; if (weap_tileh > 1) extend = 3; }
-	if (((d->weapoverrideFLAGS & OVERRIDE_HIT_WIDTH) != 0) && d->weap_hxsz >= 0) weap_hxsz = d->weap_hxsz;
-	if (((d->weapoverrideFLAGS & OVERRIDE_HIT_HEIGHT) != 0) && d->weap_hysz >= 0) weap_hysz = d->weap_hysz;
-	if (((d->weapoverrideFLAGS & OVERRIDE_HIT_Z_HEIGHT) != 0) && d->weap_hzsz >= 0) weap_hzsz = d->weap_hzsz;
-	if ((d->weapoverrideFLAGS & OVERRIDE_HIT_X_OFFSET) != 0) weap_hxofs = d->weap_hxofs;
-	if ((d->weapoverrideFLAGS & OVERRIDE_HIT_Y_OFFSET) != 0) weap_hyofs = d->weap_hyofs;
-	if ((d->weapoverrideFLAGS & OVERRIDE_DRAW_X_OFFSET) != 0) weap_xofs = (int32_t)d->weap_xofs;
-	if ((d->weapoverrideFLAGS & OVERRIDE_DRAW_Y_OFFSET) != 0)
-	{
-		weap_yofs = (int32_t)d->weap_yofs; //This seems to be setting to +48 or something with any value set?! -Z
-		weap_yofs += (get_qr(qr_OLD_DRAWOFFSET) ? playing_field_offset : original_playing_field_offset); //this offset fixes yofs not plaing properly. -Z
-	}
-	weapoverrideFLAGS = d->weapoverrideFLAGS;
-	wunblockable = d->wunblockable;
-	wmoveflags = d->wmoveflags;
-	wstep = zslongToFix(d->wstep*100);
-	memcpy(burnsprs, d->burnsprs, sizeof(d->burnsprs));
-	memcpy(light_rads, d->light_rads, sizeof(d->light_rads));
+	
 	specialsfx = d->specialsfx;
+	weap_data = d->weap_data;
 }
 
 enemy::~enemy()
 {
-	FFCore.deallocateAllScriptOwned(ScriptType::NPC, getUID());
+	FFCore.destroyScriptableObject(ScriptType::NPC, getUID());
 	if(hashero)
 	{
 		Hero.setEaten(0);
@@ -1767,16 +1746,16 @@ void enemy::FireBreath(bool seekhero)
 	if (SIZEflags & OVERRIDE_HIT_WIDTH)
 	{
 		xoff += hxofs;
-		if (weapoverrideFLAGS & OVERRIDE_HIT_WIDTH)
-			xoff += (hit_width / 2) - (weap_tilew * 8);
+		if (weap_data.override_flags & OVERRIDE_HIT_WIDTH)
+			xoff += (hit_width / 2) - (weap_data.tilew * 8);
 		else
 			xoff += (hit_width / 2) - 8;
 	}
 	if (SIZEflags & OVERRIDE_HIT_HEIGHT)
 	{
 		yoff += hyofs;
-		if (weapoverrideFLAGS & OVERRIDE_HIT_HEIGHT)
-			yoff += (hit_height / 2) - (weap_tileh * 8);
+		if (weap_data.override_flags & OVERRIDE_HIT_HEIGHT)
+			yoff += (hit_height / 2) - (weap_data.tileh * 8);
 		else
 			yoff += (hit_height / 2) - 8;
 	}
@@ -1876,16 +1855,16 @@ void enemy::FireWeapon()
 	if (SIZEflags & OVERRIDE_HIT_WIDTH)
 	{
 		xoff += hxofs;
-		if (weapoverrideFLAGS & OVERRIDE_HIT_WIDTH)
-			xoff += (hit_width / 2) - (weap_tilew * 8);
+		if (weap_data.override_flags & OVERRIDE_HIT_WIDTH)
+			xoff += (hit_width / 2) - (weap_data.tilew * 8);
 		else
 			xoff += (hit_width / 2) - 8;
 	}
 	if (SIZEflags & OVERRIDE_HIT_HEIGHT)
 	{
 		yoff += hyofs;
-		if (weapoverrideFLAGS & OVERRIDE_HIT_HEIGHT)
-			yoff += (hit_height / 2) - (weap_tileh * 8);
+		if (weap_data.override_flags & OVERRIDE_HIT_HEIGHT)
+			yoff += (hit_height / 2) - (weap_data.tileh * 8);
 		else
 			yoff += (hit_height / 2) - 8;
 	}
@@ -3006,26 +2985,36 @@ int32_t enemy::defendNew(int32_t wpnId, int32_t *power, int32_t edef, byte unblo
 		}
 		
 		case edSTUNORCHINK:
-			if (stunclk && get_qr(qr_NO_STUNLOCK))
+			if(*power <= 0)
 			{
 				sfx(WAV_CHINK,pan(int32_t(x)));
 				return 1;
 			}
-			else if(*power <= 0)
+			if (stunclk)
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
-				return 1;
+				if(get_qr(qr_NO_STUNLOCK_IGNORE))
+					return 0;
+				if(get_qr(qr_NO_STUNLOCK_BLOCK))
+				{
+					sfx(WAV_CHINK,pan(int32_t(x)));
+					return 1;
+				}
 			}
 			[[fallthrough]];
 			
 		case edSTUNORIGNORE:
-			if (stunclk && get_qr(qr_NO_STUNLOCK))
-			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
-				return 1;
-			}
-			else if(*power <= 0)
+			if(*power <= 0)
 				return 0;
+			if (stunclk)
+			{
+				if(get_qr(qr_NO_STUNLOCK_IGNORE))
+					return 0;
+				if(get_qr(qr_NO_STUNLOCK_BLOCK))
+				{
+					sfx(WAV_CHINK,pan(int32_t(x)));
+					return 1;
+				}
+			}
 			[[fallthrough]];
 				
 		case edSTUNONLY:
@@ -3034,18 +3023,19 @@ int32_t enemy::defendNew(int32_t wpnId, int32_t *power, int32_t edef, byte unblo
 			   // Z_message("enemy::defend(), edSTUNONLY found a weapon of type FIRE, BOMB, SBOMB, HOOKSHOT, or SWORD:, with wpnId:  \n", wpnId);
 					return 1;
 			}
-			if (stunclk && get_qr(qr_NO_STUNLOCK))
+			if (stunclk)
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
-				return 1;
+				if(get_qr(qr_NO_STUNLOCK_IGNORE))
+					return 0;
+				if(get_qr(qr_NO_STUNLOCK_BLOCK))
+				{
+					sfx(WAV_CHINK,pan(int32_t(x)));
+					return 1;
+				}
 			}
-			else
-			{
-				stunclk=160;
-				sfx(WAV_EHIT,pan(int32_t(x)));
-				
-				return 1;
-			}
+			stunclk=160;
+			sfx(WAV_EHIT,pan(int32_t(x)));
+			return 1;
 			
 		case edCHINKL1:
 			if(*power >= 1*game->get_hero_dmgmult()) break;
@@ -3078,7 +3068,7 @@ int32_t enemy::defendNew(int32_t wpnId, int32_t *power, int32_t edef, byte unblo
 			
 		case ed1HKO:
 			*power = hp;
-			return -2;
+			return -3;
 			
 		case ed2x:
 		{
@@ -3160,12 +3150,17 @@ int32_t enemy::defendNew(int32_t wpnId, int32_t *power, int32_t edef, byte unblo
 		{
 			if(edef == edefSwitchHook)
 				return -1;
-			if (stunclk && get_qr(qr_NO_STUNLOCK) && *power == 0)
+			if (stunclk && *power == 0)
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
-				return 1;
+				if(get_qr(qr_NO_STUNLOCK_IGNORE))
+					return 0;
+				if(get_qr(qr_NO_STUNLOCK_BLOCK))
+				{
+					sfx(WAV_CHINK,pan(int32_t(x)));
+					return 1;
+				}
 			}
-			
+			break;
 		}
 	}
 	
@@ -3200,7 +3195,7 @@ int32_t enemy::defendNewInt(int32_t wpnId, int32_t *power, int32_t edef, byte un
 	if(!nullify)
 	{
 		ret = defendNew(wpnId, power, edef, unblockable);
-		if(ret == -1)
+		if(ret < 0)
 		{
 			ev.push_back(*power*10000);
 			ev.push_back(edef*10000);
@@ -3363,7 +3358,7 @@ int32_t enemy::defend(int32_t wpnId, int32_t *power, int32_t edef)
 		
 	case ed1HKO:
 		*power = hp;
-		return -2;
+		return -3;
 	
 	case ed2x:
 	 {
@@ -3588,8 +3583,9 @@ int32_t enemy::defenditemclass(int32_t wpnId, int32_t *power)
 }
 
 // take damage or ignore it
-// -1: damage (if any) dealt
-// 1: blocked
+// 2 or -2: force wait a frame
+// < 0: damage (if any) dealt
+// > 0: blocked
 // 0: weapon passes through unhindered
 int32_t enemy::takehit(weapon *w, weapon* realweap)
 {
@@ -3765,8 +3761,7 @@ int32_t enemy::takehit(weapon *w, weapon* realweap)
 			
 			if(def <= 0) 
 			{
-				if ( def == -2 ) hp -= hp;
-				else hp -= power;
+				hp -= power;
 				return def;
 			}
 			break;
@@ -3826,6 +3821,7 @@ int32_t enemy::takehit(weapon *w, weapon* realweap)
 		int32_t def = defendNewInt(wpnId, &power,  resolveEnemyDefence(w), w->unblockable, realweap);
 		//preventing stunlock might be best, here. -Z
 		if(def >= 0) return def;
+		ret = def;
 		
 		// Not hurt by 0-damage weapons
 		if(!(flags & guy_bhit))
@@ -3855,6 +3851,7 @@ int32_t enemy::takehit(weapon *w, weapon* realweap)
 		int32_t def = defendNewInt(wpnId, &power,  resolveEnemyDefence(w), w->unblockable, realweap);
 		
 		if(def >= 0) return def;
+		ret = def;
 		
 		bool swgrab = switch_hooked || w->family_class == itype_switchhook;
 		if(swgrab || !(flags & guy_bhit))
@@ -3905,10 +3902,8 @@ fsparkle:
 		
 		if(def >= 0)
 			return def;
-		else if(def == -2)
-		{
+		else if(def == -3) // OHKO... doesn't 'hit' the weapon?
 			ret = 0;
-		}
 	}
 	
 	if(!power)
@@ -11077,11 +11072,11 @@ bool eStalfos::animate(int32_t index)
 			
 			if(x<32) x=32;
 			
-			if(x>208) x=208;
+			if(x>world_w-48) x=world_w-48;
 			
 			if(y<32) y=32;
 			
-			if(y>128) y=128;
+			if(y>world_h-48) y=world_h-48;
 			
 			misc=3;
 		}
@@ -11398,21 +11393,11 @@ void eStalfos::charge_attack()
 
 void eStalfos::vire_hop()
 {
-	//if ( sclk > 0 ) return; //Don't hop during knockback.
-  
-//    if(dmisc9!=e9tPOLSVOICE)
-//    {
-//        //if( slide() /*sclk!=0*/ && dmisc2==e2tSPLIT) //Vires with split on hit, only! -Z
-//        if( sclk!=0 && dmisc2==e2tSPLIT) //Vires with split on hit, only! -Z
-//            return; //the enemy should split if it is sliding!
-//        //else sclk=0; //might need this here, too. -Z
-//    }
 	if(dmisc9!=e9tPOLSVOICE)
 	{
 		if(sclk!=0)
 		{
 			if (dmisc2==e2tSPLITHIT) return;
-			//return;
 		}
 	}
 	else sclk=0;
@@ -11446,21 +11431,6 @@ void eStalfos::vire_hop()
 			{
                 
 				clk2=(wpn==ewBrang ? 1 : int32_t((16.0*jump_width)/step.getFloat()));
-				/*if (dmisc9==e9tPOLSVOICE )
-				{	
-					zprint2("polsvoice jump_width is: %d\n", jump_width);
-					zprint2("polsvoice raw step is: %d\n", step);
-					zprint2("polsvoice step.getInt() is: %d\n", step.getInt());
-					zprint2("setting clk2 on polsvoice to: %d\n", clk2);
-				}
-				else 
-				{
-					zprint2("vire jump_width is: %d\n", jump_width);
-					zprint2("vire raw step is: %d\n", step);
-					zprint2("vire step.getInt() is: %d\n", step.getInt());
-					zprint2("setting clk2 on vire to: %d\n", clk2);
-				}
-				*/
 			}
 		}
 		
@@ -11492,8 +11462,6 @@ void eStalfos::vire_hop()
 		}
 		else
 		{
-			//y+=fixtoi(fixsin(itofix((clk2+1)*128*step/(16*jump_width)))*jump_height);
-			//y-=h;
 			y=floor_y-h;
 			shadowdistance=h;
 		}
@@ -13282,8 +13250,11 @@ int32_t eBigDig::takehit(weapon *w, weapon* realweap)
 	int32_t wpnId = w->id;
 	
 	if(wpnId==wWhistle && misc==0)
-		misc=1;
-		
+	{
+		misc = 1;
+		w->hit_pierce(this, 0, false);
+	}
+	
 	return 0;
 }
 
@@ -15279,7 +15250,7 @@ int32_t esGleeok::takehit(weapon *w, weapon* realweap)
 		int32_t ret = enemy::takehit(w,realweap);
 		
 		if(ret==-1)
-			return 2; // force it to wait a frame before checking sword attacks again
+			return -2; // force it to wait a frame before checking sword attacks again
 			
 		return ret;
 	}
@@ -16039,16 +16010,16 @@ void ePatra::FirePatraWeapon()
 	if (SIZEflags & OVERRIDE_HIT_WIDTH)
 	{
 		xoff += hxofs;
-		if (weapoverrideFLAGS & OVERRIDE_HIT_WIDTH)
-			xoff += (hit_width / 2) - (weap_tilew * 8);
+		if (weap_data.override_flags & OVERRIDE_HIT_WIDTH)
+			xoff += (hit_width / 2) - (weap_data.tilew * 8);
 		else
 			xoff += (hit_width / 2) - 8;
 	}
 	if (SIZEflags & OVERRIDE_HIT_HEIGHT)
 	{
 		yoff += hyofs;
-		if (weapoverrideFLAGS & OVERRIDE_HIT_HEIGHT)
-			yoff += (hit_height / 2) - (weap_tileh * 8);
+		if (weap_data.override_flags & OVERRIDE_HIT_HEIGHT)
+			yoff += (hit_height / 2) - (weap_data.tileh * 8);
 		else
 			yoff += (hit_height / 2) - 8;
 	}
@@ -17882,7 +17853,7 @@ int32_t addenemy_z(int32_t screen,int32_t x,int32_t y,int32_t z,int32_t id,int32
 
 bool isjumper(int32_t id)
 {
-	if( ((unsigned)(id&0xFFF)) > MAXGUYS ) 
+	if( ((unsigned)(id&0xFFF)) > MAXGUYS-1 || id <= 0) 
 	{
 		return false;
 	}
@@ -17902,7 +17873,7 @@ bool isjumper(int32_t id)
 
 bool isfixedtogrid(int32_t id)
 {
-	if( ((unsigned)(id&0xFFF)) > MAXGUYS ) 
+	if( ((unsigned)(id&0xFFF)) > MAXGUYS-1 || id <= 0) 
 	{
 		return false;
 	}
@@ -17926,7 +17897,7 @@ bool isfixedtogrid(int32_t id)
 // Can't fall, can have Z value.
 bool isflier(int32_t id)
 {
-	if( ((unsigned)(id&0xFFF)) > MAXGUYS ) 
+	if( ((unsigned)(id&0xFFF)) > MAXGUYS-1 || id <= 0) 
 	{
 		return false;
 	}
@@ -17950,7 +17921,7 @@ bool isflier(int32_t id)
 // Can't have Z position
 bool never_in_air(int32_t id)
 {
-	if( ((unsigned)(id&0xFFF)) > MAXGUYS ) 
+	if( ((unsigned)(id&0xFFF)) > MAXGUYS-1 || id <= 0) 
 	{
 		return false;
 	}
@@ -17976,7 +17947,7 @@ bool never_in_air(int32_t id)
 
 bool canfall(int32_t id)
 {
-	if( ((unsigned)(id&0xFFF)) > MAXGUYS ) 
+	if( ((unsigned)(id&0xFFF)) > MAXGUYS-1 || id <= 0) 
 	{
 		return false;
 	}
@@ -18011,7 +17982,7 @@ bool canfall(int32_t id)
 
 bool enemy::enemycanfall(int32_t id, bool checkgrav)
 {
-	if( ((unsigned)(id&0xFFF)) > MAXGUYS ) 
+	if( ((unsigned)(id&0xFFF)) > MAXGUYS-1 || id <= 0) 
 	{
 		return false;
 	}
@@ -18301,11 +18272,13 @@ dontdoit:
 
 bool slowguy(int32_t id)
 {
-	if( ((unsigned)(id&0xFFF)) > MAXGUYS ) 
+	if( ((unsigned)(id&0xFFF)) > MAXGUYS-1 || id <= 0) 
 	{
 		return false;
 	}
-//return (guysbuf[id].step<100);
+
+	id = id&0xFFF;
+
 	switch(id)
 	{
 	case eOCTO1S:
@@ -18324,10 +18297,13 @@ bool slowguy(int32_t id)
 
 static bool ok2add(mapscr* scr, int32_t id)
 {
-	if( ((unsigned)(id&0xFFF)) > MAXGUYS || id <= 0) 
+	if( ((unsigned)(id&0xFFF)) > MAXGUYS-1 || id <= 0) 
 	{
 		return false;
 	}
+
+	id = id&0xFFF;
+
 	if(getmapflag(scr, mNEVERRET) && (guysbuf[id].flags & guy_never_return))
 		return false;
 		
@@ -18833,56 +18809,15 @@ int32_t next_side_pos(int32_t screen, bool random)
 
 bool can_side_load(int32_t id)
 {
-	if( ((unsigned)(id&0xFFF)) > MAXGUYS ) 
+	if( ((unsigned)(id&0xFFF)) > MAXGUYS-1 || id <= 0) 
 	{
 		return false;
 	}
-	switch(guysbuf[id].family) //id&0x0FFF)
+
+	id = id&0xFFF;
+
+	switch(guysbuf[id].family)
 	{
-		//case eTEK1:
-		//case eTEK2:
-		//case eTEK3:
-		//case eLEV1:
-		//case eLEV2:
-		//case eLEV3:
-		//case eRAQUAM:
-		//case eLAQUAM:
-		//case eDODONGO:
-		//case eMANHAN:
-		//case eGLEEOK1:
-		//case eGLEEOK2:
-		//case eGLEEOK3:
-		//case eGLEEOK4:
-		//case eDIG1:
-		//case eDIG3:
-		//case eGOHMA1:
-		//case eGOHMA2:
-		//case eCENT1:
-		//case eCENT2:
-		//case ePATRA1:
-		//case ePATRA2:
-		//case eGANON:
-		//case eMANHAN2:
-		//case eCEILINGM: later
-		//case eFLOORM: later
-		//case ePATRABS:
-		//case ePATRAL2:
-		//case ePATRAL3:
-		//case eGLEEOK1F:
-		//case eGLEEOK2F:
-		//case eGLEEOK3F:
-		//case eGLEEOK4F:
-		//case eDODONGOBS:
-		//case eDODONGOF:
-		//case eGOHMA3:
-		//case eGOHMA4:
-		//case eSHOOTMAGIC:
-		//case eSHOOTROCK:
-		//case eSHOOTSPEAR:
-		//case eSHOOTSWORD:
-		//case eSHOOTFLAME:
-		//case eSHOOTFLAME2:
-		//case eSHOOTFBALL:
 	case eeTEK:
 	case eeLEV:
 	case eeAQUA:
@@ -19811,6 +19746,10 @@ void setupscreen()
 			item* curItem = ((item*)items.spr(items.Count()-1));
 			curItem->PriceIndex = i;
 			newcombo const& cmb = combobuf[bst.comb[i]];
+			if(cmb.animflags & AF_EDITOR_ONLY)
+			{
+				curItem->yofs = -32768;
+			}
 			curItem->o_tile = cmb.o_tile;
 			curItem->o_cset = bst.cset[i];
 			curItem->cs = curItem->o_cset;
@@ -20884,12 +20823,13 @@ void check_enemy_lweapon_collision(weapon *w)
 			enemy *e = (enemy*)guys.spr(j);
 			
 			bool didhit = e->hit(w);
-			if(didhit) //boomerangs and such that last for more than a frame can write hitby[] for more than one frame, 
+			//boomerangs and such that last for more than a frame can write hitby[] for more than one frame,
 			//because this only checks `if(dying || clk<0 || hclk>0 || superman)`
+			if(didhit)
 			{
 				// !(e->stunclk)
 				int32_t h = e->takehit(w);
-				if (h == -1) 
+				if (h < 0) // hitby code
 				{
 					int indx = Lwpns.find(w);
 					if(indx > -1)
@@ -20900,58 +20840,16 @@ void check_enemy_lweapon_collision(weapon *w)
 					else e->hitby[HIT_BY_LWEAPON_PARENT_FAMILY] = -1;
 					e->hitby[HIT_BY_LWEAPON_PARENT_ID] = w->parentitem;
 					e->hitby[HIT_BY_LWEAPON_ENGINE_UID] = w->getUID();
-					
-				}
-				//we may need to handle this in special cases. -Z
-			   
-				//if h == stun or ignore
-				
-				//if e->stun > DEFAULT_STUN -1 || !e->stun 
-				//if the enemy wasn't stunned this round -- what a bitch, as the stun value is set before we check this
-				///! how about: if w->dead != bounce !
-				
-				// NOT FOR PUBLIC RELEASE
-				/*if(h==3) //Mirror shield
-				{
-				if (w->id==ewFireball || w->id==wRefFireball)
-				{
-				  w->id=wRefFireball;
-				  switch(e->dir)
-				  {
-					case up:    e->angle += (PI - e->angle) * 2.0;      break;
-					case down:  e->angle = -e->angle;                   break;
-					case left:  e->angle += ((-PI/2) - e->angle) * 2.0; break;
-					case right: e->angle += (( PI/2) - e->angle) * 2.0; break;
-					// TODO: the following. -L.
-					case l_up:  break;
-					case r_up:  break;
-					case l_down: break;
-					case r_down: break;
-				  }
-				}
-				else
-				{
-				  w->id = ((w->id==ewMagic || w->id==wRefMagic || w->id==wMagic) ? wRefMagic : wRefBeam);
-				  w->dir ^= 1;
-				  if(w->dir&2)
-					w->flip ^= 1;
-				  else
-					w->flip ^= 2;
-				}
-				w->ignoreHero=false;
-				}
-				else*/
-				if(h)
-				{
-					if(e->switch_hooked && w->family_class == itype_switchhook)
-						w->onhit(false, e, -1);
-					else w->onhit(false, e, h);
+					//we may need to handle this in special cases. -Z
+					// arrow item pierce flag, for example -Em
 				}
 				
-				if(h==2)
-				{
-					break;
-				}
+				if(h < 0) // hit, check if weapon is "out of pierces"
+					w->hit_pierce(e, h);
+				else if(h > 0) // blocked
+					w->onhit(false, e, h);
+				if(abs(h) == 2)
+					break; // some enemy classes force a weapon hitting them to "wait a frame"
 			}
 			
 			if(w->Dead())

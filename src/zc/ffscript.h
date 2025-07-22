@@ -5,9 +5,11 @@
 #include "base/general.h"
 #include "base/mapscr.h"
 #include "base/misctypes.h"
+#include "base/zc_array.h"
 #include "base/zdefs.h"
 #include "base/initdata.h"
 #include "parser/parserDefs.h"
+#include <memory>
 #include <utility>
 #include <string>
 #include <list>
@@ -15,6 +17,7 @@
 #include <bitset>
 #include "zasm/defines.h"
 #include "zc/scripting/context_strings.h"
+#include "zc/jit.h"
 #include "zc/zelda.h"
 #include "zc/replay.h"
 #include "zc/hero.h"
@@ -378,6 +381,9 @@ struct user_dir : public user_abstract_obj
 struct user_stack : public user_abstract_obj
 {
 	std::deque<int32_t> theStack;
+
+	// TODO: support retaining objects.
+	void get_retained_ids(std::vector<uint32_t>& ids) {}
 	
 	int32_t size()
 	{
@@ -504,6 +510,13 @@ struct user_paldata : public user_abstract_obj
 	static double WrapLerp(double a, double b, double t, double min, double max, int32_t direction);
 	void mix(user_paldata *pal_start, user_paldata *pal_end, double percent, int32_t color_space = CSPACE_RGB, int32_t start_color = 0, int32_t end_color = 240);
 };
+
+#define MAX_SCRIPT_ARRAYS 100000
+
+script_array* create_script_array();
+void register_existing_script_array(script_array* array);
+std::vector<script_array*> get_script_arrays();
+script_array* checkArray(uint32_t id, bool skipError = false);
 
 int32_t run_script_int(bool is_jitted);
 
@@ -851,7 +864,7 @@ void do_sprintfarr();
 void do_varg_max();
 void do_varg_min();
 void do_varg_choose();
-void do_varg_makearray(ScriptType type, const uint32_t UID);
+void do_varg_makearray(ScriptType type, const uint32_t UID, script_object_type object_type);
 void do_breakpoint();
 void do_trace(bool v);
 void do_tracel(bool v);
@@ -885,6 +898,7 @@ void user_stacks_init();
 void user_rng_init();
 void user_paldata_init();
 void user_websockets_init();
+void script_arrays_init();
 
 bool get_scriptfile_path(char* buf, const char* path);
 
@@ -1046,6 +1060,7 @@ void reset_script_engine_data(ScriptType type, int index = 0);
 void clear_script_engine_data(ScriptType type, int index = 0);
 void clear_script_engine_data_of_type(ScriptType type);
 refInfo& ref(ScriptType type, int index);
+void clear_ref(ScriptType type, int index);
 byte& doscript(ScriptType type, int index = 0);
 bool& waitdraw(ScriptType type, int index = 0);
 
@@ -1066,11 +1081,6 @@ int32_t GetQuestVersion();
 int32_t GetQuestBuild();
 int32_t GetQuestSectionVersion(int32_t section);
 
-int32_t do_get_internal_uid_npc(int32_t i);
-int32_t do_get_internal_uid_item(int32_t i);
-int32_t do_get_internal_uid_lweapon(int32_t i);
-int32_t do_get_internal_uid_eweapon(int32_t i);
-
 void do_loadnpc_by_script_uid(const bool v);
 void do_loaditem_by_script_uid(const bool v);
 void do_loadlweapon_by_script_uid(const bool v);
@@ -1080,7 +1090,7 @@ void do_loadeweapon_by_script_uid(const bool v);
 void do_lweapon_delete();
 void do_eweapon_delete();
 
-static void deallocateArray(const int32_t ptrval);
+static void deallocateArray(int32_t ptrval);
 static int32_t get_screen_d(int32_t index1, int32_t index2);
 static void set_screen_d(int32_t index1, int32_t index2, int32_t val);
 
@@ -1449,6 +1459,8 @@ enum __Error
         _InvalidSpriteUID //bad npc, ffc, etc.
     };
     
+	static void destroyScriptableObject(ScriptType scriptType, const int32_t UID);
+	static void destroyScriptableObjectsOfType(ScriptType scriptType);
 	static void deallocateAllScriptOwned(ScriptType scriptType, const int32_t UID);
 	static void deallocateAllScriptOwnedOfType(ScriptType scriptType);
 	static void deallocateAllScriptOwned();
@@ -1466,6 +1478,10 @@ void script_init_name_to_slot_index_maps();
 
 int32_t get_register(int32_t arg);
 void set_register(int32_t arg, int32_t value);
+
+bool is_guarded_script_register(int reg);
+void do_set(int reg, int value);
+
 int32_t run_script(ScriptType type, word script, int32_t i = -1); //Global scripts don't need 'i'
 int32_t ffscript_engine(const bool preload);
 
@@ -1478,6 +1494,7 @@ int32_t get_screenflags(mapscr *m, int32_t flagset);
 int32_t get_screeneflags(mapscr *m, int32_t flagset);
 int32_t get_ref_map_index(int32_t ref);
 
+class ArrayManager;
 sprite* ResolveBaseSprite(int32_t uid);
 item* ResolveItemSprite(int32_t uid);
 enemy* ResolveNpc(int32_t uid);
@@ -1520,7 +1537,7 @@ rpos_t combopos_ref_to_rpos(int32_t combopos_ref);
 int32_t combopos_ref_to_layer(int32_t combopos_ref);
 
 bool is_valid_array(int32_t ptr);
-dword allocatemem(int32_t size, bool local, ScriptType type, const uint32_t UID, script_object_type object_type = script_object_type::none);
+uint32_t allocatemem(int32_t size, bool local, ScriptType type, const uint32_t UID, script_object_type object_type = script_object_type::none);
 
 class SH
 {
@@ -1538,7 +1555,6 @@ public:
 
 #define INVALIDARRAY localRAM[0]  //localRAM[0] is never used
 
-	static ZScriptArray& InvalidError(const int32_t ptr);
 	static void write_stack(const uint32_t stackoffset, const int32_t value);
 	static int32_t read_stack(const uint32_t stackoffset);
 	static INLINE int32_t get_arg(int32_t arg, bool v)
@@ -1565,13 +1581,15 @@ public:
 	
 	bool invalid() const {return _invalid;}
 	bool internal() const {return !_invalid && !aptr;}
-	
+
 	std::string asString(std::function<char const*(int32_t)> formatter, const size_t& limit) const;
+	void log_invalid_operation() const;
 	
 	bool negAccess;
 private:
-	int32_t ptr;
 	ZScriptArray* aptr;
+	int32_t legacy_internal_id;
+	script_array::internal_array_id internal_array_id;
 	bool _invalid;
 };
 
@@ -1864,15 +1882,24 @@ struct ScriptEngineData {
 	refInfo ref;
 	int32_t stack[MAX_SCRIPT_REGISTERS];
 	bounded_vec<word, int32_t> ret_stack {65535};
+	std::unique_ptr<JittedScriptHandle> jitted_script;
 	// This is used as a boolean for all but ScriptType::Item.
 	byte doscript = true;
 	bool waitdraw;
 	bool initialized;
 
+	void clear_ref()
+	{
+		ref.Clear();
+		jitted_script = {};
+		initialized = false;
+	}
+
 	void reset()
 	{
 		// No need to zero the stack.
 		ref = refInfo();
+		jitted_script = {};
 		doscript = true;
 		waitdraw = false;
 		initialized = false;

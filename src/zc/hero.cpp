@@ -254,10 +254,16 @@ bool usingActiveShield(int32_t itmid)
 		itmid = (Hero.active_shield_id < 0
 			? current_item_id(itype_shield,true,true) : Hero.active_shield_id);
 	if(itmid < 0) return false;
+	auto const& itm = itemsbuf[itmid];
 	if(item_disabled(itmid)) return false;
 	if(!checkitem_jinx(itmid)) return false;
-	if(!(itemsbuf[itmid].flags & item_flag9)) return false;
-	if(!isItmPressed(itmid)) return false;
+	if(!(itm.flags & item_flag9)) return false;
+	if(!isItmPressed(itmid))
+	{
+		byte intbtn = byte(itm.misc5&0xFF);
+		if(!itm.misc5 || !getIntBtnInput(intbtn, false, true, false, false, true))
+			return false;
+	}
 	return (checkbunny(itmid) && checkmagiccost(itmid));
 }
 int32_t getCurrentShield(bool requireActive)
@@ -308,6 +314,17 @@ int32_t refreshActiveShield()
 		if(dat.family == itype_shield && (dat.flags & item_flag9))
 		{
 			id = NEG_OR_MASK(Ywpn,0xFFF);
+		}
+	}
+	if(id < 0)
+	{
+		auto shield_id = current_item_id(itype_shield,false,true);
+		itemdata const& dat = itemsbuf[shield_id];
+		if(dat.family == itype_shield && (dat.flags & item_flag9))
+		{
+			byte intbtn = byte(dat.misc5&0xFF);
+			if(getIntBtnInput(intbtn, false, true, false, false, true))
+				id = shield_id;
 		}
 	}
 	if(!usingActiveShield(id))
@@ -870,9 +887,17 @@ zfix  HeroClass::getFall()
 {
     return fall;
 }
+zfix  HeroClass::getJump()
+{
+    return fall / -100;
+}
 zfix  HeroClass::getFakeFall()
 {
     return fakefall;
+}
+zfix  HeroClass::getFakeJump()
+{
+    return fakefall / -100;
 }
 zfix  HeroClass::getXOfs()
 {
@@ -950,7 +975,7 @@ void HeroClass::setX(int32_t new_x)
     
     // A kludge
     if(!diagonalMovement && dir<=down)
-        is_on_conveyor=true;
+        is_on_conveyor = -1;
 }
 
 void HeroClass::setY(int32_t new_y)
@@ -980,7 +1005,7 @@ void HeroClass::setY(int32_t new_y)
     
     // A kludge
     if(!diagonalMovement && dir>=left)
-        is_on_conveyor=true;
+        is_on_conveyor = -1;
 }
 
 void HeroClass::setZ(int32_t new_z)
@@ -1095,7 +1120,7 @@ void HeroClass::setXfix(zfix new_x)
     
     // A kludge
     if(!diagonalMovement && dir<=down)
-        is_on_conveyor=true;
+        is_on_conveyor = -1;
 }
 
 void HeroClass::setYfix(zfix new_y)
@@ -1125,7 +1150,7 @@ void HeroClass::setYfix(zfix new_y)
     
     // A kludge
     if(!diagonalMovement && dir>=left)
-        is_on_conveyor=true;
+        is_on_conveyor = -1;
 }
 
 void HeroClass::setZfix(zfix new_z)
@@ -1222,6 +1247,14 @@ void HeroClass::setFakeFall(zfix new_fall)
 {
     fakefall=new_fall;
     jumping=-1;
+}
+void HeroClass::setJump(zfix new_jump)
+{
+	setFall(new_jump*-100);
+}
+void HeroClass::setFakeJump(zfix new_jump)
+{
+	setFakeFall(new_jump*-100);
 }
 void HeroClass::setClimbCoverX(int32_t new_x)
 {
@@ -2709,7 +2742,6 @@ void HeroClass::draw(BITMAP* dest)
 			int32_t jumping2 = int32_t(jumping*((zinit.gravity / 100)/16.0));
 			bool noliftspr = get_qr(qr_NO_LIFT_SPRITE);
 			bool advancetile = script_hero_sprite <= 0;
-			//if (jumping!=0) al_trace("%d %d %f %d\n",jumping,zinit.gravity,zinit.gravity/16.0,jumping2);
 			switch(zinit.heroAnimationStyle)
 			{
 			case las_original:                                               //normal
@@ -3266,6 +3298,7 @@ void HeroClass::prompt_draw(BITMAP* dest)
 	int32_t sx = real_x(x+xofs+prompt_x);
 	int32_t sy = real_y(y + yofs + prompt_y) - real_z(z + zofs);
 	sy -= fake_z(fakez);
+	if(combobuf[prompt_combo].animflags & AF_EDITOR_ONLY) return;
 	overcombo(dest, sx - viewport.x, sy - viewport.y, prompt_combo, prompt_cset);
 	return;
 }
@@ -3275,7 +3308,7 @@ void collectitem_script(int32_t id)
 	if(itemsbuf[id].collect_script)
 	{
 		//clear item script stack. 
-		FFCore.ref(ScriptType::Item, -id).Clear();
+		FFCore.clear_ref(ScriptType::Item, -id);
 
 		if ( id > 0 && !(FFCore.doscript(ScriptType::Item, -id) && get_qr(qr_ITEMSCRIPTSKEEPRUNNING)) ) //No collect script on item 0. 
 		{
@@ -3527,7 +3560,7 @@ bool HeroClass::checkstab()
 			
 			int32_t h = hit_enemy(i,attack,dmg*game->get_hero_dmgmult(),wx,wy,dir,directWpn,w);
 			enemy *e = (enemy*)guys.spr(i);
-			if (h == -1) 
+			if (h < 0)
 			{ 
 				e->hitby[HIT_BY_LWEAPON] = melee_weapon_index; 
 				e->hitby[HIT_BY_LWEAPON_UID] = w->getUID();
@@ -3558,7 +3591,7 @@ bool HeroClass::checkstab()
 				}
 			}
 			
-			if(h==2)
+			if(abs(h)==2)
 				break;
 		}
 	}
@@ -4542,22 +4575,6 @@ void HeroClass::check_slash_block_layer2(int32_t bx, int32_t by, weapon *w, int3
 
 void HeroClass::check_slash_block2(int32_t bx, int32_t by, weapon *w)
 {
-	/*
-	int32_t par_item = w->parentitem;
-	al_trace("check_slash_block(weapon *w): par_item is: %d\n", par_item);
-	int32_t usewpn = -1;
-	if ( par_item > -1 )
-	{
-		usewpn = itemsbuf[par_item].useweapon;
-	}
-	else if ( par_item == -1 && w->ScriptGenerated ) 
-	{
-		usewpn = w->useweapon;
-	}
-	al_trace("check_slash_block(weapon *w): usewpn is: %d\n", usewpn);
-	*/
-    
-	
     //keep things inside the screen boundaries
     bx=vbound(bx, 0, world_w-1);
     by=vbound(by, 0, world_h-1);
@@ -4581,16 +4598,8 @@ void HeroClass::check_slash_block2(int32_t bx, int32_t by, weapon *w)
     
 	    if (isCuttableType(type) && FindComboTriggerMatch(w, cid) > -1)
 	    {
-		al_trace("This weapon (%d) can slash the combo: combobuf[%d].\n", w->id, cid);
 		dontignore = 1;
 	    }
-    
-	    /*to-do, ffcs
-	    if (isCuttableType(type2) && FindComboTriggerMatch(w, cid) > -1)
-	    {
-		al_trace("This weapon (%d) can slash the combo: combobuf[%d].\n", w->id, cid);
-		dontignoreffc = 1;
-	    }*/
 	if(w->useweapon != wSword && !dontignore) return;
 
     auto rpos_handle = get_rpos_handle_for_world_xy(bx, by, 0);
@@ -4948,25 +4957,21 @@ void HeroClass::check_slash_block(weapon *w)
 	//first things 
 	
 	int32_t par_item = w->parentitem;
-	al_trace("check_slash_block(weapon *w): par_item is: %d\n", par_item);
 	int32_t usewpn = -1;
 	if ( par_item > -1 )
 	{
-		usewpn = itemsbuf[par_item].useweapon;
+		usewpn = itemsbuf[par_item].weap_data.imitate_weapon;
 	}
 	else if ( par_item == -1 && w->ScriptGenerated ) 
 	{
 		usewpn = w->useweapon;
 	}
-	al_trace("check_slash_block(weapon *w): usewpn is: %d\n", usewpn);
     if(usewpn != wSword) return;
 	
 	
     int32_t bx = 0, by = 0;
 	bx = ((int32_t)w->x) + (((int32_t)w->hit_width)/2);
 	by = ((int32_t)w->y) + (((int32_t)w->hit_height)/2);
-	al_trace("check_slash_block(weapon *w): bx is: %d\n", bx);
-	al_trace("check_slash_block(weapon *w): by is: %d\n", by);
     //keep things inside the screen boundaries
     bx=vbound(bx, 0, world_w-1);
     by=vbound(by, 0, world_h-1);
@@ -5530,17 +5535,15 @@ void HeroClass::check_wand_block(weapon *w)
 {
 	
     int32_t par_item = w->parentitem;
-	al_trace("check_wand_block(weapon *w): par_item is: %d\n", par_item);
 	int32_t usewpn = -1;
 	if ( par_item > -1 )
 	{
-		usewpn = itemsbuf[par_item].useweapon;
+		usewpn = itemsbuf[par_item].weap_data.imitate_weapon;
 	}
 	else if ( par_item == -1 && w->ScriptGenerated ) 
 	{
 		usewpn = w->useweapon;
 	}
-	al_trace("check_wand_block(weapon *w): usewpn is: %d\n", usewpn);
     if(usewpn != wWand) return;
 	
 	
@@ -6523,7 +6526,7 @@ bool HeroClass::try_ewpn_hit(weapon* w, bool force)
 	}
 	
 	if(w)
-		w->onhit(false);
+		w->hit_pierce();
 	
 	doHit(hdir, iframes);
 	return true;
@@ -6920,7 +6923,7 @@ void HeroClass::checkhit()
 		}
 		
 		if(lwpnspr)
-			lwpnspr->onhit(false);
+			lwpnspr->hit_pierce();
 		
 		doHit(hdir, iframes);
 		return;
@@ -6982,7 +6985,7 @@ void HeroClass::checkhit()
 		}
 		
 		if(ewpnspr)
-			ewpnspr->onhit(false);
+			ewpnspr->hit_pierce();
 		
 		doHit(hdir, iframes);
 		return;
@@ -7828,6 +7831,9 @@ bool HeroClass::animate(int32_t)
 		if(lift_wpn->dead>0)
 			--lift_wpn->dead;
 		
+		if(get_qr(qr_LIFTED_WEAPONS_RUN_SCRIPTS))
+			lift_wpn->run_script(MODE_NORMAL);
+		
 		if(lift_wpn->dead==0)
 		{
 			if(lift_wpn->death_spawnitem > -1)
@@ -8308,23 +8314,24 @@ heroanimate_skip_liftwpn:;
 		if((on_sideview_solid_oldpos(this) || getOnSideviewLadder())  && !(pull_hero && dir==down) && action!=rafting && !platformfell2)
 		{
 			stop_item_sfx(itype_hoverboots);
+			auto oldfall = fall;
+			fall = hoverclk = jumping = 0;
 			if(get_qr(qr_OLD_SIDEVIEW_LANDING_CODE))
 			{
-				if(!getOnSideviewLadder() && (fall > 0 || get_qr(qr_OLD_SIDEVIEW_CEILING_COLLISON)))
+				if(!getOnSideviewLadder() && (oldfall > 0 || get_qr(qr_OLD_SIDEVIEW_CEILING_COLLISON)))
 				{
 					y.doFloor();
 					y-=(int32_t)y%8; //fix position
 				}
-				if(fall > 0)
+				if(oldfall > 0)
 					land_on_ground();
 			}
 			else
 			{
 				snap_platform();
-				if(fall > 0)
+				if(oldfall > 0)
 					land_on_ground();
 			}
-			fall = hoverclk = jumping = 0;
 			inair = false;
 			hoverflags = 0;
 			
@@ -8536,16 +8543,17 @@ heroanimate_skip_liftwpn:;
 		
 		if(z<=0&&!(moveflags & move_no_real_z))
 		{
+			auto oldfall = fall;
+			z = fall = 0;
 			if (fakez <= 0 || (moveflags & move_no_fake_z)) 
 			{
-				if(fall > 0)
+				if(oldfall > 0)
 				{
 					land_on_ground();
 					
 					stomping = true;
 				}
 			}
-			z = fall = 0;
 			if (fakez <= 0 || (moveflags & move_no_fake_z)) 
 			{
 				jumping = 0;
@@ -8565,16 +8573,17 @@ heroanimate_skip_liftwpn:;
 		}
 		else if(fakez<=0&&!(moveflags & move_no_fake_z))
 		{
+			auto oldfakefall = fakefall;
+			fakez = fakefall = 0;
 			if (z <= 0 || (moveflags & move_no_real_z))
 			{
-				if(fakefall > 0)
+				if(oldfakefall > 0)
 				{
 					land_on_ground();
 						
 					stomping = true;
 				}
 			}
-			fakez = fakefall = 0;
 			if (z <= 0 || (moveflags & move_no_real_z)) 
 			{
 				jumping = 0;
@@ -9621,7 +9630,13 @@ heroanimate_skip_liftwpn:;
 		if(--drownclk==0)
 		{
 			action=none; FFCore.setHeroAction(none);
-			int32_t water = drownCombo ? drownCombo : iswaterex_z3(MAPCOMBO(x.getInt()+7.5,y.getInt()+12), cur_map, cur_screen, -1, x.getInt()+7.5,y.getInt()+12, true, false);
+			optional<combined_handle_t> comb_handle;
+			int32_t water = iswaterex_z3(MAPCOMBO(x.getInt()+7.5,y.getInt()+12), -1, x.getInt()+7.5,y.getInt()+12, true, false, true, false, true, &comb_handle);
+			if(drownCombo && water != drownCombo)
+			{
+				comb_handle = nullopt;
+				water = drownCombo;
+			}
 			
 			std::vector<int32_t> &ev = FFCore.eventData;
 			ev.clear();
@@ -9641,6 +9656,8 @@ heroanimate_skip_liftwpn:;
 			if(damage)
 				game->set_life(vbound(game->get_life()-damage,0, game->get_maxlife()));
 			drownCombo = 0;
+			if(comb_handle)
+				do_trigger_ctype_causes(*comb_handle);
 			go_respawn_point();
 			hclk=48;
 			check_on_hit();
@@ -10151,6 +10168,7 @@ heroanimate_skip_liftwpn:;
 			
 			if (dx || dy) 
 			{
+				reset_hookshot();
 				int32_t pushret = push_move(dx,dy);
 				onplatform = (on_sideview_solid_oldpos(this, false, 1) && !Up());
 				if (s.slope() != slopeid && slopeid) staircheck = true;
@@ -10743,30 +10761,76 @@ void HeroClass::handle_passive_buttons()
 
 void HeroClass::land_on_ground()
 {
+	if (fakez<0) fakez = 0;
+	if (z<0) z = 0;
+	
+	bool played_land_sfx = false;
 	if(get_qr(qr_OLD_LANDING_SFX))
 	{
 		if(!sideview_mode() && ((iswaterex_z3(MAPCOMBO(x,y+8), -1, x, y+8, true, false) && ladderx<=0 && laddery<=0) || COMBOTYPE(x,y+8)==cSHALLOWWATER))
 			sfx(WAV_ZN1SPLASH,x.getInt());
-		return;
+		played_land_sfx = true;
 	}
 
 	auto rpos = COMBOPOS_REGION_B(x+8, y+(sideview_mode()?16:12));
-	bool played_land_sfx = false;
 	for (int q = 0; q < 7; ++q)
 	{
 		if (rpos == rpos_t::None) break;
 
 		auto rpos_handle = get_rpos_handle(rpos, q);
-		byte csfx = rpos_handle.combo().sfx_landing;
-		if (csfx)
+		auto& cmb = rpos_handle.combo();
+		auto cid = rpos_handle.data();
+		byte csfx = cmb.sfx_landing;
+		if (csfx && !get_qr(qr_OLD_LANDING_SFX))
 		{
 			sfx(csfx, x.getInt());
 			played_land_sfx = true;
+		}
+		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
+		{
+			auto& trig = cmb.triggers[idx];
+			if (trig.triggerflags[4]&combotriggerPLAYERLANDHERE)
+			{
+				do_trigger_combo(rpos_handle, idx);
+				if(rpos_handle.data() != cid) break;
+			}
 		}
 	}
 
 	if(!played_land_sfx && QMisc.miscsfx[sfxHERO_LANDS])
 		sfx(QMisc.miscsfx[sfxHERO_LANDS], x.getInt());
+	
+	
+	for_some_rpos([&](const rpos_handle_t& rpos_handle) {
+		auto cid = rpos_handle.data();
+		newcombo const& cmb = rpos_handle.combo();
+		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
+		{
+			auto& trig = cmb.triggers[idx];
+			if (trig.triggerflags[4]&combotriggerPLAYERLANDANYWHERE)
+			{
+				do_trigger_combo(rpos_handle, idx);
+				if(rpos_handle.data() != cid) break;
+			}
+		}
+		
+		return true;
+	});
+	for_some_ffcs([&](const ffc_handle_t& ffc_handle) {
+		auto cid = ffc_handle.data();
+		auto& cmb = ffc_handle.combo();
+		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
+		{
+			auto& trig = cmb.triggers[idx];
+			if (trig.triggerflags[4]&combotriggerPLAYERLANDANYWHERE)
+			{
+				do_trigger_combo(ffc_handle, idx);
+				if(ffc_handle.data() != cid) break;
+			}
+		}
+		
+		return true;
+	});
 }
 
 static bool did_passive_jump = false;
@@ -10935,6 +10999,10 @@ void HeroClass::do_liftglove(int32_t liftid, bool passive)
 			handle_lift(false); //sets position properly, accounting for large weapons
 			
 			lift_wpn->dir = dir;
+			if(lift_wpn->angular)
+				lift_wpn->angle = WrapAngle(DirToRadians(dir));
+			
+			lift_wpn->doAutoRotate(false, true);
 			//Configured throw speed in both axes
 			auto basestep = glove.misc2;
 			lift_wpn->step = zfix(basestep)/100;
@@ -11026,8 +11094,14 @@ void HeroClass::do_liftglove(int32_t liftid, bool passive)
 			weapon* w = (weapon*)Lwpns.spr(q);
 			if((w->lift_level && w->lift_level <= glove.fam_type))
 			{
-				if(!w->hit(hx,hy,0,hw,hh,1))
+				auto tmpflags = w->misc_wflags;
+				w->misc_wflags &= ~WFLAG_NO_COLL_WHEN_STILL;
+				bool hit = w->hit(hx,hy,0,hw,hh,1);
+				w->misc_wflags = tmpflags;
+				if(!hit)
 					continue;
+				if(glove.usesound)
+					sfx(glove.usesound,pan(x));
 				lift(w, w->lift_time, w->lift_height);
 				Lwpns.remove(w);
 				lifted = true;
@@ -11760,7 +11834,6 @@ bool HeroClass::startwpn(int32_t itemid)
 				else
 				{
 					SAMPLE* sample = sfx_get_sample(itm.usesound);
-					ASSERT(sample);
 					if (sample && sample->freq)
 						frames_to_wait = 60 * sample->len / sample->freq;
 				}
@@ -11820,28 +11893,31 @@ bool HeroClass::startwpn(int32_t itemid)
 		}
 		break;
 		
-		case itype_bomb:
+		case itype_bomb: case itype_sbomb:
 		{
+			bool sbomb = (itm.family == itype_sbomb);
+			auto lit_ty = sbomb ? wLitSBomb : wLitBomb;
+			auto boom_ty = sbomb ? wSBomb : wBomb;
 			//Remote detonation
-			if(Lwpns.idCount(wLitBomb) >= zc_max(itm.misc2,1))
+			if(Lwpns.idCount(lit_ty) >= zc_max(itm.misc2,1))
 			{
-				weapon *ew = (weapon*)(Lwpns.spr(Lwpns.idFirst(wLitBomb)));
+				weapon *ew = (weapon*)(Lwpns.spr(Lwpns.idFirst(lit_ty)));
 				
-				 while(Lwpns.idCount(wLitBomb) && ew->misc == 0)
+				while(Lwpns.idCount(lit_ty) && ew->misc == 0)
 				{
 					//If this ever needs a version check, in the future. -z
-					if ( FFCore.getQuestHeaderInfo(vZelda) > 0x250 || ( FFCore.getQuestHeaderInfo(vZelda) == 0x250 && FFCore.getQuestHeaderInfo(vBuild) > 31 ) )
+					if (boom_ty == wBomb && (FFCore.getQuestHeaderInfo(vZelda) > 0x250 || ( FFCore.getQuestHeaderInfo(vZelda) == 0x250 && FFCore.getQuestHeaderInfo(vBuild) > 31)))
 					{
 						if ( ew->power > 1 ) //Don't reduce 1 to 0. -Z
 							ew->power *= 0.5; //Remote bombs were dealing double damage. -Z
 					}
 					ew->misc=50;
 					ew->clk=ew->misc-3;
-					ew->id=wBomb;
-					ew = (weapon*)(Lwpns.spr(Lwpns.idFirst(wLitBomb)));
+					ew->id=boom_ty;
+					ew = (weapon*)(Lwpns.spr(Lwpns.idFirst(lit_ty)));
 				}
 				
-				deselectbombs(false);
+				deselectbombs(sbomb);
 				return false;
 			}
 			
@@ -11858,78 +11934,22 @@ bool HeroClass::startwpn(int32_t itemid)
 			paymagiccost(itemid);
 				
 			if(itm.misc1>0) // If not remote bombs
-				deselectbombs(false);
+				deselectbombs(sbomb);
 				
 			if(isdungeon())
 			{
 				wy=zc_max(wy,16);
 			}
 			
-			weapon* wpn = new weapon((zfix)wx,(zfix)wy,(zfix)wz,wLitBomb,itm.fam_type,
+			weapon* wpn = new weapon((zfix)wx,(zfix)wy,(zfix)wz,lit_ty,itm.fam_type,
 				itm.power*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true);
 			bool lifted = false;
 			if(itm.flags & item_flag4)
 			{
 				auto liftid = current_item_id(itype_liftglove);
-				itemdata const& glove = itemsbuf[liftid];
-				if(liftid > -1 && (!itm.misc4 || itm.misc4 <= glove.fam_type))
+				if(liftid > -1 && (itm.weap_data.lift_level <= itemsbuf[liftid].fam_type))
 				{
-					lift(wpn,itm.misc5,itm.misc6);
-					set_liftflags(liftid);
-					lifted = true;
-				}
-			}
-			if(!lifted)
-			{
-				Lwpns.add(wpn);
-				sfx(WAV_PLACE,pan(wx));
-			}
-		}
-		break;
-		
-		case itype_sbomb:
-		{
-			//Remote detonation
-			if(Lwpns.idCount(wLitSBomb) >= zc_max(itm.misc2,1))
-			{
-				weapon *ew = (weapon*)(Lwpns.spr(Lwpns.idFirst(wLitSBomb)));
-				
-				while(Lwpns.idCount(wLitSBomb) && ew->misc == 0)
-				{
-					ew->misc=50;
-					ew->clk=ew->misc-3;
-					ew->id=wSBomb;
-					ew = (weapon*)(Lwpns.spr(Lwpns.idFirst(wLitSBomb)));
-				}
-				
-				deselectbombs(true);
-				return false;
-			}
-			
-			if((itm.flags & item_flag4) && lift_wpn)
-			{
-				do_liftglove(-1,false); //Throw the already-held weapon
-				return false;
-			}
-			if(!(checkbunny(itemid) && checkmagiccost(itemid)))
-			{
-				return item_error();
-			}
-				
-			paymagiccost(itemid);
-				
-			if(itm.misc1>0) // If not remote bombs
-				deselectbombs(true);
-			
-			weapon* wpn = new weapon((zfix)wx,(zfix)wy,(zfix)wz,wLitSBomb,itm.fam_type,itm.power*game->get_hero_dmgmult(),dir, itemid,getUID(),false,false,true);
-			bool lifted = false;
-			if(itm.flags & item_flag4)
-			{
-				auto liftid = current_item_id(itype_liftglove);
-				itemdata const& glove = itemsbuf[liftid];
-				if(liftid > -1 && (!itm.misc4 || itm.misc4 <= glove.fam_type))
-				{
-					lift(wpn,itm.misc5,itm.misc6);
+					lift(wpn, itm.weap_data.lift_time, itm.weap_data.lift_height);
 					set_liftflags(liftid);
 					lifted = true;
 				}
@@ -14025,6 +14045,14 @@ void HeroClass::pitfall()
 		//Handle falling
 		if(!--fallclk)
 		{
+			optional<combined_handle_t> comb_handle;
+			if((comb_handle = get_pitfall_handle(x+8, y+(bigHitbox?8:12))) && comb_handle->data() == fallCombo) /*nil*/;
+			else if((comb_handle = get_pitfall_handle(x+8, y+(bigHitbox?0:8))) && comb_handle->data() == fallCombo) /*nil*/;
+			else if((comb_handle = get_pitfall_handle(x+15, y+(bigHitbox?0:8))) && comb_handle->data() == fallCombo) /*nil*/;
+			else if((comb_handle = get_pitfall_handle(x, y+15)) && comb_handle->data() == fallCombo) /*nil*/;
+			else if((comb_handle = get_pitfall_handle(x+15, y+15)) && comb_handle->data() == fallCombo) /*nil*/;
+			else comb_handle = nullopt; // nothing found, no `CType Causes->`
+			
 			std::vector<int32_t> &ev = FFCore.eventData;
 			ev.clear();
 			ev.push_back(fallCombo*10000);
@@ -14058,6 +14086,10 @@ void HeroClass::pitfall()
 				}
 				game->set_life(vbound(int32_t(dmg_perc ? game->get_life() - ((vbound(dmg,-100,100)/100.0)*game->get_maxlife()) : (game->get_life()-int64_t(dmg))),0,game->get_maxlife()));
 			}
+			
+			if(comb_handle)
+				do_trigger_ctype_causes(*comb_handle);
+			
 			if(warp) //Warp
 			{
 				sdir = dir;
@@ -14538,7 +14570,7 @@ void HeroClass::moveheroOld()
 	bool liftonly = lift_wpn && (liftflags & LIFTFL_DIS_ITEMS);
 	if(liftonly)
 	{
-		if(replay_version_check(38))
+		if(replay_version_check(38) && btnwpn > -1)
 		{
 			auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
 			no_jinx = checkitem_jinx(itmid);
@@ -18902,7 +18934,7 @@ bool HeroClass::premove()
 	
 	int32_t wx=x;
 	int32_t wy=y;
-	if(conv_forcedir > -1) dir = conv_forcedir;
+	if(conv_forcedir > -1 && !spins) dir = conv_forcedir;
 	else if((action==none || action==walking) && getOnSideviewLadder() && (get_qr(qr_SIDEVIEWLADDER_FACEUP)!=0)) //Allow DIR to change if standing still on sideview ladder, and force-face up.
 	{
 		if((xoff==0)||diagonalMovement)
@@ -18943,7 +18975,7 @@ bool HeroClass::premove()
 	bool liftonly = lift_wpn && (liftflags & LIFTFL_DIS_ITEMS);
 	if(liftonly)
 	{
-		if(replay_version_check(38))
+		if(replay_version_check(38) && btnwpn > -1)
 		{
 			auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
 			no_jinx = checkitem_jinx(itmid);
@@ -19111,7 +19143,7 @@ bool HeroClass::premove()
 	
 	if(attackclk || action==attacking || action==sideswimattacking)
 	{
-		if(conv_forcedir > -1) dir = conv_forcedir;
+		if(conv_forcedir > -1 && !spins) dir = conv_forcedir;
 		else if((attackclk==0) && action!=sideswimattacking && getOnSideviewLadder() && (get_qr(qr_SIDEVIEWLADDER_FACEUP)!=0)) //Allow DIR to change if standing still on sideview ladder, and force-face up.
 		{
 			if((xoff==0)||diagonalMovement)
@@ -19130,7 +19162,7 @@ bool HeroClass::premove()
 		bool attacked = doattack();
 		
 		// This section below interferes with script-setting Hero->Dir, so it comes after doattack
-		if(conv_forcedir > -1) dir = conv_forcedir;
+		if(conv_forcedir > -1 && !spins) dir = conv_forcedir;
 		else if(!inlikelike && attackclk>4 && (attackclk&3)==0 && charging==0 && spins==0 && action!=sideswimattacking)
 		{
 			if((xoff==0)||diagonalMovement)
@@ -19428,7 +19460,7 @@ void HeroClass::movehero()
 	}
 	
 newmove_slide:
-	if(conv_forcedir > -1)
+	if(conv_forcedir > -1 && !spins)
 		dir = conv_forcedir;
 	if(!is_conveyor_stunned)
 	{
@@ -27778,6 +27810,9 @@ void HeroClass::checkscroll()
 	//DO NOT scroll if Hero is vibrating due to Farore's Wind effect -DD
 	if(action == casting||action==sideswimcasting)
 		return;
+	
+	if(!check_prescroll()) // prevent scrolling when you should drown/fall/etc before the screen edge
+		return;
 
 	if (action == inwind && whirlwind == 0)
 	{
@@ -27963,6 +27998,23 @@ void HeroClass::checkscroll()
 		y = 0;
 		do_scroll_direction(up);
 	}
+}
+
+bool HeroClass::check_prescroll()
+{
+	if(get_qr(qr_BROKEN_SCROLL_INSTEAD_OF_DROWN_FALL))
+		return true; // skip checks
+	if (x <= world_w-16 && x >= 0 && y <= world_h-16 && y >= 0)
+		return true; // in bounds, no need for checks
+	zfix tx = x, ty = y, tz = z;
+	x = vbound(x, 0, world_w-16);
+	y = vbound(y, 0, world_h-16);
+	if(onWater(true) || drownclk)
+		return false; // would drown before scrolling
+	if(pitslide() || fallclk)
+		return false; // would fall before scrolling
+	x = tx; y = ty; z = tz;
+	return true;
 }
 
 // assumes current direction is in lastdir[3]
@@ -32736,10 +32788,15 @@ void HeroClass::check_conveyor()
 {
 	++newconveyorclk;
 
-	if (is_conveyor_stunned)
+	if (is_conveyor_stunned > 0)
 		--is_conveyor_stunned;
+	if (is_on_conveyor > 0)
+	{
+		if(!--is_on_conveyor)
+			conv_forcedir = -1;
+	}
 	
-	if((!get_qr(qr_BROKEN_CONVEYORS) && action==rafting) || action==casting||action==sideswimcasting||action==drowning || action==sidedrowning||action==lavadrowning||inlikelike||pull_hero||((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)))
+	if((!get_qr(qr_BROKEN_CONVEYORS) && action==rafting) || action==casting||action==sideswimcasting||action==drowning || action==sidedrowning||action==lavadrowning||inlikelike||pull_hero)
 	{
 		is_conveyor_stunned = 0;
 		return;
@@ -32753,14 +32810,25 @@ void HeroClass::check_conveyor()
 	{
 		if (conveyclk <= 0)
 		{
-			is_on_conveyor = false;
-			conv_forcedir = -1;
+			if(is_on_conveyor < 0)
+			{
+				is_on_conveyor = 0;
+				conv_forcedir = -1;
+				is_conveyor_stunned = 0;
+			}
 		}
 		return;
 	}
 	newcombo const* cmb = &combobuf[cmbid];
 	rpos_t rpos = COMBOPOS_REGION(x+7,y+(bigHitbox?8:12));
 	bool custom_spd = (cmb->usrflags&cflag2);
+	if((z>0||fakez>0) && !((hero_scr->flags2&fAIRCOMBOS)||(cmb->usrflags&cflag7)))
+	{
+		is_on_conveyor = 0;
+		conv_forcedir = -1;
+		is_conveyor_stunned = 0;
+		return;
+	}
 	if(custom_spd || conveyclk<=0) //!DIMITODO: let player be on multiple conveyors at once
 	{
 		int32_t ctype=cmb->type;
@@ -32768,9 +32836,9 @@ void HeroClass::check_conveyor()
 		if(custom_spd && (newconveyorclk % rate)) return;
 		if((cmb->usrflags&cflag5) && HasHeavyBoots())
 			return;
-		is_on_conveyor=false;
-		conv_forcedir=-1;
-		is_conveyor_stunned=0;
+		is_on_conveyor = 0;
+		conv_forcedir = -1;
+		is_conveyor_stunned = 0;
 		
 		deltax=combo_class_buf[ctype].conveyor_x_speed;
 		deltay=combo_class_buf[ctype].conveyor_y_speed;
@@ -32799,7 +32867,7 @@ void HeroClass::check_conveyor()
 		
 		if(deltax!=0||deltay!=0)
 		{
-			is_on_conveyor=true;
+			is_on_conveyor = custom_spd ? rate : -1;
 		}
 		else return;
 		
@@ -32807,7 +32875,7 @@ void HeroClass::check_conveyor()
 		if(forcewalk)
 		{
 			is_conveyor_stunned = rate;
-			if((cmb->usrflags&cflag3) && !spins)
+			if(cmb->usrflags&cflag3)
 			{
 				if(abs(deltax) > abs(deltay))
 					conv_forcedir = dir = (deltax > 0) ? right : left;
@@ -33251,7 +33319,7 @@ void HeroClass::check_conveyor()
 			{
 				if(cmb->usrflags&cflag1)
 					is_conveyor_stunned = rate;
-				if((cmb->usrflags&cflag3) && !spins)
+				if(cmb->usrflags&cflag3)
 				{
 					if(abs(deltax) > abs(deltay))
 						conv_forcedir = dir = (deltax > 0) ? right : left;

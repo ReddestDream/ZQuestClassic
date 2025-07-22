@@ -4,6 +4,7 @@
 #include <optional>
 #include <vector>
 #include <map>
+#include "base/compiler.h"
 #include "base/msgstr.h"
 #include "base/zdefs.h"
 #include "base/initdata.h"
@@ -72,15 +73,17 @@ void port250QuestRules();
 bool get_debug();
 void set_debug(bool d);
 
+ZC_FORMAT_PRINTF(1, 2)
 void Z_eventlog(const char *format, ...);
+ZC_FORMAT_PRINTF(1, 2)
 void Z_scripterrlog(const char * const format, ...);
+ZC_FORMAT_PRINTF(1, 2)
 void Z_scripterrlog_force_trace(const char * const format, ...);
+ZC_FORMAT_PRINTF(1, 2)
 void zprint(const char * const format, ...);
+ZC_FORMAT_PRINTF(1, 2)
 void zprint2(const char * const format, ...);
 
-// zelda.cc
-void addLwpn(int32_t x,int32_t y,int32_t z,int32_t id,int32_t type,int32_t power,int32_t dir, int32_t parentid);
-void addLwpnEx(int32_t x,int32_t y,int32_t z,int32_t id,int32_t type,int32_t power,int32_t dir, int32_t parentitem, int32_t parentid, byte script_gen);
 bool is_hitflickerframe_hero();
 bool is_hitflickerframe();
 void ALLOFF(bool messagesToo = true, bool decorationsToo = true, bool force = false);
@@ -373,10 +376,10 @@ extern bool is_any_room_dark;
 extern bool hookshot_used, hookshot_frozen, pull_hero, hs_fix, hs_switcher, cheat_superman, gofast, checkhero;
 extern bool ewind_restart, didpit, heart_beep, pausenow, castnext;
 extern bool add_df1asparkle, add_df1bsparkle, add_nl1asparkle, add_nl1bsparkle, add_nl2asparkle, add_nl2bsparkle;
-extern bool is_on_conveyor, activated_timed_warp;
+extern bool activated_timed_warp;
 extern rpos_t hooked_comborpos;
 extern int32_t switchhook_cost_item;
-extern int32_t is_conveyor_stunned;
+extern int32_t is_conveyor_stunned, is_on_conveyor;
 extern uint16_t hooked_layerbits;
 extern int32_t hooked_undercombos[14];
 extern solid_object* switching_object;
@@ -423,6 +426,7 @@ extern script_data *subscreenscripts[NUMSCRIPTSSUBSCREEN];
 extern SAMPLE customsfxdata[WAV_COUNT];
 extern int32_t sfxdat;
 
+// Only used for quests prior to arrays being script objects - ZScriptVersion::gc_arrays()
 #define NUM_ZSCRIPT_ARRAYS	4096
 extern ZScriptArray localRAM[NUM_ZSCRIPT_ARRAYS];
 extern std::map<int32_t,ZScriptArray> objectRAM;

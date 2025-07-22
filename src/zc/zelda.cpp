@@ -371,10 +371,10 @@ bool F12= false,F11= false, F5= false,keyI= false, keyQ= false,
      pull_hero=false, hs_fix=false, hs_switcher=false,
      cheat_superman=false, gofast=false, checkhero=true, didpit=false, heart_beep=true,
      pausenow=false, castnext=false, add_df1asparkle= false, add_df1bsparkle= false, add_nl1asparkle= false, add_nl1bsparkle= false, add_nl2asparkle= false, add_nl2bsparkle= false,
-     is_on_conveyor= false, activated_timed_warp=false;
+     activated_timed_warp=false;
 rpos_t hooked_comborpos = rpos_t::None;
 int32_t switchhook_cost_item = -1;
-int32_t is_conveyor_stunned = 0;
+int32_t is_conveyor_stunned = 0, is_on_conveyor = 0;
 uint16_t hooked_layerbits = 0;
 int32_t hooked_undercombos[14] = {0};
 solid_object* switching_object = NULL;
@@ -412,7 +412,6 @@ script_data *itemspritescripts[NUMSCRIPTSITEMSPRITE];
 script_data *comboscripts[NUMSCRIPTSCOMBODATA];
 script_data *subscreenscripts[NUMSCRIPTSSUBSCREEN];
 
-//ZScript array storage
 std::vector<ZScriptArray> globalRAM;
 ZScriptArray localRAM[NUM_ZSCRIPT_ARRAYS];
 std::map<int32_t,ZScriptArray> objectRAM;
@@ -438,9 +437,12 @@ void initZScriptArrayRAM(bool firstplay)
 	if (!firstplay)
 		return;
 
-	//leave to global script ~Init to allocate global memory first time round
-	game->globalRAM.clear();
-	game->globalRAM.resize(getNumGlobalArrays());
+	if (!ZScriptVersion::gc_arrays())
+	{
+		//leave to global script ~Init to allocate global memory first time round
+		game->globalRAM.clear();
+		game->globalRAM.resize(getNumGlobalArrays());
+	}
 }
 
 void initZScriptGlobalRAM()
@@ -1067,20 +1069,6 @@ sprite_list  guys, items, Ewpns, Lwpns, chainlinks, decorations, portals;
 #include "zc/ending.h"
 
 #include "zc/zc_sys.h"
-
-// Wait... this is only used by ffscript.cpp!?
-void addLwpn(int32_t x,int32_t y,int32_t z,int32_t id,int32_t type,int32_t power,int32_t dir, int32_t parentid)
-{
-    Lwpns.add(new weapon((zfix)x,(zfix)y,(zfix)z,id,type,power,dir,-1,parentid));
-}
-
-
-void addLwpnEx(int32_t x,int32_t y,int32_t z,int32_t id,int32_t type,int32_t power,int32_t dir, int32_t parentitem, int32_t parentid, byte script_gen)
-{
-	//weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t Dir, int32_t Parentitem, int32_t prntid, byte script_gen, bool isDummy)
-    Lwpns.add(new weapon((zfix)x,(zfix)y,(zfix)z,id,type,power,dir,parentitem,parentid,false,1));
-	
-}
 
 void ALLOFF(bool messagesToo, bool decorationsToo, bool force)
 {
@@ -1860,6 +1848,7 @@ int32_t init_game()
 	FFCore.user_stacks_init();
 	FFCore.user_paldata_init();
 	FFCore.user_websockets_init();
+	FFCore.script_arrays_init();
 	script_init_name_to_slot_index_maps();
 
 	if (testingqst_init_data.size())
@@ -1873,6 +1862,9 @@ int32_t init_game()
 				resetItems(game, new_init, false);
 			ringcolor(false);
 			delete new_init;
+
+			if (replay_is_recording())
+				replay_set_meta("init_data", testingqst_init_data);
 		}
 		else
 		{
@@ -3914,7 +3906,7 @@ static void load_replay_file(ReplayMode mode, std::string replay_file, int frame
 		testingqst_dmap = replay_get_meta_int("starting_dmap");
 		testingqst_screen = replay_get_meta_int("starting_scr");
 		testingqst_retsqr = replay_get_meta_int("starting_retsqr");
-		testingqst_init_data = "";
+		testingqst_init_data = replay_get_meta_str("init_data");
 		use_testingst_start = true;
 	}
 	else
@@ -4031,7 +4023,7 @@ static void allocate_crap()
 	}
 }
 
-void do_load_and_quit_command(const char* quest_path)
+void do_load_and_quit_command(const char* quest_path, bool jit_precompile)
 {
 	// We need to init some stuff before loading a quest file will work.
 	int fake_errno = 0;
@@ -4041,7 +4033,14 @@ void do_load_and_quit_command(const char* quest_path)
 
 	byte skip_flags[] = {0, 0, 0, 0};
 	int ret = loadquest(quest_path,&QHeader,&QMisc,tunes+ZC_MIDI_COUNT,false,skip_flags,true,false,0xFF);
+	strcpy(qstpath, quest_path);
 	printf("Hash: %s\n", QHeader.hash().c_str());
+	if (jit_precompile)
+	{
+		printf("compiling scripts ...\n");
+		jit_set_enabled(true);
+		jit_startup();
+	}
 	exit(ret);
 }
 
@@ -4160,7 +4159,8 @@ int main(int argc, char **argv)
 	int load_and_quit_arg = used_switch(argc, argv, "-load-and-quit");
 	if (load_and_quit_arg > 0)
 	{
-		do_load_and_quit_command(argv[load_and_quit_arg+1]);
+		bool jit_precompile = used_switch(argc, argv, "-jit-precompile") > 0;
+		do_load_and_quit_command(argv[load_and_quit_arg+1], jit_precompile);
 	}
 
 	int extract_zasm_arg = used_switch(argc, argv, "-extract-zasm");
@@ -4534,6 +4534,8 @@ int main(int argc, char **argv)
 	}
 #endif
 
+reload_for_replay_file:
+
 	int32_t test_init_data_arg = used_switch(argc,argv,"-test-init-data");
 	if (test_init_data_arg > 0)
 		testingqst_init_data = argv[test_init_data_arg + 1];
@@ -4588,8 +4590,6 @@ int main(int argc, char **argv)
 
 	if (used_switch(argc, argv, "-replay-save-games") > 0)
 		saves_enable_save_current_replay();
-
-reload_for_replay_file:
 
 	int replay_arg = used_switch(argc, argv, "-replay");
 	int snapshot_arg = used_switch(argc, argv, "-snapshot");
@@ -4989,12 +4989,6 @@ reload_for_replay_file:
 		{
 			memset(disabledKeys, 0, sizeof(disabledKeys));
 			memset(disable_control, 0, sizeof(disable_control));
-			FFCore.user_files_init();
-			FFCore.user_dirs_init();
-			FFCore.user_bitmaps_init();
-			FFCore.user_paldata_init();
-			FFCore.user_stacks_init();
-			FFCore.user_objects_init();
 			objectRAM.clear();
 			FFCore.deallocateAllScriptOwned();
 		}

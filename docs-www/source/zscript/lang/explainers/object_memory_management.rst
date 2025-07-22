@@ -1,10 +1,10 @@
+.. _gc:
+
 Object Memory Management
 ========================
 
 .. |GlobalObject| replace:: :ref:`GlobalObject<globals_fun_globalobject>`
 .. |OwnObject| replace:: :ref:`OwnObject<globals_fun_ownobject>`
-
-.. _gc:
 
 .. versionadded:: 3.0
 	\ 
@@ -23,6 +23,7 @@ The following types are objects that are tracked by the garbage collector:
 .. hlist::
 	:columns: 4
 
+	- :ref:`arrays / strings<arrays>`
 	- :ref:`any custom user class<classes>`
 	- :ref:`bitmap<classes_bitmap>`
 	- :ref:`directory<classes_directory>`
@@ -70,13 +71,15 @@ reference is removed (as local variable going out of scope, or being overwritten
 
 New objects have an implicit reference added to an "autorelease pool" (a construct borrowed
 from Objective-C). This reference is removed the next time the script yields (such as by
-calling Waitframe). If the object has not been stored somewhere by then, or made global, it
-is deleted when the script yields.
+calling Waitframe), or the first time it is stored somewhere (such as being assigned to an object
+variable, or being inserted into array). If the object has not been stored somewhere by then, or
+made global, it is deleted when the script yields.
 
 For objects with cyclical references (or self-references), their deletion is deferred until
 a full garbage collection run. When an object is found to be unreachable by
-any global or local variables, it will be deleted. This procedure is much more expensive
-than reference counting, so it doesn't run often, and when exactly it runs is subject to change.
+any global or local variable, and it is not in the autorelease pool, it will be deleted. This
+process is much more expensive than reference counting, so it doesn't run often, and when
+exactly it runs is subject to change.
 
 Script ownership can be revoked by calling |GlobalObject|. You can delete a global object by
 making it no longer global (call |OwnObject| on it) - once all other references are unassigned,
@@ -91,6 +94,10 @@ untyped or int arrays do not count).
 
 .. versionchanged:: 3.0
 	Prior to this version, only globalized objects persist to the save file.
+
+.. caution::
+	References to internal arrays (such as :ref:`Screen->D[]<globals_screen_var_d>`) never persist to save files. They will
+	be replaced with null.
 
 .. caution::
 	You should not expect destructors to run at any specific time, or even at all. You should only

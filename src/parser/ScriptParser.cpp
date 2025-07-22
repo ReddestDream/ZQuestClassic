@@ -592,7 +592,6 @@ unique_ptr<IntermediateData> ScriptParser::generateOCode(FunctionData& fdata)
 		if (bo.hasError()) failure = true;
 		appendElements(rval->globalsInit, oc.initCode);
 		appendElements(rval->globalsInit, bo.getResult());
-		appendElements(rval->globalsInit, oc.deallocCode);
 	}
 
 	// Pop off everything.
@@ -675,10 +674,16 @@ unique_ptr<IntermediateData> ScriptParser::generateOCode(FunctionData& fdata)
 				for (auto&& member : user_class.getScope().getClassData())
 				{
 					auto& type = member.second->getNode()->resolveType(scope, nullptr);
-					if (type.canHoldObject())
+					if (type.isObject())
 					{
 						object_indices.push_back(member.second->getIndex());
-						object_indices.push_back((int)type.getScriptObjectTypeId());
+
+						script_object_type object_type;
+						if (type.isArray())
+							object_type = static_cast<const DataTypeArray*>(&type)->getElementType().getScriptObjectTypeId();
+						else
+							object_type = type.getScriptObjectTypeId();
+						object_indices.push_back((int)object_type);
 					}
 				}
 				if (!object_indices.empty())
@@ -1022,10 +1027,8 @@ void ScriptAssembler::assemble_script(Script* scr,
 	// Push on the params to the run.
 	auto script_start_indx = rval.size();
 	int i = 0;
-	for (; i < numparams && i < 9; ++i)
-		addOpcode2(rval, new OPushRegister(new VarArgument(i)));
 	for (; i < numparams; ++i)
-		addOpcode2(rval, new OPushRegister(new VarArgument(EXP1)));
+		addOpcode2(rval, new OPushRegister(new VarArgument(i)));
 	if(rval.size() > script_start_indx)
 		rval[script_start_indx]->setComment(fmt::format("{} Params",runsig));
 

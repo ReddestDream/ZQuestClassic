@@ -385,6 +385,7 @@ public:
 	void do_scroll_direction(direction dir);
 	void maybe_begin_advanced_maze();
 	void checkscroll();
+	bool check_prescroll();
 	void checkspecial();
 	void checkspecial2(int32_t *ls);
 	void checkspecial3();
@@ -523,7 +524,9 @@ public:
 	zfix  getZ();
 	zfix  getFakeZ();
 	zfix  getFall();
+	zfix  getJump();
 	zfix  getFakeFall();
+	zfix  getFakeJump();
 	zfix  getXOfs();
 	zfix  getYOfs();
 	void setXOfs(int32_t newxofs);
@@ -547,6 +550,8 @@ public:
 	void setFakeZfix(zfix new_Z);
 	void setFall(zfix new_fall);
 	void setFakeFall(zfix new_fall);
+	void setJump(zfix new_jump);
+	void setFakeJump(zfix new_jump);
 	void setClimbCoverX(int32_t new_x);
 	void setClimbCoverY(int32_t new_y);
 	int32_t  getLStep();

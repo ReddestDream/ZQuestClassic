@@ -614,6 +614,7 @@ set(zcbase_sources
 	src/base/sin1.cpp
 	src/base/util.cpp
 	src/base/version.cpp
+	src/base/weapon_data.cpp
 	src/base/win32.cpp
 	src/base/zapp.cpp
 	src/base/zc_alleg.cpp
@@ -880,8 +881,11 @@ endif()
 
 if(JIT_BACKEND STREQUAL "none")
 	target_sources(zplayer PUBLIC src/zc/jit_none.cpp)
+	# This is defined on zcbase b/c currently qst.cpp relies on ffscript.h
+	target_compile_definitions(zcbase PUBLIC ZC_JIT_BACKEND=0)
 elseif(JIT_BACKEND STREQUAL "x64")
 	target_sources(zplayer PUBLIC src/zc/jit_x64.cpp)
+	target_compile_definitions(zcbase PUBLIC ZC_JIT_BACKEND=1)
 
 	FetchContent_Declare(
 		asmjit
@@ -900,6 +904,7 @@ elseif(JIT_BACKEND STREQUAL "x64")
 	set_target_properties(asmjit PROPERTIES COMPILE_OPTIONS "${asm_compile_options}")
 elseif(JIT_BACKEND STREQUAL "wasm")
 	target_sources(zplayer PUBLIC src/zc/jit_wasm.cpp)
+	target_compile_definitions(zcbase PUBLIC ZC_JIT_BACKEND=2)
 else()
 	message(FATAL_ERROR "Invalid value for JIT_BACKEND")
 endif()

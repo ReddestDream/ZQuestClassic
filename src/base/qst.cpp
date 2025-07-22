@@ -1195,6 +1195,83 @@ bool reset_mapstyles(bool validate, miscQdata *Misc)
     return true;
 }
 
+int32_t read_weap_data(weapon_data& data, PACKFILE* f)
+{
+	word v_weapon_data;
+	if(!p_igetw(&v_weapon_data,f))
+		return qe_invalid;
+	
+	if (!p_igetw(&(data.flags), f))
+		return qe_invalid;
+	
+	if (!p_igetl(&(data.moveflags), f))
+		return qe_invalid;
+	
+	if (!p_igetw(&(data.wflags), f))
+		return qe_invalid;
+	
+	for (int32_t q = 0; q < WPNSPR_MAX; ++q)
+	{
+		if (!p_getc(&(data.burnsprs[q]), f))
+			return qe_invalid;
+		if (!p_getc(&(data.light_rads[q]), f))
+			return qe_invalid;
+	}
+	if (!p_getc(&(data.glow_shape), f))
+		return qe_invalid;
+	
+	if (!p_igetl(&(data.override_flags), f))
+		return qe_invalid;
+	if (!p_igetl(&(data.tilew), f))
+		return qe_invalid;
+	if (!p_igetl(&(data.tileh), f))
+		return qe_invalid;
+	if (!p_igetl(&(data.hxsz), f))
+		return qe_invalid;
+	if (!p_igetl(&(data.hysz), f))
+		return qe_invalid;
+	if (!p_igetl(&(data.hzsz), f))
+		return qe_invalid;
+	if (!p_igetl(&(data.hxofs), f))
+		return qe_invalid;
+	if (!p_igetl(&(data.hyofs), f))
+		return qe_invalid;
+	if (!p_igetl(&(data.xofs), f))
+		return qe_invalid;
+	if (!p_igetl(&(data.yofs), f))
+		return qe_invalid;
+	
+	if (!p_igetzf(&(data.step), f))
+		return qe_invalid;
+	
+	if (!p_getc(&(data.unblockable), f))
+		return qe_invalid;
+	
+	if (!p_igetl(&(data.timeout), f))
+		return qe_invalid;
+	
+	if (!p_getc(&(data.imitate_weapon), f))
+		return qe_invalid;
+	if (!p_getc(&(data.default_defense), f))
+		return qe_invalid;
+	
+	if (!p_getc(&(data.lift_level), f))
+		return qe_invalid;
+	if (!p_getc(&(data.lift_time), f))
+		return qe_invalid;
+	if (!p_igetzf(&(data.lift_height), f))
+		return qe_invalid;
+	
+	if(!p_igetw(&(data.script), f))
+		return qe_invalid;
+	for(uint q = 0; q < 8; ++q)
+		if(!p_igetl(&(data.initd[q]), f))
+			return qe_invalid;
+	if(!p_igetw(&(data.pierce_count), f))
+		return qe_invalid;
+	return 0;
+}
+
 int32_t get_qst_buffers()
 {
     TheMaps.resize(MAPSCRS);
@@ -1261,9 +1338,10 @@ int32_t get_qst_buffers()
     
     if((itemsbuf=(itemdata*)malloc(sizeof(itemdata)*(MAXITEMS+1)))==NULL)
         return 0;
-        
-    memset(itemsbuf,0,sizeof(itemdata)*(MAXITEMS+1));
-    itemsbuf++;
+	
+	for(size_t q = 0; q < MAXITEMS+1; ++q)
+		itemsbuf[q].clear();
+	itemsbuf++;
     
     if((wpnsbuf=(wpndata*)malloc(sizeof(wpndata)*MAXWPNS))==NULL)
         return 0;
@@ -1273,7 +1351,8 @@ int32_t get_qst_buffers()
     if((guysbuf=(guydata*)malloc(sizeof(guydata)*MAXGUYS))==NULL)
         return 0;
         
-    memset(guysbuf,0,sizeof(guydata)*MAXGUYS);
+	for(size_t q = 0; q < MAXGUYS; ++q)
+		guysbuf[q].clear();
     
     if((combo_class_buf=(comboclass*)malloc(sizeof(comboclass)*cMAX))==NULL)
         return 0;
@@ -3457,9 +3536,15 @@ int32_t readrules(PACKFILE *f, zquestheader *Header)
 		set_qr(qr_BROKEN_SYSTEM_COLORS, 1);
 	if (compatrule_version < 80)
 		set_qr(qr_ZS_OLD_SUSPEND_FFC, 1);
-
-	if (tempheader.version_major >= 3 || tempheader.compareVer(2, 55, 6) < 0)
+	if (compatrule_version < 81 && (tempheader.version_major >= 3 || tempheader.compareVer(2, 55, 10) < 0))
+		set_qr(qr_BROKEN_SCROLL_INSTEAD_OF_DROWN_FALL, 1);
+	if (compatrule_version < 81 && (tempheader.version_major >= 3 || tempheader.compareVer(2, 55, 6) < 0))
 		set_qr(qr_ROPE_ENEMIES_SPEED_NOT_CONFIGURABLE, 1);
+	if (compatrule_version < 82)
+	{
+		set_qr(qr_EW_ROCKS_HARDCODED_BREAK_ON_SOLID, 1);
+		set_qr(qr_IMPRECISE_WEAPON_SOLIDITY_CHECKS, 1);
+	}
 
 	set_qr(qr_ANIMATECUSTOMWEAPONS,0);
 	if (s_version < 16)
@@ -6289,7 +6374,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
                 tempitem.playsound=WAV_SCALE;
                 reset_itembuf(&tempitem,i);
                 
-				memcpy(&itemsbuf[i], &tempitem, sizeof(itemdata));
+				itemsbuf[i] = tempitem;
                 
                 continue;
             }
@@ -6669,13 +6754,16 @@ int32_t readitems(PACKFILE *f, word version, word build)
 	    
 			if ( s_version >= 26 )  //! New itemdata vars for weapon editor. -Z
 			{			// temp.useweapon, temp.usedefence, temp.weaprange, temp.weap_pattern[ITEM_MOVEMENT_PATTERNS]
-				if(!p_getc(&tempitem.useweapon,f))
+				if(s_version < 63)
 				{
-					return qe_invalid;
-				}
-				if(!p_getc(&tempitem.usedefense,f))
-				{
-					return qe_invalid;
+					if(!p_getc(&tempitem.weap_data.imitate_weapon,f))
+					{
+						return qe_invalid;
+					}
+					if(!p_getc(&tempitem.weap_data.default_defense,f))
+					{
+						return qe_invalid;
+					}
 				}
 				if(!p_igetl(&tempitem.weaprange,f))
 				{
@@ -6700,13 +6788,10 @@ int32_t readitems(PACKFILE *f, word version, word build)
 				{
 					return qe_invalid;
 				}
-				for ( int32_t q = 0; q < INITIAL_D; q++ )
-				{
-					if(!p_igetl(&tempitem.weap_initiald[q],f))
-					{
-						return qe_invalid;
-					}
-				}
+				if(s_version < 63)
+					for ( int32_t q = 0; q < INITIAL_D; q++ )
+						if(!p_igetl(&tempitem.weap_data.initd[q],f))
+							return qe_invalid;
 				for ( int32_t q = 0; q < 2; q++ )
 				{
 					byte temp;
@@ -6750,38 +6835,26 @@ int32_t readitems(PACKFILE *f, word version, word build)
 				{
 					return qe_invalid;
 				}
-				if(!p_igetl(&tempitem.weap_hxofs,f))
+				if(s_version < 63)
 				{
-					return qe_invalid;
+					if(!p_igetl(&tempitem.weap_data.hxofs,f))
+						return qe_invalid;
+					if(!p_igetl(&tempitem.weap_data.hyofs,f))
+						return qe_invalid;
+					if(!p_igetl(&tempitem.weap_data.hxsz,f))
+						return qe_invalid;
+					if(!p_igetl(&tempitem.weap_data.hysz,f))
+						return qe_invalid;
+					if(!p_igetl(&tempitem.weap_data.hzsz,f))
+						return qe_invalid;
+					if(!p_igetl(&tempitem.weap_data.xofs,f))
+						return qe_invalid;
+					if(!p_igetl(&tempitem.weap_data.yofs,f))
+						return qe_invalid;
 				}
-				if(!p_igetl(&tempitem.weap_hyofs,f))
-				{
-					return qe_invalid;
-				}
-				if(!p_igetl(&tempitem.weap_hxsz,f))
-				{
-					return qe_invalid;
-				}
-				if(!p_igetl(&tempitem.weap_hysz,f))
-				{
-					return qe_invalid;
-				}
-				if(!p_igetl(&tempitem.weap_hzsz,f))
-				{
-					return qe_invalid;
-				}
-				if(!p_igetl(&tempitem.weap_xofs,f))
-				{
-					return qe_invalid;
-				}
-				if(!p_igetl(&tempitem.weap_yofs,f))
-				{
-					return qe_invalid;
-				}
-				if(!p_igetw(&tempitem.weaponscript,f))
-				{
-					return qe_invalid;
-				}
+				if(s_version < 63)
+					if(!p_igetw(&tempitem.weap_data.script,f))
+						return qe_invalid;
 				if(!p_igetl(&tempitem.wpnsprite,f))
 				{
 					return qe_invalid;
@@ -6813,21 +6886,14 @@ int32_t readitems(PACKFILE *f, word version, word build)
 					return qe_invalid;
 				}
 			}
-			if ( s_version >= 29 )  //! More new vars. 
+			if ( s_version >= 29 && s_version < 63)  //! More new vars. 
 			{
-				//Item Size FLags, TileWidth, TileHeight
-				if(!p_igetl(&tempitem.weapoverrideFLAGS,f))
-				{
+				if(!p_igetl(&tempitem.weap_data.override_flags,f))
 					return qe_invalid;
-				}
-				if(!p_igetl(&tempitem.weap_tilew,f))
-				{
+				if(!p_igetl(&tempitem.weap_data.tilew,f))
 					return qe_invalid;
-				}
-				if(!p_igetl(&tempitem.weap_tileh,f))
-				{
+				if(!p_igetl(&tempitem.weap_data.tileh,f))
 					return qe_invalid;
-				}
 			}
 			if ( s_version >= 30 )  //! More new vars. 
 			{
@@ -6884,13 +6950,10 @@ int32_t readitems(PACKFILE *f, word version, word build)
 							return qe_invalid;
 						} 
 					}
-					for ( int32_t w = 0; w < 65; w++ )
-					{
-						if(!p_getc(&(tempitem.weapon_initD_label[q][w]),f))
-						{
-							return qe_invalid;
-						} 
-					}
+					if(s_version < 63)
+						for ( int32_t w = 0; w < 65; w++ )
+							if(!p_getc(&padding,f))
+								return qe_invalid;
 					for ( int32_t w = 0; w < 65; w++ )
 					{
 						if(!p_getc(&(tempitem.sprite_initD_label[q][w]),f))
@@ -6943,14 +7006,14 @@ int32_t readitems(PACKFILE *f, word version, word build)
             reset_itembuf(&tempitem,i);
         }
 		
-		if(s_version >= 58)
+		if(s_version >= 58 && s_version < 63)
 		{
 			for(int q = 0; q < WPNSPR_MAX; ++q)
 			{
-				if(!p_getc(&tempitem.burnsprs[q],f))
+				if(!p_getc(&tempitem.weap_data.burnsprs[q],f))
 					return qe_invalid;
 				if(s_version >= 59)
-					if(!p_getc(&tempitem.light_rads[q],f))
+					if(!p_getc(&tempitem.weap_data.light_rads[q],f))
 						return qe_invalid;
 			}
 		}
@@ -6967,24 +7030,59 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		{
 			if (!p_igetl(&tempitem.moveflags, f))
 				return qe_invalid;
-			if (!p_igetl(&tempitem.wmoveflags, f))
-				return qe_invalid;
+			if(s_version < 63)
+				if (!p_igetl(&tempitem.weap_data.moveflags, f))
+					return qe_invalid;
 		}
 		else
 		{
 			tempitem.moveflags = (move_obeys_grav | move_can_pitfall);
 			switch(tempitem.family)
 			{
-				case itype_bomb:
-				case itype_sbomb:
-				case itype_bait:
-				case itype_liftglove:
-				case itype_candle:
-				case itype_book:
-					tempitem.wmoveflags = (move_obeys_grav | move_can_pitfall);
+				case itype_divinefire:
+					if(!(tempitem.flags & item_flag3))
+						break;
+				[[fallthrough]];
+				case itype_bomb: case itype_sbomb:
+				case itype_bait: case itype_liftglove:
+				case itype_candle: case itype_book:
+					tempitem.weap_data.moveflags = (move_obeys_grav | move_can_pitfall);
 					break;
 				default:
-					tempitem.wmoveflags = move_none;
+					tempitem.weap_data.moveflags = move_none;
+					break;
+			}
+		}
+		
+		if(s_version >= 63)
+		{
+			if(auto ret = read_weap_data(tempitem.weap_data, f))
+				return ret;
+		}
+		else
+		{
+			SETFLAG(tempitem.weap_data.wflags, WFLAG_UPDATE_IGNITE_SPRITE, tempitem.flags & item_burning_sprites);
+			switch(tempitem.family)
+			{
+				case itype_liftglove:
+					tempitem.weap_data.wflags = WFLAG_BREAK_WHEN_LANDING;
+					break;
+				case itype_bomb: case itype_sbomb:
+					// Moving these over and removing them from itemdata
+					if(tempitem.flags & item_flag3)
+						tempitem.weap_data.wflags |= WFLAG_STOP_WHEN_LANDING;
+					if(tempitem.flags & item_flag5)
+						tempitem.weap_data.wflags |= WFLAG_STOP_WHEN_HIT_SOLID;
+					tempitem.flags &= ~(item_flag3|item_flag5);
+					if(tempitem.misc4)
+					{
+						tempitem.weap_data.lift_level = tempitem.misc4;
+						tempitem.weap_data.lift_time = tempitem.misc5;
+						tempitem.weap_data.lift_height = tempitem.misc6;
+						tempitem.misc4 = 0;
+						tempitem.misc5 = 0;
+						tempitem.misc6 = 0;
+					}
 					break;
 			}
 		}
@@ -6994,14 +7092,14 @@ int32_t readitems(PACKFILE *f, word version, word build)
 			if(loading_tileset_flags & TILESET_CLEARSCRIPTS)
 			{
 				tempitem.script = 0;
-				tempitem.weaponscript = 0;
+				tempitem.weap_data.script = 0;
 				for(int q = 0; q < 8; ++q)
 				{
 					tempitem.initiald[q] = 0;
-					tempitem.weap_initiald[q] = 0;
+					tempitem.weap_data.initd[q] = 0;
 				}
 			}
-			memcpy(&itemsbuf[i], &tempitem, sizeof(itemdata));
+			itemsbuf[i] = tempitem;
 		}
     }
 
@@ -7015,7 +7113,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
     //////////////////////////////////////////////////////
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		memcpy(&tempitem, &itemsbuf[i], sizeof(itemdata));
+		tempitem = itemsbuf[i];
 		
 		//Account for older quests that didn't have an actual item for the used letter
 		if(s_version < 2 && i==iLetterUsed)
@@ -9284,7 +9382,6 @@ int32_t readitems(PACKFILE *f, word version, word build)
 			for ( int32_t q = 0; q < 8; q++ )
 			{
 				sprintf(tempitem.initD_label[q],"InitD[%d]",q);
-				sprintf(tempitem.weapon_initD_label[q],"InitD[%d]",q);
 				sprintf(tempitem.sprite_initD_label[q],"InitD[%d]",q);
 				tempitem.sprite_initiald[q] = 0;
 			}
@@ -9616,8 +9713,8 @@ int32_t readweapons(PACKFILE *f, zquestheader *Header)
 	{
 		wpnsbuf[iwSpawn] = *((wpndata*)(itemsbuf + iMisc1));
 		wpnsbuf[iwDeath] = *((wpndata*)(itemsbuf + iMisc2));
-		memset(&itemsbuf[iMisc1],0,sizeof(itemdata));
-		memset(&itemsbuf[iMisc2],0,sizeof(itemdata));
+		itemsbuf[iMisc1].clear();
+		itemsbuf[iMisc2].clear();
 	}
 	
 	if((Header->zelda_version < 0x192)||
@@ -9739,43 +9836,43 @@ static void guy_update_firesfx(guydata& tempguy)
 
 static void guy_update_weaponflags(guydata& tempguy)
 {
-	tempguy.wunblockable = 0;
-	tempguy.wmoveflags = move_none;
+	tempguy.weap_data.unblockable = 0;
+	tempguy.weap_data.moveflags = move_none;
 	if (tempguy.weapon == ewFlame || tempguy.weapon == ewFireTrail)
-		tempguy.wmoveflags |= (move_obeys_grav | move_can_pitfall);
-	tempguy.weapoverrideFLAGS = 0;
-	tempguy.weap_hxofs = 0;
-	tempguy.weap_hyofs = 0;
-	tempguy.weap_hxsz = 0;
-	tempguy.weap_hysz = 0;
-	tempguy.weap_hzsz = 0;
-	tempguy.weap_xofs = 0;
-	tempguy.weap_yofs = 0;
-	tempguy.weap_tilew = 0;
-	tempguy.weap_tileh = 0;
+		tempguy.weap_data.moveflags |= (move_obeys_grav | move_can_pitfall);
+	tempguy.weap_data.override_flags = 0;
+	tempguy.weap_data.hxofs = 0;
+	tempguy.weap_data.hyofs = 0;
+	tempguy.weap_data.hxsz = 0;
+	tempguy.weap_data.hysz = 0;
+	tempguy.weap_data.hzsz = 0;
+	tempguy.weap_data.xofs = 0;
+	tempguy.weap_data.yofs = 0;
+	tempguy.weap_data.tilew = 0;
+	tempguy.weap_data.tileh = 0;
 	switch (tempguy.weapon)
 	{
 	case ewFireball: case ewFireball2:
-		tempguy.wstep = 175;
+		tempguy.weap_data.step = 1.75_zf;
 		break;
 	case ewSword: case ewLitBomb: case ewLitSBomb:
 	case ewRock:  case ewMagic: case ewWind:
-		tempguy.wstep = 300;
+		tempguy.weap_data.step = 3_zf;
 		break;
 	case ewArrow:
-		tempguy.wstep = 200;
+		tempguy.weap_data.step = 2_zf;
 		break;
 	case ewFlame: case ewFlame2:
-		tempguy.wstep = 100;
+		tempguy.weap_data.step = 1_zf;
 		break;
 	default:
-		tempguy.wstep = 0;
+		tempguy.weap_data.step = 0_zf;
 		break;
 	}
 	for (int q = 0; q < WPNSPR_MAX; ++q)
 	{
-		tempguy.burnsprs[q] = 0;
-		tempguy.light_rads[q] = 0;
+		tempguy.weap_data.burnsprs[q] = 0;
+		tempguy.weap_data.light_rads[q] = 0;
 	}
 }
 
@@ -13838,12 +13935,12 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
             {
                 if(i >= OLDBETAMAXGUYS)
                 {
-                    memset(&guysbuf[i], 0, sizeof(guydata));
+					guysbuf[i].clear();
                     continue;
                 }
             }
             
-            memset(&tempguy, 0, sizeof(guydata));
+			tempguy.clear();
             
 			uint32_t flags1;
 			uint32_t flags2;
@@ -14423,12 +14520,12 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 					return qe_invalid;
 				} 
 			}
-			for ( int32_t w = 0; w < 65; w++ )
+			if(guyversion < 54)
 			{
-				if(!p_getc(&(tempguy.weapon_initD_label[q][w]),f))
-				{
-					return qe_invalid;
-				} 
+				byte dummybyte;
+				for ( int32_t w = 0; w < 65; w++ )
+					if(!p_getc(&dummybyte,f))
+						return qe_invalid;
 			}
 		}
 		    
@@ -14439,30 +14536,20 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 		for ( int32_t q = 0; q < 8; q++ )
 		{
 			sprintf(tempguy.initD_label[q],"InitD[%d]",q);
-			sprintf(tempguy.weapon_initD_label[q],"InitD[%d]",q);
 		}
 	    }
-	    if ( guyversion >= 40 )
-	    {
-		    if(!p_igetw(&(tempguy.weaponscript),f))
-		    {
+	    if ( guyversion >= 40 && guyversion < 54)
+		    if(!p_igetw(&(tempguy.weap_data.script),f))
 				return qe_invalid;
-		    } 
-	    }
 	    if ( guyversion < 40 ) 
-	    {
-		    tempguy.weaponscript = 0;
-	    }
+		    tempguy.weap_data.script = 0;
 	    //eweapon script InitD
 	    if ( guyversion >= 41 )
 	    {
-		    for ( int32_t q = 0; q < 8; q++ )
-		    {
-			    if(!p_igetl(&(tempguy.weap_initiald[q]),f))
-			    {
-					return qe_invalid;
-			    } 
-		    }
+			if(guyversion < 54)
+				for ( int32_t q = 0; q < 8; q++ )
+					if(!p_igetl(&(tempguy.weap_data.initd[q]),f))
+						return qe_invalid;
 		    if ( guy_cversion < 4 )
 		    {
 			if ( tempguy.family == eeKEESE )
@@ -15136,39 +15223,41 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 			{
 				guy_update_weaponflags(tempguy);
 			}
-			else
+			else if(guyversion < 54)
 			{
-				if (!p_getc(&(tempguy.wunblockable), f))
+				if (!p_getc(&(tempguy.weap_data.unblockable), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.wmoveflags), f))
+				if (!p_igetl(&(tempguy.weap_data.moveflags), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weapoverrideFLAGS), f))
+				if (!p_igetl(&(tempguy.weap_data.override_flags), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weap_tilew), f))
+				if (!p_igetl(&(tempguy.weap_data.tilew), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weap_tileh), f))
+				if (!p_igetl(&(tempguy.weap_data.tileh), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weap_hxsz), f))
+				if (!p_igetl(&(tempguy.weap_data.hxsz), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weap_hysz), f))
+				if (!p_igetl(&(tempguy.weap_data.hysz), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weap_hzsz), f))
+				if (!p_igetl(&(tempguy.weap_data.hzsz), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weap_hxofs), f))
+				if (!p_igetl(&(tempguy.weap_data.hxofs), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weap_hyofs), f))
+				if (!p_igetl(&(tempguy.weap_data.hyofs), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weap_xofs), f))
+				if (!p_igetl(&(tempguy.weap_data.xofs), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.weap_yofs), f))
+				if (!p_igetl(&(tempguy.weap_data.yofs), f))
 					return qe_invalid;
-				if (!p_igetl(&(tempguy.wstep), f))
+				int32_t temp_step;
+				if (!p_igetl(&temp_step, f))
 					return qe_invalid;
+				tempguy.weap_data.step = zslongToFix(temp_step*100);
 				for (int32_t q = 0; q < WPNSPR_MAX; ++q)
 				{
-					if (!p_igetw(&(tempguy.burnsprs[q]), f))
+					if (!p_igetw(&(tempguy.weap_data.burnsprs[q]), f))
 						return qe_invalid;
-					if (!p_igetw(&(tempguy.light_rads[q]), f))
+					if (!p_igetw(&(tempguy.weap_data.light_rads[q]), f))
 						return qe_invalid;
 				}
 			}
@@ -15180,6 +15269,19 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 			{
 				if (!p_getc(&(tempguy.specialsfx), f))
 					return qe_invalid;
+			}
+			
+			if(guyversion >= 54)
+			{
+				if(auto ret = read_weap_data(tempguy.weap_data, f))
+					return ret;
+			}
+			else
+			{
+				SETFLAG(tempguy.weap_data.wflags, WFLAG_UPDATE_IGNITE_SPRITE, tempguy.flags & guy_burning_sprites);
+				tempguy.weap_data.flags |= wdata_set_step;
+				if(tempguy.weapon == ewRock)
+					tempguy.weap_data.wflags |= WFLAG_BREAK_ON_SOLID;
 			}
 
 			if(loading_tileset_flags & TILESET_CLEARSCRIPTS)
@@ -15443,6 +15545,8 @@ darknuts:
 
 int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr, word version, int scrind)
 {
+	bool should_skip = legacy_skip_flags && get_bit(legacy_skip_flags, skip_maps);
+
 	byte tempbyte, padding;
 	int32_t extras, secretcombos;
 	if(!p_getc(&(temp_mapscr->valid),f))
@@ -15926,11 +16030,17 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 		return qe_invalid;
 	}
 	
+	byte old_combo_page = 0;
 	if(Header->zelda_version < 0x193)
 	{
-		if (!p_getc(&old_combo_pages[scrind], f))
+		if (!p_getc(&old_combo_page, f))
 		{
 			return qe_invalid;
+		}
+
+		if (!should_skip)
+		{
+			old_combo_pages[scrind] = old_combo_page;
 		}
 	}
 	
@@ -16410,7 +16520,7 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 	if((Header->zelda_version < 0x192)||((Header->zelda_version == 0x192)&&(Header->build<154)))
 	{
 		temp_mapscr->undercset=(temp_mapscr->undercombo>>8)&7;
-		temp_mapscr->undercombo=(temp_mapscr->undercombo&0xFF)+(old_combo_pages[scrind]<<8);
+		temp_mapscr->undercombo=(temp_mapscr->undercombo&0xFF)+(old_combo_page<<8);
 	}
 	
 	if((Header->zelda_version < 0x192)||((Header->zelda_version == 0x192)&&(Header->build<137)))
@@ -16445,7 +16555,7 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 				temp_mapscr->cset[k]=((temp_mapscr->data[k]>>8)&7);
 			}
 			
-			temp_mapscr->data[k]=(temp_mapscr->data[k]&0xFF)+(old_combo_pages[scrind]<<8);
+			temp_mapscr->data[k]=(temp_mapscr->data[k]&0xFF)+(old_combo_page<<8);
 		}
 	}
 	
@@ -18122,14 +18232,41 @@ int32_t readcombo_triggers_loop(PACKFILE* f, word s_version, combo_trigger& temp
 		temp_trigger.fail_prompt_cid = temp_trigger.prompt_cid;
 		temp_trigger.fail_prompt_cs = temp_trigger.prompt_cs;
 	}
+	if(s_version >= 54)
+	{
+		if(!p_getc(&temp_trigger.req_player_dir,f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.dest_player_x, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.dest_player_y, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.dest_player_z, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.req_player_jump, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.req_player_x, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.req_player_y, f))
+			return qe_invalid;
+	}
 	return 0;
 }
 
 int32_t readcombo_loop(PACKFILE* f, word s_version, newcombo& temp_combo)
 {
-	byte combo_has_flags;
-	if(!p_getc(&combo_has_flags,f))
-		return qe_invalid;
+	byte tempbyte;
+	word combo_has_flags;
+	if(s_version < 55)
+	{
+		if(!p_getc(&tempbyte,f))
+			return qe_invalid;
+		combo_has_flags = tempbyte;
+	}
+	else
+	{
+		if(!p_igetw(&combo_has_flags,f))
+			return qe_invalid;
+	}
 	
 	temp_combo.clear();
 	if(combo_has_flags)
@@ -18282,14 +18419,45 @@ int32_t readcombo_loop(PACKFILE* f, word s_version, newcombo& temp_combo)
 				if(!p_getc(&temp_combo.lift_parent_item,f))
 					return qe_invalid;
 			}
-			if(s_version >= 51)
+			auto& weap_data = temp_combo.lift_weap_data;
+			if(s_version >= 51 && s_version < 55)
 			{
-				if(!p_getc(&temp_combo.liftlightrad,f))
+				if(!p_getc(&weap_data.light_rads[WPNSPR_BASE],f))
 					return qe_invalid;
-				if(!p_getc(&temp_combo.liftlightshape,f))
+				if(!p_getc(&weap_data.glow_shape,f))
 					return qe_invalid;
 			}
+			
+			if(s_version >= 55)
+			{
+				if(auto ret = read_weap_data(weap_data, f))
+					return ret;
+			}
+			else
+			{
+				auto const& pitm = itemsbuf[temp_combo.lift_parent_item];
+				auto weap_glow = weap_data.light_rads[WPNSPR_BASE];
+				switch(pitm.family)
+				{
+					case itype_bomb:
+					case itype_sbomb:
+						weap_data = pitm.weap_data;
+						if(!(weap_data.wflags & WFLAG_UPDATE_IGNITE_SPRITE))
+						{
+							weap_data.flags |= wdata_glow_rad;
+							weap_data.light_rads[WPNSPR_BASE] = weap_glow;
+						}
+						break;
+					default:
+						weap_data.wflags |= WFLAG_BREAK_WHEN_LANDING;
+						weap_data.flags |= wdata_glow_rad;
+				}
+				weap_data.moveflags |= move_obeys_grav|move_can_pitfall;
+				if(temp_combo.liftflags & LF_BREAKONSOLID)
+					weap_data.wflags |= WFLAG_BREAK_ON_SOLID;
+			}
 		}
+		
 		if(combo_has_flags&CHAS_GENERAL)
 		{
 			if(!p_getc(&temp_combo.speed_mult,f))
@@ -18344,6 +18512,11 @@ int32_t readcombo_loop(PACKFILE* f, word s_version, newcombo& temp_combo)
 				if(!p_getc(&temp_combo.sfx_lava_drowning,f))
 					return qe_invalid;
 			}
+		}
+		if(combo_has_flags&CHAS_MISC_WEAP_DATA)
+		{
+			if(auto ret = read_weap_data(temp_combo.misc_weap_data, f))
+				return ret;
 		}
 	}
 	update_combo(temp_combo, s_version);
@@ -21106,6 +21279,10 @@ int32_t readinitdata(PACKFILE *f, zquestheader *Header)
 			}
 		}
 	}
+	if(s_version >= 43)
+		for(uint q = 0; q < NUM_BOTTLE_SLOTS; ++q)
+			if (!p_getc(&temp_zinit.bottle_slot[q], f))
+				return qe_invalid;
 	if (should_skip)
 		return 0;
 
@@ -21599,10 +21776,16 @@ static bool compat_qr_hide_bottom_pixels(const zquestheader& header)
 	if (replay_is_replaying() && replay_get_meta_str("zc_version_created").starts_with("2.55"))
 		return true;
 
+	// Quests prior to 2.55.9 with a scripted subscreen?
+	for (int i = 0; i < MAXDMAPS; i++)
+	{
+		int script = DMaps[i].active_sub_script;
+		if (script && dmapscripts[script] && dmapscripts[script]->valid())
+			return true;
+	}
+
 	// Only a couple quests take any time (~7ms) on my intel mac to check all the ZASM... cache those.
 	std::string title = header.title;
-	if (title == "Stellar Seas")
-		return false;
 	if (title == "Yuurand: Tales of the Labyrinth")
 		return true;
 
@@ -21630,14 +21813,51 @@ static bool compat_qr_hide_bottom_pixels(const zquestheader& header)
 	return found;
 }
 
+static int32_t prev_quest_format[versiontypesLAST];
+static byte prev_quest_rules[QUESTRULES_NEW_SIZE];
+static byte prev_extra_rules[EXTRARULES_SIZE];
+static byte prev_midi_flags[MIDIFLAGS_SIZE];
+static word prev_map_count;
+
+// When skipping any section, we are loading a qst file just to poke at a couple things.
+// We should not mutate important globals in that case.
+// We should also restore these globals when loading a qst fails.
+// Globals that are read by usecases of `skip_flags` will have to be restored manually by the caller
+// (see load_imagebuf).
+static void store_prev_qstload_global_state()
+{
+	memcpy(prev_quest_rules, quest_rules, QUESTRULES_NEW_SIZE);
+	memcpy(prev_extra_rules, extra_rules, EXTRARULES_SIZE);
+	memcpy(prev_midi_flags, midi_flags, MIDIFLAGS_SIZE);
+	memcpy(prev_quest_format, FFCore.quest_format, versiontypesLAST);
+	prev_map_count = map_count;
+}
+
+static void restore_prev_qstload_global_state()
+{
+	memcpy(quest_rules, prev_quest_rules, QUESTRULES_NEW_SIZE);
+	memcpy(extra_rules, prev_extra_rules, EXTRARULES_SIZE);
+	unpack_qrs();
+	memcpy(midi_flags, prev_midi_flags, MIDIFLAGS_SIZE);
+	memcpy(FFCore.quest_format, prev_quest_format, versiontypesLAST);
+	map_count = prev_map_count;
+}
+
 //Internal function for loadquest wrapper
+// TODO: refactor to never mutate global state, to make loading partial qst files easier and less error prone. huge project.
 static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Misc, zctune *tunes, bool show_progress, byte *skip_flags, byte printmetadata)
 {
     DMapEditorLastMaptileUsed = 0;
     combosread=false;
     mapsread=false;
     fixffcs=false;
-	
+
+	store_prev_qstload_global_state();
+
+	bool skipping_any = false;
+	for (int i = 0; i < 4; i++)
+		skipping_any |= skip_flags[i] ? true : false;
+
 	bool do_clear_scripts = !get_bit(skip_flags,skip_ffscript);
 	if(loading_tileset_flags & TILESET_CLEARSCRIPTS)
 	{
@@ -21651,33 +21871,26 @@ static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Mi
 	{
 		set_bit(skip_flags, skip_maps, 1);
 	}
-    
-    //  show_progress=true;
+
     char tmpfilename[L_tmpnam];
     temp_name(tmpfilename);
-//  char percent_done[30];
     bool catchup=false;
     byte tempbyte;
-    word old_map_count=map_count;
+
+    // oldquest flag is set when an unencrypted qst file is suspected.
+    bool oldquest = false;
+    int32_t open_error=0;
+    PACKFILE *f=open_quest_file(&open_error, filename, show_progress);
     
-    byte old_quest_rules[QUESTRULES_NEW_SIZE] = {0};
-    byte old_extra_rules[EXTRARULES_SIZE] = {0};
-    byte old_midi_flags[MIDIFLAGS_SIZE] = {0};
-    
-    if(get_bit(skip_flags, skip_rules))
+    if (!f)
     {
-        memcpy(old_quest_rules, quest_rules, QUESTRULES_NEW_SIZE);
-        memcpy(old_extra_rules, extra_rules, EXTRARULES_SIZE);
+        ASSERT(open_error != 0);
+        return open_error;
     }
     
-    memset(quest_rules, 0, QUESTRULES_NEW_SIZE); //clear here to prevent any kind of carryover -Z
+    memset(quest_rules, 0, QUESTRULES_NEW_SIZE);
+	memset(extra_rules, 0, EXTRARULES_SIZE);
 	unpack_qrs();
-   // memset(extra_rules, 0, EXTRARULES_SIZE); //clear here to prevent any kind of carryover -Z
-   
-    if(get_bit(skip_flags, skip_midis))
-    {
-        memcpy(old_midi_flags, midi_flags, MIDIFLAGS_SIZE);
-    }
 
 	if (!get_bit(skip_flags, skip_maps))
 		Regions = {};
@@ -21769,17 +21982,7 @@ static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Mi
 	zinfo tempzi;
 	tempzi.clear();
 	load_tmp_zi = &tempzi;
-    
-    // oldquest flag is set when an unencrypted qst file is suspected.
-    bool oldquest = false;
-    int32_t open_error=0;
-    PACKFILE *f=open_quest_file(&open_error, filename, show_progress);
-    
-    if (!f)
-    {
-        ASSERT(open_error != 0);
-        return open_error;
-    }
+
 	char zinfofilename[2048];
 	replace_extension(zinfofilename, filename, "zinfo", 2047);
     int32_t ret=0;
@@ -22474,23 +22677,6 @@ static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Mi
 		ZI.copyFrom(tempzi);
     }
     
-    if(get_bit(skip_flags, skip_maps))
-    {
-        map_count=old_map_count;
-    }
-    
-    if(get_bit(skip_flags, skip_rules))
-    {
-        memcpy(quest_rules, old_quest_rules, QUESTRULES_NEW_SIZE);
-        memcpy(extra_rules, old_extra_rules, EXTRARULES_SIZE);
-		unpack_qrs();
-    }
-    
-    if(get_bit(skip_flags, skip_midis))
-    {
-        memcpy(midi_flags, old_midi_flags, MIDIFLAGS_SIZE);
-    }
-    
 	if(loading_tileset_flags & TILESET_CLEARMAPS)
 	{
 		TheMaps.clear();
@@ -22521,6 +22707,9 @@ static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Mi
 		old_combo_pages = {};
 	}
 
+	if (skipping_any)
+		restore_prev_qstload_global_state();
+
     return qe_OK;
     
 invalid:
@@ -22539,7 +22728,9 @@ invalid:
             delete_file(tmpfilename);
         }
     }
-    
+
+	restore_prev_qstload_global_state();
+
     return qe_invalid;
     
 }
