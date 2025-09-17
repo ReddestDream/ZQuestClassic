@@ -46,7 +46,7 @@ jobs:
             --version-override=${{ github.event.inputs.version-override }}
 
       - name: Setup Sentry CLI
-        uses: mathieu-bour/setup-sentry-cli@v1.3.0
+        uses: mathieu-bour/setup-sentry-cli@dbbd0776d55f6e0e5cd7e81fa1a80f4fd0c60369 # v2.0.0
         if: inputs.sentry
         with:
           version: '2.20.6'
@@ -192,7 +192,7 @@ jobs:
         run: python scripts/generate_changelog.py --format markdown --from ${{ needs.create-tag.outputs.previous-release-version }} --for-nightly=${{ github.event.inputs.version-type == 'nightly' }} --version ${{ needs.create-tag.outputs.release-version }} > new_changelog.md
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.3.3
         with:
           name: ${{ needs.create-tag.outputs.release-name }}
           tag_name: ${{ needs.create-tag.outputs.release-version }}
@@ -205,7 +205,7 @@ jobs:
 
       - name: Setup Sentry CLI
         if: inputs.sentry
-        uses: mathieu-bour/setup-sentry-cli@v1.3.0
+        uses: mathieu-bour/setup-sentry-cli@dbbd0776d55f6e0e5cd7e81fa1a80f4fd0c60369 # v2.0.0
         with:
           version: '2.20.6'
           token: ${{ secrets.SENTRY_TOKEN }}
