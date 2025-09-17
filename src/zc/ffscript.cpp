@@ -155,7 +155,6 @@ extern byte monochrome_console;
 
 static std::map<script_id, ScriptDebugHandle> script_debug_handles;
 ScriptDebugHandle* runtime_script_debug_handle;
-int32_t jitted_uncompiled_command_count;
 
 CScriptDrawingCommands scriptdraws;
 FFScript FFCore;
@@ -695,8 +694,8 @@ vector<int32_t> *sargvec;
 string *sargstr;
 refInfo *ri;
 script_data *curscript;
-int32_t(*stack)[MAX_SCRIPT_REGISTERS];
-bounded_vec<word, int32_t>* ret_stack;
+int32_t(*stack)[MAX_STACK_SIZE];
+int32_t(*ret_stack)[MAX_CALL_FRAMES];
 vector<int32_t> zs_vargs;
 ScriptType curScriptType;
 word curScriptNum;
@@ -715,8 +714,8 @@ static vector<vector<int32_t>*> sargvec_cache;
 static vector<string*> sargstr_cache;
 static vector<refInfo*> ricache;
 static vector<script_data*> sdcache;
-static vector<int32_t(*)[MAX_SCRIPT_REGISTERS]> stackcache;
-static vector<bounded_vec<word, int32_t>*> ret_stack_cache;
+static vector<int32_t(*)[MAX_STACK_SIZE]> stackcache;
+static vector<int32_t(*)[MAX_CALL_FRAMES]> ret_stack_cache;
 void push_ri()
 {
 	sarg1cache.push_back(sarg1);
@@ -753,26 +752,38 @@ void pop_ri()
 //           Helper Functions           //
 ///-------------------------------------//
 
-void SH::write_stack(const uint32_t stackoffset, const int32_t value)
+static void log_stack_overflow_error()
 {
-	if(stackoffset >= MAX_SCRIPT_REGISTERS)
+	scripting_log_error_with_context("Stack overflow!");
+}
+
+static void log_call_limit_error()
+{
+	scripting_log_error_with_context("Function call limit reached! Too much recursion. Max nested function calls is {}", MAX_CALL_FRAMES);
+}
+
+void SH::write_stack(const uint32_t sp, const int32_t value)
+{
+	if (sp >= MAX_STACK_SIZE)
 	{
-		Z_scripterrlog("Stack over or underflow, stack pointer = %u\n", stackoffset);
+		log_stack_overflow_error();
+		ri->overflow = true;
 		return;
 	}
 	
-	(*stack)[stackoffset] = value;
+	(*stack)[sp] = value;
 }
 
-int32_t SH::read_stack(const uint32_t stackoffset)
+int32_t SH::read_stack(const uint32_t sp)
 {
-	if(stackoffset >= MAX_SCRIPT_REGISTERS)
+	if (sp >= MAX_STACK_SIZE)
 	{
-		Z_scripterrlog("Stack over or underflow, stack pointer = %u\n", stackoffset);
+		log_stack_overflow_error();
+		ri->overflow = true;
 		return -10000;
 	}
 	
-	return (*stack)[stackoffset];
+	return (*stack)[sp];
 }
 
 ///----------------------------//
@@ -909,26 +920,29 @@ int32_t get_screeneflags(mapscr *m, int32_t flagset)
 	return flagval;
 }
 
-int32_t get_mi(int32_t ref)
+int32_t get_mi(mapdata const& ref)
 {
-	auto result = decode_mapdata_ref(ref);
-	if (result.canonical())
+	if (ref.canonical())
 	{
-		if (result.screen >= MAPSCRSNORMAL) return -1;
-		return mapind(result.scr->map, result.screen);
+		if (ref.screen >= MAPSCRSNORMAL) return -1;
+		return mapind(ref.scr->map, ref.screen);
 	}
-	else if (result.current())
+	else if (ref.current())
 	{
-		if (result.screen >= MAPSCRSNORMAL) return -1;
-		return mapind(cur_map, result.screen);
+		if (ref.screen >= MAPSCRSNORMAL) return -1;
+		return mapind(cur_map, ref.screen);
 	}
-	else if (result.scrolling())
+	else if (ref.scrolling())
 	{
-		if (result.screen >= MAPSCRSNORMAL) return -1;
-		return mapind(scrolling_map, result.screen);
+		if (ref.screen >= MAPSCRSNORMAL) return -1;
+		return mapind(scrolling_map, ref.screen);
 	}
 
 	return -1;
+}
+int32_t get_mi(int32_t ref)
+{
+	return get_mi(decode_mapdata_ref(ref));
 }
 
 int32_t get_ref_map_index(int32_t ref)
@@ -1399,11 +1413,10 @@ bool& FFScript::waitdraw(ScriptType type, int index)
 	return get_script_engine_data(type, index).waitdraw;
 }
 
-static void set_current_script_engine_data(ScriptType type, int script, int index)
+static bool set_current_script_engine_data(ScriptEngineData& data, ScriptType type, int script, int index)
 {
 	bool got_initialized = false;
 
-	auto& data = get_script_engine_data(type, index);
 	ri = &data.ref;
 	stack = &data.stack;
 	ret_stack = &data.ret_stack;
@@ -1570,7 +1583,7 @@ static void set_current_script_engine_data(ScriptType type, int script, int inde
 		case ScriptType::Hero:
 		{
 			curscript = playerscripts[script];
-			ri->screenref = hero_screen;
+			ri->screenref = Hero.current_screen;
 			if (!data.initialized)
 			{
 				got_initialized = true;
@@ -1706,6 +1719,8 @@ static void set_current_script_engine_data(ScriptType type, int script, int inde
 	
 	if (got_initialized)
 		ri->pc = curscript->pc;
+
+	return got_initialized;
 }
 
 static ffcdata *ResolveFFCWithID(ffc_id_t id)
@@ -2330,7 +2345,8 @@ ArrayManager::ArrayManager(int32_t ptr) : ArrayManager(ptr,can_neg_array){}
 
 int32_t ArrayManager::get(int32_t indx) const
 {
-	if(_invalid) return -10000;
+	if(_invalid)
+		return get_qr(qr_OLD_SCRIPTS_ARRAYS_NON_ZERO_DEFAULT_VALUE) ? -10000 : 0;
 	if(aptr)
 	{
 		int32_t sz = size();
@@ -2354,7 +2370,8 @@ int32_t ArrayManager::get(int32_t indx) const
 			return legacy_get_int_arr(legacy_internal_id, indx);
 		}
 	}
-	return -10000;
+
+	return get_qr(qr_OLD_SCRIPTS_ARRAYS_NON_ZERO_DEFAULT_VALUE) ? -10000 : 0;
 }
 
 void ArrayManager::set(int32_t indx, int32_t val)
@@ -2519,10 +2536,57 @@ void ArrayManager::log_invalid_operation() const
 	}
 }
 
-// Call only when the underlying engine object is being deleted. This deallocs script data, and
-// invalidates any internal array references that may remain.
-// Any script type given to this function must also be handled in
-// script_array::internal_array_id::matches.
+void FFScript::release_sprite_owned_objects(int32_t sprite_id)
+{
+	std::vector<uint32_t> ids_to_clear;
+	for (auto& script_object : script_objects | std::views::values)
+	{
+		if (script_object->sprite_own_clear(sprite_id))
+		{
+			ids_to_clear.push_back(script_object->id);
+			script_object->disown();
+		}
+	}
+
+	if (ZScriptVersion::gc())
+	{
+		for (auto id : ids_to_clear)
+			script_object_ref_dec(id);
+	}
+	else
+	{
+		for (auto id : ids_to_clear)
+			delete_script_object(id);
+	}
+
+	if (!ZScriptVersion::gc_arrays())
+	{
+		for (int32_t i = 1; i < NUM_ZSCRIPT_ARRAYS; i++)
+		{
+			if (arrayOwner[i].sprite_own_clear(sprite_id))
+				FFScript::deallocateArray(i);
+		}
+	}
+}
+
+// Called when the sprite object is being destroyed.
+//
+// - clears any object references retained by a sprite via "ownership".
+//   See the comment above user_abstract_obj::set_owned_by_script for more.
+// - clears script engine data
+// - invalidates any internal array references that refer to this sprite
+void FFScript::destroySprite(sprite* sprite)
+{
+	DCHECK(sprite->get_scrtype().has_value());
+	ScriptType scriptType = *sprite->get_scrtype();
+	int32_t uid = sprite->getUID();
+	FFCore.release_sprite_owned_objects(uid);
+	FFCore.deallocateAllScriptOwned(scriptType, uid);
+	FFCore.reset_script_engine_data(scriptType, uid);
+	expire_internal_script_arrays(scriptType, uid);
+}
+
+// Same as "onDestroySprite", but for non-sprite things.
 void FFScript::destroyScriptableObject(ScriptType scriptType, const int32_t UID)
 {
 	FFCore.deallocateAllScriptOwned(scriptType, UID);
@@ -2542,11 +2606,10 @@ void FFScript::deallocateAllScriptOwned(ScriptType scriptType, const int32_t UID
 	std::vector<uint32_t> ids_to_clear;
 	for (auto& script_object : script_objects | std::views::values)
 	{
-		if (script_object->own_clear(scriptType, UID))
+		if (script_object->script_own_clear(scriptType, UID))
 		{
 			ids_to_clear.push_back(script_object->id);
-			script_object->owned_type = ScriptType::None;
-			script_object->owned_i = 0;
+			script_object->disown();
 		}
 	}
 
@@ -2576,7 +2639,7 @@ void FFScript::deallocateAllScriptOwned(ScriptType scriptType, const int32_t UID
 	{
 		for(int32_t i = 1; i < NUM_ZSCRIPT_ARRAYS; i++)
 		{
-			if(arrayOwner[i].own_clear(scriptType,UID))
+			if(arrayOwner[i].script_own_clear(scriptType,UID))
 				deallocateArray(i);
 		}
 	}
@@ -2590,8 +2653,7 @@ void FFScript::deallocateAllScriptOwnedOfType(ScriptType scriptType)
 		if (script_object->owned_type == scriptType)
 		{
 			ids_to_clear.push_back(script_object->id);
-			script_object->owned_type = ScriptType::None;
-			script_object->owned_i = 0;
+			script_object->disown();
 		}
 	}
 
@@ -2655,11 +2717,10 @@ void FFScript::deallocateAllScriptOwnedCont()
 	std::vector<uint32_t> ids_to_clear;
 	for (auto& script_object : script_objects | std::views::values)
 	{
-		if (script_object->own_clear_cont())
+		if (script_object->script_own_clear_cont())
 		{
 			ids_to_clear.push_back(script_object->id);
-			script_object->owned_type = ScriptType::None;
-			script_object->owned_i = 0;
+			script_object->disown();
 		}
 	}
 
@@ -2691,7 +2752,7 @@ void FFScript::deallocateAllScriptOwnedCont()
 		{
 			if(localRAM[i].Valid())
 			{
-				if(arrayOwner[i].own_clear_cont())
+				if(arrayOwner[i].script_own_clear_cont())
 					deallocateArray(i);
 			}
 		}
@@ -3051,7 +3112,7 @@ static void bad_subwidg_type(bool func, byte type)
 }
 
 // TODO: Remove this.
-sprite *s;
+static sprite *s;
 
 int32_t item_flag(item_flags flag)
 {
@@ -4271,14 +4332,14 @@ int32_t get_register(int32_t arg)
 			ret=(itemsbuf[ri->idata].weap_data.override_flags)*10000;
 			break;
 		
-		case IDATAFAMILY:
+		case IDATATYPE:
 			if(unsigned(ri->idata) >= MAXITEMS)
 			{
 				scripting_log_error_with_context("Invalid itemdata access: {}", ri->idata);
 				ret = -10000;
 				break;
 			}
-			ret=(itemsbuf[ri->idata].family)*10000;
+			ret=(itemsbuf[ri->idata].type)*10000;
 			break;
 			
 		case IDATALEVEL:
@@ -4288,7 +4349,7 @@ int32_t get_register(int32_t arg)
 				ret = -10000;
 				break;
 			}
-			ret=(itemsbuf[ri->idata].fam_type)*10000;
+			ret=(itemsbuf[ri->idata].level)*10000;
 			break;
 			
 		case IDATAKEEP:
@@ -4517,6 +4578,15 @@ int32_t get_register(int32_t arg)
 			}
 			ret=(itemsbuf[ri->idata].cost_amount[1])*10000;
 			break;
+		case IDATACOOLDOWN:
+			if(unsigned(ri->idata) >= MAXITEMS)
+			{
+				scripting_log_error_with_context("Invalid itemdata access: {}", ri->idata);
+				ret = -10000;
+				break;
+			}
+			ret = (itemsbuf[ri->idata].cooldown) * 10000;
+			break;
 		//cost counter ref
 		case IDATACOSTCOUNTER:
 			if(unsigned(ri->idata) >= MAXITEMS)
@@ -4666,8 +4736,8 @@ int32_t get_register(int32_t arg)
 		///----------------------------------------------------------------------------------------------------//
 		//LWeapon Variables
 		case LWPNSPECIAL:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((int32_t)((weapon*)(s))->specialinfo)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=((int32_t)s->specialinfo)*10000;
 			
 				
 			break;
@@ -4678,20 +4748,20 @@ int32_t get_register(int32_t arg)
 				scripting_log_error_with_context("To use this you must disable the quest rule 'Old (Faster) Sprite Drawing'.");
 				ret = -1; break;
 			}
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((int32_t)((weapon*)(s))->scale)*100.0;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=((int32_t)s->scale)*100.0;
 				
 			break;
 		
 		case LWPNX:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				if ( get_qr(qr_SPRITEXY_IS_FLOAT) )
 				{
-					ret=(((weapon*)(s))->x).getZLong();  
+					ret=(s->x).getZLong();  
 				}
 				else 
-					ret=((int32_t)((weapon*)(s))->x)*10000;
+					ret=((int32_t)s->x)*10000;
 			}
 				
 			break;
@@ -4704,115 +4774,115 @@ int32_t get_register(int32_t arg)
 		}
 	
 		case LWPNY:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				if ( get_qr(qr_SPRITEXY_IS_FLOAT) )
 				{
-					ret=(((weapon*)(s))->y).getZLong();  
+					ret=(s->y).getZLong();  
 				}
 				else 
-					ret=((int32_t)((weapon*)(s))->y)*10000;
+					ret=((int32_t)s->y)*10000;
 			}
 			break;
 			
 		case LWPNZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				if ( get_qr(qr_SPRITEXY_IS_FLOAT) )
 				{
-					ret=(((weapon*)(s))->z).getZLong();  
+					ret=(s->z).getZLong();  
 				}
 				else 
-					ret=((int32_t)((weapon*)(s))->z)*10000;
+					ret=((int32_t)s->z)*10000;
 			}
 				
 			break;
 			
 		case LWPNJUMP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->fall.getZLong() / -100;
+				ret = s->fall.getZLong() / -100;
 				if (get_qr(qr_SPRITE_JUMP_IS_TRUNCATED)) ret = trunc(ret / 10000) * 10000;
 			}
 				
 			break;
 		
 		case LWPNFAKEJUMP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->fakefall.getZLong() / -100;
+				ret = s->fakefall.getZLong() / -100;
 				if (get_qr(qr_SPRITE_JUMP_IS_TRUNCATED)) ret = trunc(ret / 10000) * 10000;
 			}
 				
 			break;
 			
 		case LWPNDIR:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->dir*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->dir*10000;
 				
 			break;
 		 
 		case LWPNGRAVITY:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret= (((weapon*)(s))->moveflags & move_obeys_grav) ? 10000 : 0;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret= (s->moveflags & move_obeys_grav) ? 10000 : 0;
 				
 			break;
 			
 		case LWPNSTEP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				if ( get_qr(qr_STEP_IS_FLOAT) || replay_is_active() )
 				{
-					ret=((weapon*)s)->step.getZLong() * 100;
+					ret=s->step.getZLong() * 100;
 				}
 				//old, buggy code replication, round two: Go! -Z
-				//else ret = ( ( ( ((weapon*)s)->step ) * 100.0 ).getZLong() );
+				//else ret = ( ( ( s->step ) * 100.0 ).getZLong() );
 				
 				//else 
 				//{
 					//old, buggy code replication, round THREE: Go! -Z
-				//	double tmp = ( ((weapon*)s)->step.getFloat() ) * 1000000.0;
+				//	double tmp = ( s->step.getFloat() ) * 1000000.0;
 				//	ret = (int32_t)tmp;
 				//}
 				
 				//old, buggy code replication, round FOUR: Go! -Z
-				else ret = (int32_t)((float)((weapon*)s)->step * 1000000.0);
+				else ret = (int32_t)((float)s->step * 1000000.0);
 			}
 			break;
 			
 		case LWPNANGLE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(int32_t)(((weapon*)(s))->angle*10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(int32_t)(s->angle*10000);
 				
 			break;
 		
 		case LWPNDEGANGLE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret=(int32_t)(((weapon*)(s))->angle*(180.0 / PI)*10000);
+				ret=(int32_t)(s->angle*(180.0 / PI)*10000);
 			}
 				
 			break;
 			
 		case LWPNVX:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				if (((weapon*)(s))->angular)
-					ret = int32_t(zc::math::Cos(((weapon*)s)->angle)*10000.0*((weapon*)s)->step);
+				if (s->angular)
+					ret = int32_t(zc::math::Cos(s->angle)*10000.0*s->step);
 				else
 				{
-					switch(NORMAL_DIR(((weapon*)(s))->dir))
+					switch(NORMAL_DIR(s->dir))
 					{
 						case l_up:
 						case l_down:
 						case left:
-							ret = int32_t(-10000.0*((weapon*)s)->step);
+							ret = int32_t(-10000.0*s->step);
 							break;
 							
 						case r_down:
 						case r_up:
 						case right:
-							ret = int32_t(10000.0*((weapon*)s)->step);
+							ret = int32_t(10000.0*s->step);
 							break;
 						
 						default:
@@ -4825,23 +4895,23 @@ int32_t get_register(int32_t arg)
 			break;
 		
 		case LWPNVY:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				if (((weapon*)(s))->angular)
-					ret = int32_t(zc::math::Sin(((weapon*)s)->angle)*10000.0*((weapon*)s)->step);
+				if (s->angular)
+					ret = int32_t(zc::math::Sin(s->angle)*10000.0*s->step);
 				else
 				{
-					switch(NORMAL_DIR(((weapon*)(s))->dir))
+					switch(NORMAL_DIR(s->dir))
 					{
 						case l_up:
 						case r_up:
 						case up:
-							ret = int32_t(-10000.0*((weapon*)s)->step);
+							ret = int32_t(-10000.0*s->step);
 							break;
 						case l_down:
 						case r_down:
 						case down:
-							ret = int32_t(10000.0*((weapon*)s)->step);
+							ret = int32_t(10000.0*s->step);
 							break;
 							
 						default:
@@ -4854,110 +4924,110 @@ int32_t get_register(int32_t arg)
 			break;
 				
 		case LWPNANGULAR:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->angular*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->angular*10000;
 				
 			break;
 			
 		case LWPNAUTOROTATE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->autorotate*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->autorotate*10000;
 				
 			break;
 			
 		case LWPNBEHIND:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->behind*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->behind*10000;
 				
 			break;
 			
 		case LWPNDRAWTYPE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->drawstyle*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->drawstyle*10000;
 				
 			break;
 			
 		case LWPNPOWER:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->power*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->power*10000;
 				
 			break;
 		/*
 		case LWPNRANGE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->scriptrange*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->scriptrange*10000;
 				
 			break;
 		*/        
 		case LWPNDEAD:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->dead*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->dead*10000;
 				
 			break;
 			
-		case LWPNID:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->id*10000;
+		case LWPNTYPE:
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->id*10000;
 				
 			break;
 			
 		case LWPNTILE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->tile*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->tile*10000;
 				
 			break;
 		
 		case LWPNSCRIPTTILE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->scripttile*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->scripttile*10000;
 				
 			break;
 		
 		case LWPNSCRIPTFLIP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->scriptflip*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->scriptflip*10000;
 				
 			break;
 			
 		case LWPNCSET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->cs*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->cs*10000;
 				
 			break;
 			
 		case LWPNFLASHCSET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->o_cset>>4)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->o_cset>>4)*10000;
 				
 			break;
 			
 		case LWPNFRAMES:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->frames*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->frames*10000;
 				
 			break;
 			
 		case LWPNFRAME:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->aframe*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->aframe*10000;
 				
 			break;
 			
 		case LWPNASPEED:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->o_speed*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->o_speed*10000;
 				
 			break;
 			
 		case LWPNFLASH:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->flash*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->flash*10000;
 				
 			break;
 			
 		case LWPNFLIP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->flip*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->flip*10000;
 				
 			break;
 			
@@ -4966,147 +5036,147 @@ int32_t get_register(int32_t arg)
 			break;
 			
 		case LWPNEXTEND:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->extend*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->extend*10000;
 				
 			break;
 			
 		case LWPNOTILE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->o_tile*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->o_tile*10000;
 				
 			break;
 			
 		case LWPNOCSET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->o_cset&15)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->o_cset&15)*10000;
 				
 			break;
 			
 		case LWPNHXOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->hxofs)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->hxofs)*10000;
 				
 			break;
 			
 		case LWPNHYOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->hyofs)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->hyofs)*10000;
 				
 			break;
 			
 		case LWPNXOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((int32_t)(((weapon*)(s))->xofs))*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=((int32_t)(s->xofs))*10000;
 				
 			break;
 			
 		case LWPNYOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((int32_t)(((weapon*)(s))->yofs-(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset)))*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=((int32_t)(s->yofs-(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset)))*10000;
 				
 			break;
 			
 		case LWPNSHADOWXOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((int32_t)(((weapon*)(s))->shadowxofs))*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=((int32_t)(s->shadowxofs))*10000;
 				
 			break;
 			
 		case LWPNSHADOWYOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((int32_t)(((weapon*)(s))->shadowyofs))*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=((int32_t)(s->shadowyofs))*10000;
 				
 			break;
 			
 		case LWPNTOTALDYOFFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret = ((int32_t)(((weapon*)(s))->yofs-(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset))
-					+ ((((weapon*)(s))->switch_hooked && Hero.switchhookstyle == swRISE)
+			if(auto s=checkLWpn(ri->lwpn))
+				ret = ((int32_t)(s->yofs-(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset))
+					+ ((s->switch_hooked && Hero.switchhookstyle == swRISE)
 						? -(8-(abs(Hero.switchhookclk-32)/4)) : 0)) * 10000;
 			break;
 			
 		case LWPNZOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((int32_t)(((weapon*)(s))->zofs))*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=((int32_t)(s->zofs))*10000;
 				
 			break;
 			
 		case LWPNHXSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->hit_width)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->hit_width)*10000;
 				
 			break;
 			
 		case LWPNHYSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->hit_height)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->hit_height)*10000;
 				
 			break;
 			
 		case LWPNHZSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->hzsz)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->hzsz)*10000;
 				
 			break;
 			
 		case LWPNTXSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->txsz)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->txsz)*10000;
 				
 			break;
 			
 		case LWPNTYSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->tysz)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->tysz)*10000;
 				
 			break;
 			
 		case LWPNCOLLDET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->scriptcoldet)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->scriptcoldet)*10000;
 				
 			break;
 		
 		case LWPNENGINEANIMATE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->do_animation)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->do_animation)*10000;
 				
 			break;
 		
 		case LWPNPARENT:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->parentitem)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->parentitem)*10000;
 				
 			break;
 
 		case LWPNLEVEL:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->type)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->level)*10000;
 				
 			break;
 		
 		case LWPNSCRIPT:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->script)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->script)*10000;
 				
 			break;
 		
 		case LWPNUSEWEAPON:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->useweapon)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->useweapon)*10000;
 				
 			break;
 		
 		case LWPNUSEDEFENCE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->usedefense)*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->usedefense)*10000;
 				
 			break;
 		
 		case LWEAPONSCRIPTUID:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=(((weapon*)(s))->getUID());
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=(s->getUID());
 				
 			break;
 
@@ -5116,136 +5186,136 @@ int32_t get_register(int32_t arg)
 				scripting_log_error_with_context("To use this you must disable the quest rule 'Old (Faster) Sprite Drawing'.");
 				ret = -1; break;
 			}
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				ret=((weapon*)(s))->rotation*10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				ret=s->rotation*10000;
 				
 			break;
 		
 		case LWPNFALLCLK:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->fallclk * 10000;
+				ret = s->fallclk * 10000;
 			}
 			break;
 		
 		case LWPNFALLCMB:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->fallCombo * 10000;
+				ret = s->fallCombo * 10000;
 			}
 			break;
 		
 		case LWPNDROWNCLK:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->drownclk * 10000;
+				ret = s->drownclk * 10000;
 			}
 			break;
 		
 		case LWPNDROWNCMB:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->drownCombo * 10000;
+				ret = s->drownCombo * 10000;
 			}
 			break;
 			
 		case LWPNFAKEZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				if ( get_qr(qr_SPRITEXY_IS_FLOAT) )
 				{
-					ret=(((weapon*)(s))->fakez).getZLong();  
+					ret=(s->fakez).getZLong();  
 				}
 				else 
-					ret=((int32_t)((weapon*)(s))->fakez)*10000;
+					ret=((int32_t)s->fakez)*10000;
 			}
 			break;
 
 		case LWPNGLOWRAD:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->glowRad * 10000;
+				ret = s->glowRad * 10000;
 			}
 			break;
 			
 		case LWPNGLOWSHP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->glowShape * 10000;
+				ret = s->glowShape * 10000;
 			}
 			break;
 			
 		case LWPNUNBL:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->unblockable * 10000;
+				ret = s->unblockable * 10000;
 			}
 			break;
 			
 		case LWPNSHADOWSPR:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->spr_shadow * 10000;
+				ret = s->spr_shadow * 10000;
 			}
 			break;
 		case LWSWHOOKED:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				ret = s->switch_hooked ? 10000 : 0;
 			}
 			break;
 		case LWPNTIMEOUT:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->weap_timeout * 10000;
+				ret = s->weap_timeout * 10000;
 			}
 			break;
 		case LWPNDEATHITEM:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->death_spawnitem * 10000;
+				ret = s->death_spawnitem * 10000;
 			}
 			break;
 		case LWPNDEATHDROPSET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->death_spawndropset * 10000;
+				ret = s->death_spawndropset * 10000;
 			}
 			break;
 		case LWPNDEATHIPICKUP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->death_item_pflags * 10000;
+				ret = s->death_item_pflags * 10000;
 			}
 			break;
 		case LWPNDEATHSPRITE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->death_sprite * 10000;
+				ret = s->death_sprite * 10000;
 			}
 			break;
 		case LWPNDEATHSFX:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->death_sfx * 10000;
+				ret = s->death_sfx * 10000;
 			}
 			break;
 		case LWPNLIFTLEVEL:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->lift_level * 10000;
+				ret = s->lift_level * 10000;
 			}
 			break;
 		case LWPNLIFTTIME:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->lift_time * 10000;
+				ret = s->lift_time * 10000;
 			}
 			break;
 		case LWPNLIFTHEIGHT:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				ret = ((weapon*)(s))->lift_height.getZLong();
+				ret = s->lift_height.getZLong();
 			}
 			break;
 			
@@ -5257,20 +5327,20 @@ int32_t get_register(int32_t arg)
 				scripting_log_error_with_context("To use this you must disable the quest rule 'Old (Faster) Sprite Drawing'.");
 				ret = -1; break;
 			}
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((int32_t)((weapon*)(s))->scale)*100.0;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=((int32_t)s->scale)*100.0;
 				
 			break;
 
 		case EWPNX:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				if ( get_qr(qr_SPRITEXY_IS_FLOAT) )
 				{
-					ret=(((weapon*)(s))->x).getZLong();
+					ret=(s->x).getZLong();
 				}
 				else 
-					ret=((int32_t)((weapon*)(s))->x)*10000;
+					ret=((int32_t)s->x)*10000;
 			}
 			break;
 			
@@ -5282,117 +5352,117 @@ int32_t get_register(int32_t arg)
 		}
 	
 		case EWPNY:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				if ( get_qr(qr_SPRITEXY_IS_FLOAT) )
 				{
-					ret=(((weapon*)(s))->y).getZLong();
+					ret=(s->y).getZLong();
 				}
 				else 
-					 ret=((int32_t)((weapon*)(s))->y)*10000;
+					 ret=((int32_t)s->y)*10000;
 			}
 			break;
 			
 		case EWPNZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				if ( get_qr(qr_SPRITEXY_IS_FLOAT) )
 				{
-					ret=(((weapon*)(s))->z).getZLong();
+					ret=(s->z).getZLong();
 				}
 				else 
-					ret=((int32_t)((weapon*)(s))->z)*10000;
+					ret=((int32_t)s->z)*10000;
 			}
 			break;
 			
 		case EWPNJUMP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->fall.getZLong() / -100;
+				ret = s->fall.getZLong() / -100;
 				if (get_qr(qr_SPRITE_JUMP_IS_TRUNCATED)) ret = trunc(ret / 10000) * 10000;
 			}
 				
 			break;
 		
 		case EWPNFAKEJUMP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->fakefall.getZLong() / -100;
+				ret = s->fakefall.getZLong() / -100;
 				if (get_qr(qr_SPRITE_JUMP_IS_TRUNCATED)) ret = trunc(ret / 10000) * 10000;
 			}
 				
 			break;
 			
 		case EWPNDIR:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->dir*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->dir*10000;
 				
 			break;
 			
 		case EWPNLEVEL:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->type*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->level*10000;
 				
 			break;
 			
 		case EWPNGRAVITY:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((((weapon*)(s))->moveflags & move_obeys_grav) ? 10000 : 0);
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=((s->moveflags & move_obeys_grav) ? 10000 : 0);
 				
 			break;
 			
 		case EWPNSTEP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				if ( get_qr(qr_STEP_IS_FLOAT) || replay_is_active() )
 				{
-					ret=((weapon*)s)->step.getZLong() * 100;
+					ret=s->step.getZLong() * 100;
 				}
 				//old, buggy code replication, round two: Go! -Z
-				//else ret = ( ( ( ((weapon*)s)->step ) * 100.0 ).getZLong() );
+				//else ret = ( ( ( s->step ) * 100.0 ).getZLong() );
 				//old, buggy code replication, round FOUR: Go! -Z
-				else ret = (int32_t)((float)((weapon*)s)->step * 1000000.0);
+				else ret = (int32_t)((float)s->step * 1000000.0);
 			}
 			//else 
 			//{
 				//old, buggy code replication, round THREE: Go! -Z
-			//	double tmp = ( ((weapon*)s)->step.getFloat() ) * 1000000.0;
+			//	double tmp = ( s->step.getFloat() ) * 1000000.0;
 			//	ret = int32_t(tmp);
 			//}
 			break;
 			
 		case EWPNANGLE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(int32_t)(((weapon*)(s))->angle*10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(int32_t)(s->angle*10000);
 				
 			break;
 			
 		case EWPNDEGANGLE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret=(int32_t)(((weapon*)(s))->angle*(180.0 / PI)*10000);
+				ret=(int32_t)(s->angle*(180.0 / PI)*10000);
 			}
 				
 			break;
 			
 		case EWPNVX:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				if (((weapon*)(s))->angular)
-					ret = int32_t(zc::math::Cos(((weapon*)s)->angle)*10000.0*((weapon*)s)->step);
+				if (s->angular)
+					ret = int32_t(zc::math::Cos(s->angle)*10000.0*s->step);
 				else
 				{
-					switch(NORMAL_DIR(((weapon*)(s))->dir))
+					switch(NORMAL_DIR(s->dir))
 					{
 						case l_up:
 						case l_down:
 						case left:
-							ret = int32_t(-10000.0*((weapon*)s)->step);
+							ret = int32_t(-10000.0*s->step);
 							break;
 						case r_up:
 						case r_down:
 						case right:
-							ret = int32_t(10000.0*((weapon*)s)->step);
+							ret = int32_t(10000.0*s->step);
 							break;
 							
 						default:
@@ -5405,23 +5475,23 @@ int32_t get_register(int32_t arg)
 			break;
 		
 		case EWPNVY:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				if (((weapon*)(s))->angular)
-					ret = int32_t(zc::math::Sin(((weapon*)s)->angle)*10000.0*((weapon*)s)->step);
+				if (s->angular)
+					ret = int32_t(zc::math::Sin(s->angle)*10000.0*s->step);
 				else
 				{
-					switch(NORMAL_DIR(((weapon*)(s))->dir))
+					switch(NORMAL_DIR(s->dir))
 					{
 						case l_up:
 						case r_up:
 						case up:
-							ret = int32_t(-10000.0*((weapon*)s)->step);
+							ret = int32_t(-10000.0*s->step);
 							break;
 						case l_down:
 						case r_down:
 						case down:
-							ret = int32_t(10000.0*((weapon*)s)->step);
+							ret = int32_t(10000.0*s->step);
 							break;
 							
 						default:
@@ -5435,104 +5505,104 @@ int32_t get_register(int32_t arg)
 			
 			
 		case EWPNANGULAR:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->angular*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->angular*10000;
 				
 			break;
 			
 		case EWPNAUTOROTATE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->autorotate*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->autorotate*10000;
 				
 			break;
 			
 		case EWPNBEHIND:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->behind*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->behind*10000;
 				
 			break;
 			
 		case EWPNDRAWTYPE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->drawstyle*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->drawstyle*10000;
 				
 			break;
 			
 		case EWPNPOWER:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->power*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->power*10000;
 				
 			break;
 			
 		case EWPNDEAD:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->dead*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->dead*10000;
 				
 			break;
 			
-		case EWPNID:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->id*10000;
+		case EWPNTYPE:
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->id*10000;
 				
 			break;
 			
 		case EWPNTILE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->tile*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->tile*10000;
 				
 			break;
 		
 		case EWPNSCRIPTTILE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->scripttile*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->scripttile*10000;
 				
 			break;
 		
 		case EWPNSCRIPTFLIP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->scriptflip*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->scriptflip*10000;
 				
 			break;
 			
 		case EWPNCSET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->cs*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->cs*10000;
 				
 			break;
 			
 		case EWPNFLASHCSET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->o_cset>>4)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->o_cset>>4)*10000;
 				
 			break;
 			
 		case EWPNFRAMES:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->frames*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->frames*10000;
 				
 			break;
 			
 		case EWPNFRAME:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->aframe*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->aframe*10000;
 				
 			break;
 			
 		case EWPNASPEED:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->o_speed*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->o_speed*10000;
 				
 			break;
 			
 		case EWPNFLASH:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->flash*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->flash*10000;
 				
 			break;
 			
 		case EWPNFLIP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->flip*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->flip*10000;
 				
 			break;
 
@@ -5542,8 +5612,8 @@ int32_t get_register(int32_t arg)
 				scripting_log_error_with_context("To use this you must disable the quest rule 'Old (Faster) Sprite Drawing'");
 				break;
 			}
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->rotation*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->rotation*10000;
 				
 			break;
 
@@ -5552,261 +5622,261 @@ int32_t get_register(int32_t arg)
 			break;
 			
 		case EWPNEXTEND:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->extend*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->extend*10000;
 				
 			break;
 			
 		case EWPNOTILE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((weapon*)(s))->o_tile*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=s->o_tile*10000;
 				
 			break;
 			
 		case EWPNOCSET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->o_cset&15)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->o_cset&15)*10000;
 				
 			break;
 			
 		case EWPNHXOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->hxofs)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->hxofs)*10000;
 				
 			break;
 			
 		case EWPNHYOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->hyofs)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->hyofs)*10000;
 				
 			break;
 			
 		case EWPNXOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((int32_t)(((weapon*)(s))->xofs))*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=((int32_t)(s->xofs))*10000;
 				
 			break;
 			
 		case EWPNYOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((int32_t)(((weapon*)(s))->yofs-(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset)))*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=((int32_t)(s->yofs-(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset)))*10000;
 				
 			break;
 			
 		case EWPNSHADOWXOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((int32_t)(((weapon*)(s))->shadowxofs))*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=((int32_t)(s->shadowxofs))*10000;
 				
 			break;
 			
 		case EWPNSHADOWYOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((int32_t)(((weapon*)(s))->shadowyofs))*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=((int32_t)(s->shadowyofs))*10000;
 				
 			break;
 		case EWPNTOTALDYOFFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret = ((int32_t)(((weapon*)(s))->yofs-(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset))
-					+ ((((weapon*)(s))->switch_hooked && Hero.switchhookstyle == swRISE)
+			if(auto s=checkEWpn(ri->ewpn))
+				ret = ((int32_t)(s->yofs-(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset))
+					+ ((s->switch_hooked && Hero.switchhookstyle == swRISE)
 						? -(8-(abs(Hero.switchhookclk-32)/4)) : 0) * 10000);
 			break;
 			
 		case EWPNZOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=((int32_t)(((weapon*)(s))->zofs))*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=((int32_t)(s->zofs))*10000;
 				
 			break;
 			
 		case EWPNHXSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->hit_width)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->hit_width)*10000;
 				
 			break;
 			
 		case EWPNHYSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->hit_height)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->hit_height)*10000;
 				
 			break;
 			
 		case EWPNHZSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->hzsz)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->hzsz)*10000;
 				
 			break;
 			
 		case EWPNTXSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->txsz)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->txsz)*10000;
 				
 			break;
 			
 		case EWPNTYSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->tysz)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->tysz)*10000;
 				
 			break;
 			
 		case EWPNCOLLDET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->scriptcoldet)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->scriptcoldet)*10000;
 				
 			break;
 		
 		case EWPNENGINEANIMATE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->do_animation)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->do_animation)*10000;
 				
 			break;
 		
 		case EWPNPARENT:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret= ((get_qr(qr_OLDEWPNPARENT)) ? (((weapon*)(s))->parentid)*10000 : (((weapon*)(s))->parentid));
+			if(auto s=checkEWpn(ri->ewpn))
+				ret= ((get_qr(qr_OLDEWPNPARENT)) ? (s->parentid)*10000 : (s->parentid));
 		
 			break;
 		
 		case EWEAPONSCRIPTUID:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->getUID());
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->getUID());
 				
 			break;
 		
 		case EWPNPARENTUID:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 				ret = s->parent ? s->parent->getUID() : 0;
 				
 			break;
 		
 		case EWPNSCRIPT:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				ret=(((weapon*)(s))->script)*10000;
+			if(auto s=checkEWpn(ri->ewpn))
+				ret=(s->script)*10000;
 				
 			break;
 		
 		case EWPNFALLCLK:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->fallclk * 10000;
+				ret = s->fallclk * 10000;
 			}
 			break;
 		
 		case EWPNFALLCMB:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->fallCombo * 10000;
+				ret = s->fallCombo * 10000;
 			}
 			break;
 		
 		case EWPNDROWNCLK:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->drownclk * 10000;
+				ret = s->drownclk * 10000;
 			}
 			break;
 		
 		case EWPNDROWNCMB:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->drownCombo * 10000;
+				ret = s->drownCombo * 10000;
 			}
 			break;
 		case EWPNFAKEZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				if ( get_qr(qr_SPRITEXY_IS_FLOAT) )
 				{
-					ret=(((weapon*)(s))->fakez).getZLong();
+					ret=(s->fakez).getZLong();
 				}
 				else 
-					ret=((int32_t)((weapon*)(s))->fakez)*10000;
+					ret=((int32_t)s->fakez)*10000;
 			}
 			break;
 		
 		case EWPNGLOWRAD:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->glowRad * 10000;
+				ret = s->glowRad * 10000;
 			}
 			break;
 			
 		case EWPNGLOWSHP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->glowShape * 10000;
+				ret = s->glowShape * 10000;
 			}
 			break;
 			
 		case EWPNUNBL:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->unblockable * 10000;
+				ret = s->unblockable * 10000;
 			}
 			break;
 			
 		case EWPNSHADOWSPR:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->spr_shadow * 10000;
+				ret = s->spr_shadow * 10000;
 			}
 			break;
 		case EWSWHOOKED:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				ret = s->switch_hooked ? 10000 : 0;
 			}
 			break;
 		case EWPNTIMEOUT:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->weap_timeout * 10000;
+				ret = s->weap_timeout * 10000;
 			}
 			break;
 		case EWPNDEATHITEM:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->death_spawnitem * 10000;
+				ret = s->death_spawnitem * 10000;
 			}
 			break;
 		case EWPNDEATHDROPSET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->death_spawndropset * 10000;
+				ret = s->death_spawndropset * 10000;
 			}
 			break;
 		case EWPNDEATHIPICKUP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->death_item_pflags * 10000;
+				ret = s->death_item_pflags * 10000;
 			}
 			break;
 		case EWPNDEATHSPRITE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->death_sprite * 10000;
+				ret = s->death_sprite * 10000;
 			}
 			break;
 		case EWPNDEATHSFX:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->death_sfx * 10000;
+				ret = s->death_sfx * 10000;
 			}
 			break;
 		case EWPNLIFTLEVEL:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->lift_level * 10000;
+				ret = s->lift_level * 10000;
 			}
 			break;
 		case EWPNLIFTTIME:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->lift_time * 10000;
+				ret = s->lift_time * 10000;
 			}
 			break;
 		case EWPNLIFTHEIGHT:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				ret = ((weapon*)(s))->lift_height.getZLong();
+				ret = s->lift_height.getZLong();
 			}
 			break;
 		
@@ -6177,6 +6247,16 @@ int32_t get_register(int32_t arg)
 		case SCREENDATASCREENMIDI:
 		{
 			ret = ((get_scr(ri->screenref)->screen_midi+(MIDIOFFSET_MAPSCR-MIDIOFFSET_ZSCRIPT)) *10000);
+			break;
+		}
+		case SCREENDATA_GRAVITY_STRENGTH:
+		{
+			ret = get_scr(ri->screenref)->screen_gravity.getZLong();
+			break;
+		}
+		case SCREENDATA_TERMINAL_VELOCITY:
+		{
+			ret = get_scr(ri->screenref)->screen_terminal_v.getZLong();
 			break;
 		}
 		case SCREENDATALENSLAYER:	 	GET_SCREENDATA_VAR_BYTE(lens_layer); break;	//B, OLD QUESTS ONLY?
@@ -6635,6 +6715,24 @@ int32_t get_register(int32_t arg)
 			}
 			break;
 		}
+		case MAPDATA_GRAVITY_STRENGTH:
+		{
+			if (mapscr *m = ResolveMapdataScr(ri->mapsref))
+			{
+				ret = m->screen_gravity.getZLong();
+			}
+			else ret = -10000;
+			break;
+		}
+		case MAPDATA_TERMINAL_VELOCITY:
+		{
+			if (mapscr *m = ResolveMapdataScr(ri->mapsref))
+			{
+				ret = m->screen_terminal_v.getZLong();
+			}
+			else ret = -10000;
+			break;
+		}
 		case MAPDATALENSLAYER:	 	GET_MAPDATA_VAR_BYTE(lens_layer); break;	//B, OLD QUESTS ONLY?
 		case MAPDATAMAP:
 		{
@@ -6752,6 +6850,16 @@ int32_t get_register(int32_t arg)
 		case DMAPDATAMIDI:	//byte
 		{
 			ret = (DMaps[ri->dmapsref].midi-MIDIOFFSET_DMAP) * 10000; break;
+		}
+		case DMAPDATA_GRAVITY_STRENGTH:
+		{
+			ret = DMaps[ri->dmapsref].dmap_gravity.getZLong();
+			break;
+		}
+		case DMAPDATA_TERMINAL_VELOCITY:
+		{
+			ret = DMaps[ri->dmapsref].dmap_terminal_v.getZLong();
+			break;
 		}
 		case DMAPDATACONTINUE:	//byte
 		{
@@ -7988,6 +8096,36 @@ int32_t get_register(int32_t arg)
 			else ret = combobuf[ri->combosref].only_gentrig ? 10000 : 0;
 			break;
 		}
+		case COMBOD_Z_HEIGHT:
+		{
+			ret = 0;
+			if(ri->combosref < 0 || ri->combosref > (MAXCOMBOS-1) )
+			{
+				scripting_log_error_with_context("Invalid combodata ID: {}", ri->combosref);
+			}
+			else ret = combobuf[ri->combosref].z_height.getZLong();
+			break;
+		}
+		case COMBOD_Z_STEP_HEIGHT:
+		{
+			ret = 0;
+			if(ri->combosref < 0 || ri->combosref > (MAXCOMBOS-1) )
+			{
+				scripting_log_error_with_context("Invalid combodata ID: {}", ri->combosref);
+			}
+			else ret = combobuf[ri->combosref].z_step_height.getZLong();
+			break;
+		}
+		case COMBOD_DIVE_UNDER_LEVEL:
+		{
+			ret = 0;
+			if(ri->combosref < 0 || ri->combosref > (MAXCOMBOS-1) )
+			{
+				scripting_log_error_with_context("Invalid combodata ID: {}", ri->combosref);
+			}
+			else ret = combobuf[ri->combosref].dive_under_level * 10000;
+			break;
+		}
 		//COMBOCLASS STRUCT
 		//case COMBODNAME:		//CHAR[64], STRING
 		case COMBODBLOCKNPC:		GET_COMBOCLASS_VAR_BYTE(block_enemies); break;			//C
@@ -8519,6 +8657,49 @@ int32_t get_register(int32_t arg)
 			else ret = -10000;
 			break;
 		}
+		case CMBTRIGGERFORCEPLAYERDIR:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				ret = trig->dest_player_dir * 10000;
+			else ret = -10000;
+			break;
+		}
+		case CMBTRIGGERICECOMBO:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				ret = trig->force_ice_combo * 10000;
+			else ret = -10000;
+			break;
+		}
+		case CMBTRIGGERICEVX:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				ret = trig->force_ice_vx;
+			else ret = -10000;
+			break;
+		}
+		case CMBTRIGGERICEVY:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				ret = trig->force_ice_vy;
+			else ret = -10000;
+			break;
+		}
+		case CMBTRIGGER_GRAVITY:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				ret = trig->trig_gravity;
+			else ret = -10000;
+			break;
+			break;
+		}
+		case CMBTRIGGER_TERMINAL_VELOCITY:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				ret = trig->trig_terminal_v;
+			else ret = -10000;
+			break;
+		}
 		///----------------------------------------------------------------------------------------------------//
 		//npcdata nd-> variables
 			
@@ -8615,7 +8796,7 @@ int32_t get_register(int32_t arg)
 		case NPCDATAEWIDTH: GET_NPCDATA_VAR_BYTE(e_width, "ExWidth"); break;
 		case NPCDATAEHEIGHT: GET_NPCDATA_VAR_BYTE(e_height, "ExHeight"); break;
 		case NPCDATAHP: GET_NPCDATA_VAR_INT16(hp, "HP"); break;
-		case NPCDATAFAMILY: GET_NPCDATA_VAR_INT16(family, "Family"); break;
+		case NPCDATATYPE: GET_NPCDATA_VAR_INT16(type, "Family"); break;
 		case NPCDATACSET: GET_NPCDATA_VAR_INT16(cset, "CSet"); break;
 		case NPCDATAANIM: GET_NPCDATA_VAR_INT16(anim, "Anim"); break;
 		case NPCDATAEANIM: GET_NPCDATA_VAR_INT16(e_anim, "ExAnim"); break;
@@ -9567,6 +9748,9 @@ int32_t get_register(int32_t arg)
 					case widgTEXT:
 						ret = 10000*((SW_Text*)widg)->fontid;
 						break;
+					case widgITMCOOLDOWNTEXT:
+						ret = 10000*((SW_ItemCooldownText*)widg)->fontid;
+						break;
 					case widgTEXTBOX:
 						ret = 10000*((SW_TextBox*)widg)->fontid;
 						break;
@@ -9606,6 +9790,9 @@ int32_t get_register(int32_t arg)
 					case widgTEXT:
 						ret = 10000*((SW_Text*)widg)->align;
 						break;
+					case widgITMCOOLDOWNTEXT:
+						ret = 10000*((SW_ItemCooldownText*)widg)->align;
+						break;
 					case widgTEXTBOX:
 						ret = 10000*((SW_TextBox*)widg)->align;
 						break;
@@ -9641,6 +9828,9 @@ int32_t get_register(int32_t arg)
 				{
 					case widgTEXT:
 						ret = 10000*((SW_Text*)widg)->shadtype;
+						break;
+					case widgITMCOOLDOWNTEXT:
+						ret = 10000*((SW_ItemCooldownText*)widg)->shadtype;
 						break;
 					case widgTEXTBOX:
 						ret = 10000*((SW_TextBox*)widg)->shadtype;
@@ -9680,6 +9870,9 @@ int32_t get_register(int32_t arg)
 				{
 					case widgTEXT:
 						ret = 10000*((SW_Text*)widg)->c_text.get_int_color();
+						break;
+					case widgITMCOOLDOWNTEXT:
+						ret = 10000*((SW_ItemCooldownText*)widg)->c_text.get_int_color();
 						break;
 					case widgTEXTBOX:
 						ret = 10000*((SW_TextBox*)widg)->c_text.get_int_color();
@@ -9722,6 +9915,9 @@ int32_t get_register(int32_t arg)
 					case widgTEXT:
 						ret = 10000*((SW_Text*)widg)->c_shadow.get_int_color();
 						break;
+					case widgITMCOOLDOWNTEXT:
+						ret = 10000*((SW_ItemCooldownText*)widg)->c_shadow.get_int_color();
+						break;
 					case widgTEXTBOX:
 						ret = 10000*((SW_TextBox*)widg)->c_shadow.get_int_color();
 						break;
@@ -9759,6 +9955,9 @@ int32_t get_register(int32_t arg)
 				{
 					case widgTEXT:
 						ret = 10000*((SW_Text*)widg)->c_bg.get_int_color();
+						break;
+					case widgITMCOOLDOWNTEXT:
+						ret = 10000*((SW_ItemCooldownText*)widg)->c_bg.get_int_color();
 						break;
 					case widgTEXTBOX:
 						ret = 10000*((SW_TextBox*)widg)->c_bg.get_int_color();
@@ -9911,6 +10110,12 @@ int32_t get_register(int32_t arg)
 					case widgBTNCOUNTER:
 						ret = 10000*((SW_BtnCounter*)widg)->btn;
 						break;
+					case widgITMCOOLDOWNGAUGE:
+						ret = 10000*((SW_ItemCooldownGauge*)widg)->button_id;
+						break;
+					case widgITMCOOLDOWNTEXT:
+						ret = 10000*((SW_ItemCooldownText*)widg)->button_id;
+						break;
 					default:
 						bad_subwidg_type(false, ty);
 						ret = -10000;
@@ -9977,11 +10182,10 @@ int32_t get_register(int32_t arg)
 					case widgOLDCTR:
 						ret = 10000*((SW_Counters*)widg)->infitm;
 						break;
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->inf_item;
 						break;
+					case widgITMCOOLDOWNGAUGE:
 					default:
 						bad_subwidg_type(false, ty);
 						ret = -10000;
@@ -10112,6 +10316,12 @@ int32_t get_register(int32_t arg)
 					case widgITEMSLOT:
 						ret = 10000*((SW_ItemSlot*)widg)->iclass;
 						break;
+					case widgITMCOOLDOWNGAUGE:
+						ret = 10000*((SW_ItemCooldownGauge*)widg)->item_class;
+						break;
+					case widgITMCOOLDOWNTEXT:
+						ret = 10000*((SW_ItemCooldownText*)widg)->item_class;
+						break;
 					default:
 						bad_subwidg_type(false, ty);
 						break;
@@ -10128,6 +10338,12 @@ int32_t get_register(int32_t arg)
 				{
 					case widgITEMSLOT:
 						ret = 10000*((SW_ItemSlot*)widg)->iid;
+						break;
+					case widgITMCOOLDOWNGAUGE:
+						ret = 10000*((SW_ItemCooldownGauge*)widg)->specific_item_id;
+						break;
+					case widgITMCOOLDOWNTEXT:
+						ret = 10000*((SW_ItemCooldownText*)widg)->specific_item_id;
 						break;
 					default:
 						bad_subwidg_type(false, ty);
@@ -10251,9 +10467,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->frames;
 						break;
 					default:
@@ -10271,9 +10485,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->speed;
 						break;
 					default:
@@ -10291,9 +10503,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->delay;
 						break;
 					default:
@@ -10311,9 +10521,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->container;
 						break;
 					default:
@@ -10331,9 +10539,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*(((SW_GaugePiece*)widg)->gauge_wid+1);
 						break;
 					default:
@@ -10351,9 +10557,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*(((SW_GaugePiece*)widg)->gauge_hei+1);
 						break;
 					default:
@@ -10371,9 +10575,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*(((SW_GaugePiece*)widg)->unit_per_frame+1);
 						break;
 					default:
@@ -10391,9 +10593,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->hspace;
 						break;
 					default:
@@ -10411,9 +10611,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->vspace;
 						break;
 					default:
@@ -10431,9 +10629,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->grid_xoff;
 						break;
 					default:
@@ -10451,9 +10647,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->grid_yoff;
 						break;
 					default:
@@ -10471,9 +10665,7 @@ int32_t get_register(int32_t arg)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						ret = 10000*((SW_GaugePiece*)widg)->anim_val;
 						break;
 					default:
@@ -10511,6 +10703,27 @@ int32_t get_register(int32_t arg)
 				{
 					case widgMISCGAUGE:
 						ret = 10000*((SW_MiscGaugePiece*)widg)->per_container;
+						break;
+					case widgITMCOOLDOWNGAUGE:
+						ret = 10000*((SW_ItemCooldownGauge*)widg)->per_container;
+						break;
+					default:
+						bad_subwidg_type(false, ty);
+						ret = -10000;
+						break;
+				}
+			}
+			break;
+		}
+		case SUBWIDGTY_TOTAL:
+		{
+			if(SubscrWidget* widg = checkSubWidg(ri->subwidgref))
+			{
+				auto ty = widg->getType();
+				switch(ty)
+				{
+					case widgITMCOOLDOWNGAUGE:
+						ret = 10000*((SW_ItemCooldownGauge*)widg)->total_points;
 						break;
 					default:
 						bad_subwidg_type(false, ty);
@@ -11777,13 +11990,13 @@ void set_register(int32_t arg, int32_t value)
 	//Itemdata Variables
 		//not mine, but let;s guard some of them all the same -Z
 		//item class
-		case IDATAFAMILY:
+		case IDATATYPE:
 			if(unsigned(ri->idata) >= MAXITEMS)
 			{
 				scripting_log_error_with_context("Invalid itemdata access: {}", ri->idata);
 				break;
 			}
-			(itemsbuf[ri->idata].family)=vbound(value/10000,0, 254);
+			(itemsbuf[ri->idata].type)=vbound(value/10000,0, 254);
 			flushItemCache();
 			break;
 		
@@ -12059,7 +12272,7 @@ void set_register(int32_t arg, int32_t value)
 				scripting_log_error_with_context("Invalid itemdata access: {}", ri->idata);
 				break;
 			}
-			(itemsbuf[ri->idata].fam_type)=vbound(value/10000, 0, 512);
+			(itemsbuf[ri->idata].level)=vbound(value/10000, 0, 512);
 			flushItemCache();
 			break;
 		case IDATAKEEP:
@@ -12281,7 +12494,7 @@ void set_register(int32_t arg, int32_t value)
 				scripting_log_error_with_context("Invalid itemdata access: {}", ri->idata);
 				break;
 			}
-			itemsbuf[ri->idata].pickup_litems = vbound(value/10000, 0, 214748) & liALL;
+			itemsbuf[ri->idata].pickup_litems = vbound(value/10000, 0, 214748) & LI_ALL;
 			break;
 		case IDATAPICKUPLITEMLEVEL:
 			if(unsigned(ri->idata) >= MAXITEMS)
@@ -12307,6 +12520,14 @@ void set_register(int32_t arg, int32_t value)
 				break;
 			}
 			itemsbuf[ri->idata].cost_amount[1]=vbound(value/10000,32767,-32768);
+			break;
+		case IDATACOOLDOWN:
+			if(unsigned(ri->idata) >= MAXITEMS)
+			{
+				scripting_log_error_with_context("Invalid itemdata access: {}", ri->idata);
+				break;
+			}
+			itemsbuf[ri->idata].cooldown = zc_max(value/10000,0);
 			break;
 		//cost counter ref
 		case IDATACOSTCOUNTER:
@@ -12420,14 +12641,14 @@ void set_register(int32_t arg, int32_t value)
 				scripting_log_error_with_context("To use this you must disable the quest rule 'Old (Faster) Sprite Drawing'.");
 				break;
 			}
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->scale=(zfix)(value/100.0);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->scale=(zfix)(value/100.0);
 				
 			break;
 		
 		case LWPNX:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->x=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->x=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
 			break;
 		
 		case SPRITEMAXLWPN:
@@ -12438,59 +12659,59 @@ void set_register(int32_t arg, int32_t value)
 		}
 			
 		case LWPNY:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->y=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->y=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
 				
 			break;
 			
 		case LWPNZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)s)->z=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
-				if(((weapon*)s)->z < 0) ((weapon*)s)->z = 0_zf;
+				s->z=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
+				if(s->z < 0) s->z = 0_zf;
 			}
 				
 			break;
 			
 		case LWPNJUMP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->fall=zslongToFix(value)*-100;
+			if(auto s=checkLWpn(ri->lwpn))
+				s->fall=zslongToFix(value)*-100;
 				
 			break;
 			
 		case LWPNFAKEJUMP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->fakefall=zslongToFix(value)*-100;
+			if(auto s=checkLWpn(ri->lwpn))
+				s->fakefall=zslongToFix(value)*-100;
 				
 			break;
 			
 		case LWPNDIR:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)s)->dir=(value/10000);
-				((weapon*)s)->doAutoRotate(true);
+				s->dir=(value/10000);
+				s->doAutoRotate(true);
 			}
 				
 			break;
 			
 		case LWPNSPECIAL:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->specialinfo=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->specialinfo=(value/10000);
 				
 			break;
 		 
 		case LWPNGRAVITY:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				if(value)
-					((weapon*)s)->moveflags |= move_obeys_grav;
+					s->moveflags |= move_obeys_grav;
 				else
-					((weapon*)s)->moveflags &= ~move_obeys_grav;
+					s->moveflags &= ~move_obeys_grav;
 			}
 			break;
 			
 		case LWPNSTEP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				// fp math is bad for replay, so always ignore this QR when replay is active.
 				// TODO: can we just delete this QR? Would it actually break anything? For now,
@@ -12498,17 +12719,17 @@ void set_register(int32_t arg, int32_t value)
 				// ignored.
 				if ( get_qr(qr_STEP_IS_FLOAT) || replay_is_active() )
 				{
-					((weapon*)s)->step= zslongToFix(value / 100);
+					s->step= zslongToFix(value / 100);
 				}
 				else
 				{
 					//old, buggy code replication, round two: Go! -Z
 					//zfix val = zslongToFix(value);
 					//val.doFloor();
-					//((weapon*)s)->step = ((val / 100.0).getFloat());
+					//s->step = ((val / 100.0).getFloat());
 					
 					//old, buggy code replication, round THREE: Go! -Z
-					((weapon*)s)->step = ((value/10000)/100.0);
+					s->step = ((value/10000)/100.0);
 				}
 				
 			}
@@ -12516,44 +12737,44 @@ void set_register(int32_t arg, int32_t value)
 			break;
 			
 		case LWPNANGLE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)s)->angle=(double)(value/10000.0);
-				((weapon*)(s))->doAutoRotate();
+				s->angle=(double)(value/10000.0);
+				s->doAutoRotate();
 			}
 				
 			break;
 			
 		case LWPNDEGANGLE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				double rangle = (value / 10000.0) * (PI / 180.0);
-				((weapon*)s)->angle=(double)(rangle);
-				((weapon*)(s))->doAutoRotate();
+				s->angle=(double)(rangle);
+				s->doAutoRotate();
 			}
 				
 			break;
 			
 		case LWPNVX:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				double vy;
 				double vx = (value / 10000.0);
-				if (((weapon*)(s))->angular)
-					vy = zc::math::Sin(((weapon*)s)->angle)*((weapon*)s)->step;
+				if (s->angular)
+					vy = zc::math::Sin(s->angle)*s->step;
 				else
 				{
-					switch(NORMAL_DIR(((weapon*)(s))->dir))
+					switch(NORMAL_DIR(s->dir))
 					{
 						case l_up:
 						case r_up:
 						case up:
-							vy = -1.0*((weapon*)s)->step;
+							vy = -1.0*s->step;
 							break;
 						case l_down:
 						case r_down:
 						case down:
-							vy = ((weapon*)s)->step;
+							vy = s->step;
 							break;
 							
 						default:
@@ -12561,34 +12782,34 @@ void set_register(int32_t arg, int32_t value)
 							break;
 					}
 				}
-				((weapon*)s)->angular = true;
-				((weapon*)s)->angle=atan2(vy, vx);
-				((weapon*)s)->step=FFCore.Distance(0, 0, vx, vy)/10000.0;
-				((weapon*)(s))->doAutoRotate();
+				s->angular = true;
+				s->angle=atan2(vy, vx);
+				s->step=FFCore.Distance(0, 0, vx, vy)/10000.0;
+				s->doAutoRotate();
 			}
 				
 			break;
 		
 		case LWPNVY:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				double vx;
 				double vy = (value / 10000.0);
-				if (((weapon*)(s))->angular)
-					vx = zc::math::Cos(((weapon*)s)->angle)*((weapon*)s)->step;
+				if (s->angular)
+					vx = zc::math::Cos(s->angle)*s->step;
 				else
 				{
-					switch(NORMAL_DIR(((weapon*)(s))->dir))
+					switch(NORMAL_DIR(s->dir))
 					{
 						case l_up:
 						case l_down:
 						case left:
-							vx = -1.0*((weapon*)s)->step;
+							vx = -1.0*s->step;
 							break;
 						case r_down:
 						case r_up:
 						case right:
-							vx = ((weapon*)s)->step;
+							vx = s->step;
 							break;
 							
 						default:
@@ -12596,127 +12817,127 @@ void set_register(int32_t arg, int32_t value)
 							break;
 					}
 				}
-				((weapon*)s)->angular = true;
-				((weapon*)s)->angle=atan2(vy, vx);
-				((weapon*)s)->step=FFCore.Distance(0, 0, vx, vy)/10000.0;
-				((weapon*)(s))->doAutoRotate();
+				s->angular = true;
+				s->angle=atan2(vy, vx);
+				s->step=FFCore.Distance(0, 0, vx, vy)/10000.0;
+				s->doAutoRotate();
 			}
 				
 			break;
 			
 		case LWPNANGULAR:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)s)->angular=(value!=0);
-				((weapon*)(s))->doAutoRotate(false, true);
+				s->angular=(value!=0);
+				s->doAutoRotate(false, true);
 			}
 				
 			break;
 			
 		case LWPNAUTOROTATE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)s)->autorotate=(value!=0);
-				((weapon*)(s))->doAutoRotate(false, true);
+				s->autorotate=(value!=0);
+				s->doAutoRotate(false, true);
 			}
 				
 			break;
 			
 		case LWPNBEHIND:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->behind=(value!=0);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->behind=(value!=0);
 				
 			break;
 			
 		case LWPNDRAWTYPE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->drawstyle=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->drawstyle=(value/10000);
 				
 			break;
 			
 		case LWPNPOWER:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->power=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->power=(value/10000);
 				
 			break;
 		/*
 		case LWPNRANGE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-			((weapon*)s)->scriptrange=vbound((value/10000),0,512); //Allow it to move off-screen. -Z           
+			if(auto s=checkLWpn(ri->lwpn))
+			s->scriptrange=vbound((value/10000),0,512); //Allow it to move off-screen. -Z           
 			break;
 		*/        
 		case LWPNDEAD:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
 				auto dead = value/10000;
-				((weapon*)s)->dead=dead;
-				if(dead != 0) ((weapon*)s)->weapon_dying_frame = false;
+				s->dead=dead;
+				if(dead != 0) s->weapon_dying_frame = false;
 			}
 			break;
 			
-		case LWPNID:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->id=(value/10000);
+		case LWPNTYPE:
+			if(auto s=checkLWpn(ri->lwpn))
+				s->id=(value/10000);
 				
 			break;
 			
 		case LWPNTILE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->tile=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->tile=(value/10000);
 				
 			break;
 		
 		case LWPNSCRIPTTILE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->scripttile=vbound((value/10000),-1,NEWMAXTILES-1);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->scripttile=vbound((value/10000),-1,NEWMAXTILES-1);
 				
 			break;
 		
 		case LWPNSCRIPTFLIP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->scriptflip=vbound((value/10000),-1,127);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->scriptflip=vbound((value/10000),-1,127);
 				
 			break;
 			
 		case LWPNCSET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->cs=(value/10000)&15;
+			if(auto s=checkLWpn(ri->lwpn))
+				s->cs=(value/10000)&15;
 				
 			break;
 			
 		case LWPNFLASHCSET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->o_cset)|=(value/10000)<<4;
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->o_cset)|=(value/10000)<<4;
 				
 			break;
 			
 		case LWPNFRAMES:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->frames=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->frames=(value/10000);
 				
 			break;
 			
 		case LWPNFRAME:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->aframe=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->aframe=(value/10000);
 				
 			break;
 			
 		case LWPNASPEED:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->o_speed=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->o_speed=(value/10000);
 				
 			break;
 			
 		case LWPNFLASH:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->flash=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->flash=(value/10000);
 				
 			break;
 			
 		case LWPNFLIP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->flip=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->flip=(value/10000);
 				
 			break;
 
@@ -12726,23 +12947,23 @@ void set_register(int32_t arg, int32_t value)
 				scripting_log_error_with_context("To use this you must disable the quest rule 'Old (Faster) Sprite Drawing'.");
 				break;
 			}
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->rotation=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->rotation=(value/10000);
 				
 			break;
 			
 		case LWPNEXTEND:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				((weapon*)s)->extend=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				s->extend=(value/10000);
 				
 			break;
 			
 		case LWPNOTILE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-					((weapon*)s)->o_tile=(value/10000);
-					((weapon*)s)->ref_o_tile=(value/10000);
-					//((weapon*)s)->script_wrote_otile=1; //Removing this as of 26th October, 2019 -Z
+					s->o_tile=(value/10000);
+					s->ref_o_tile=(value/10000);
+					//s->script_wrote_otile=1; //Removing this as of 26th October, 2019 -Z
 				//if at some future point we WANT writing ->Tile to also overwrite ->OriginalTile,
 				//then either the user will need to manually write tile, or we can add a QR and 
 				// write ->tile here. 'script_wrote_otile' is out.
@@ -12750,44 +12971,44 @@ void set_register(int32_t arg, int32_t value)
 			break;
 			
 		case LWPNOCSET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->o_cset)|=(value/10000)&15;
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->o_cset)|=(value/10000)&15;
 				
 			break;
 			
 		case LWPNHXOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->hxofs)=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->hxofs)=(value/10000);
 				
 			break;
 			
 		case LWPNHYOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->hyofs)=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->hyofs)=(value/10000);
 				
 			break;
 			
 		case LWPNXOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->xofs)=(zfix)(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->xofs)=(zfix)(value/10000);
 				
 			break;
 			
 		case LWPNYOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->yofs)=(zfix)(value/10000)+(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->yofs)=(zfix)(value/10000)+(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset);
 				
 			break;
 		
 		case LWPNSHADOWXOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->shadowxofs)=(zfix)(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->shadowxofs)=(zfix)(value/10000);
 				
 			break;
 		
 		case LWPNSHADOWYOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->shadowyofs)=(zfix)(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->shadowyofs)=(zfix)(value/10000);
 				
 			break;
 			
@@ -12795,50 +13016,50 @@ void set_register(int32_t arg, int32_t value)
 			break; //READ-ONLY
 			
 		case LWPNZOFS:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->zofs)=(zfix)(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->zofs)=(zfix)(value/10000);
 				
 			break;
 			
 		case LWPNHXSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->hit_width)=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->hit_width)=(value/10000);
 				
 			break;
 			
 		case LWPNHYSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->hit_height)=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->hit_height)=(value/10000);
 				
 			break;
 			
 		case LWPNHZSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->hzsz)=(value/10000);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->hzsz)=(value/10000);
 				
 			break;
 			
 		case LWPNTXSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->txsz)=vbound((value/10000),1,20);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->txsz)=vbound((value/10000),1,20);
 				
 			break;
 			
 		case LWPNTYSZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)s)->tysz)=vbound((value/10000),1,20);
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->tysz)=vbound((value/10000),1,20);
 				
 			break;
 
 		case LWPNCOLLDET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)(s))->scriptcoldet) = value;
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->scriptcoldet) = value;
 
 			break;
 		
 		case LWPNENGINEANIMATE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)(s))->do_animation)=value;
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->do_animation)=value;
 				
 			break;
 		
@@ -12846,168 +13067,168 @@ void set_register(int32_t arg, int32_t value)
 		{
 			//int32_t pitm = (vbound(value/10000,1,(MAXITEMS-1)));
 					
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)(s))->parentitem)=(vbound(value/10000,-1,(MAXITEMS-1)));
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->parentitem)=(vbound(value/10000,-1,(MAXITEMS-1)));
 			break;
 		}
 
 		case LWPNLEVEL:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-				(((weapon*)(s))->type)=value/10000;
+			if(auto s=checkLWpn(ri->lwpn))
+				(s->level)=value/10000;
 				
 			break;
 		
 		case LWPNSCRIPT:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				(((weapon*)(s))->script)=vbound(value/10000,0,NUMSCRIPTWEAPONS-1);
+				(s->script)=vbound(value/10000,0,NUMSCRIPTWEAPONS-1);
 				if ( get_qr(qr_CLEARINITDONSCRIPTCHANGE))
 				{
 					for(int32_t q=0; q<8; q++)
-						(((weapon*)(s))->initD[q]) = 0;
+						(s->initD[q]) = 0;
 				}
 				on_reassign_script_engine_data(ScriptType::Lwpn, ri->lwpn);
 			}  
 			break;
 		
 		case LWPNUSEWEAPON:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-			(((weapon*)(s))->useweapon)=vbound(value/10000,0,255);
+			if(auto s=checkLWpn(ri->lwpn))
+			(s->useweapon)=vbound(value/10000,0,255);
 				
 			break;
 		
 		case LWPNUSEDEFENCE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
-			(((weapon*)(s))->usedefense)=vbound(value/10000,0,255);
+			if(auto s=checkLWpn(ri->lwpn))
+			(s->usedefense)=vbound(value/10000,0,255);
 				
 			break;
 
 		case LWPNFALLCLK:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				if(((weapon*)(s))->fallclk != 0 && value == 0)
+				if(s->fallclk != 0 && value == 0)
 				{
-					((weapon*)(s))->cs = ((weapon*)(s))->o_cset;
-					((weapon*)(s))->tile = ((weapon*)(s))->o_tile;
+					s->cs = s->o_cset;
+					s->tile = s->o_tile;
 				}
-				else if(((weapon*)(s))->fallclk == 0 && value != 0) ((weapon*)(s))->o_cset = ((weapon*)(s))->cs;
-				((weapon*)(s))->fallclk = vbound(value/10000,0,70);
+				else if(s->fallclk == 0 && value != 0) s->o_cset = s->cs;
+				s->fallclk = vbound(value/10000,0,70);
 			}
 			break;
 		case LWPNFALLCMB:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->fallCombo = vbound(value/10000,0,MAXCOMBOS-1);
+				s->fallCombo = vbound(value/10000,0,MAXCOMBOS-1);
 			}
 			break;
 		case LWPNDROWNCLK:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				if(((weapon*)(s))->drownclk != 0 && value == 0)
+				if(s->drownclk != 0 && value == 0)
 				{
-					((weapon*)(s))->cs = ((weapon*)(s))->o_cset;
-					((weapon*)(s))->tile = ((weapon*)(s))->o_tile;
+					s->cs = s->o_cset;
+					s->tile = s->o_tile;
 				}
-				else if(((weapon*)(s))->drownclk == 0 && value != 0) ((weapon*)(s))->o_cset = ((weapon*)(s))->cs;
-				((weapon*)(s))->drownclk = vbound(value/10000,0,70);
+				else if(s->drownclk == 0 && value != 0) s->o_cset = s->cs;
+				s->drownclk = vbound(value/10000,0,70);
 			}
 			break;
 		case LWPNDROWNCMB:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->drownCombo = vbound(value/10000,0,MAXCOMBOS-1);
+				s->drownCombo = vbound(value/10000,0,MAXCOMBOS-1);
 			}
 			break;
 		case LWPNFAKEZ:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)s)->fakez=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
-				if(((weapon*)s)->fakez < 0) ((weapon*)s)->fakez = 0_zf;
+				s->fakez=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
+				if(s->fakez < 0) s->fakez = 0_zf;
 			}
 				
 			break;
 
 		case LWPNGLOWRAD:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->glowRad = vbound(value/10000,0,255);
+				s->glowRad = vbound(value/10000,0,255);
 			}
 			break;
 			
 		case LWPNGLOWSHP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->glowShape = vbound(value/10000,0,255);
+				s->glowShape = vbound(value/10000,0,255);
 			}
 			break;
 			
 		case LWPNUNBL:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->unblockable = (value/10000)&WPNUNB_ALL;
+				s->unblockable = (value/10000)&WPNUNB_ALL;
 			}
 			break;
 			
 		case LWPNSHADOWSPR:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->spr_shadow = vbound(value/10000, 0, 255);
+				s->spr_shadow = vbound(value/10000, 0, 255);
 			}
 			break;
 		case LWSWHOOKED:
 			break; //read-only
 		case LWPNTIMEOUT:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->weap_timeout = vbound(value/10000,0,214748);
+				s->weap_timeout = vbound(value/10000,0,214748);
 			}
 			break;
 		case LWPNDEATHITEM:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->death_spawnitem = vbound(value/10000,-1,MAXITEMS-1);
+				s->death_spawnitem = vbound(value/10000,-1,MAXITEMS-1);
 			}
 			break;
 		case LWPNDEATHDROPSET:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->death_spawndropset = vbound(value/10000,-1,MAXITEMDROPSETS-1);
+				s->death_spawndropset = vbound(value/10000,-1,MAXITEMDROPSETS-1);
 			}
 			break;
 		case LWPNDEATHIPICKUP:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->death_item_pflags = value/10000;
+				s->death_item_pflags = value/10000;
 			}
 			break;
 		case LWPNDEATHSPRITE:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->death_sprite = vbound(value/10000,-255,MAXWPNS-1);
+				s->death_sprite = vbound(value/10000,-255,MAXWPNS-1);
 			}
 			break;
 		case LWPNDEATHSFX:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->death_sfx = vbound(value/10000,0,WAV_COUNT);
+				s->death_sfx = vbound(value/10000,0,WAV_COUNT);
 			}
 			break;
 		case LWPNLIFTLEVEL:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->lift_level = vbound(value/10000,0,255);
+				s->lift_level = vbound(value/10000,0,255);
 			}
 			break;
 		case LWPNLIFTTIME:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->lift_time = vbound(value/10000,0,255);
+				s->lift_time = vbound(value/10000,0,255);
 			}
 			break;
 		case LWPNLIFTHEIGHT:
-			if(0!=(s=checkLWpn(ri->lwpn)))
+			if(auto s=checkLWpn(ri->lwpn))
 			{
-				((weapon*)(s))->lift_height = zslongToFix(value);
+				s->lift_height = zslongToFix(value);
 			}
 			break;
 			
@@ -13019,14 +13240,14 @@ void set_register(int32_t arg, int32_t value)
 				scripting_log_error_with_context("To use this you must disable the quest rule 'Old (Faster) Sprite Drawing'.");
 				break;
 			}
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->scale=(zfix)(value/100.0);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->scale=(zfix)(value/100.0);
 				
 			break;
 		
 		case EWPNX:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->x = (get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000));
+			if(auto s=checkEWpn(ri->ewpn))
+				s->x = (get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000));
 				
 			break;
 		
@@ -13038,117 +13259,117 @@ void set_register(int32_t arg, int32_t value)
 		}
 		
 		case EWPNY:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->y = (get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000));
+			if(auto s=checkEWpn(ri->ewpn))
+				s->y = (get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000));
 				
 			break;
 			
 		case EWPNZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)s)->z=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
-				if(((weapon*)s)->z < 0) ((weapon*)s)->z = 0_zf;
+				s->z=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
+				if(s->z < 0) s->z = 0_zf;
 			}
 				
 			break;
 			
 		case EWPNJUMP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->fall=zslongToFix(value)*-100;
+			if(auto s=checkEWpn(ri->ewpn))
+				s->fall=zslongToFix(value)*-100;
 				
 			break;
 			
 		case EWPNFAKEJUMP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->fakefall=zslongToFix(value)*-100;
+			if(auto s=checkEWpn(ri->ewpn))
+				s->fakefall=zslongToFix(value)*-100;
 				
 			break;
 			
 		case EWPNDIR:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)s)->dir=(value/10000);
-				((weapon*)s)->doAutoRotate(true);
+				s->dir=(value/10000);
+				s->doAutoRotate(true);
 			}
 				
 			break;
 			
 		case EWPNLEVEL:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->type=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->level=(value/10000);
 				
 			break;
 		  
 		case EWPNGRAVITY:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				if(value)
-					((weapon*)s)->moveflags |= move_obeys_grav;
+					s->moveflags |= move_obeys_grav;
 				else
-					((weapon*)s)->moveflags &= ~move_obeys_grav;
+					s->moveflags &= ~move_obeys_grav;
 			}
 			break;
 			
 		case EWPNSTEP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				if ( get_qr(qr_STEP_IS_FLOAT) || replay_is_active() )
 				{
-					((weapon*)s)->step= zslongToFix(value / 100);
+					s->step= zslongToFix(value / 100);
 				}
 				else
 				{
 					//old, buggy code replication, round two: Go! -Z
 					//zfix val = zslongToFix(value);
 					//val.doFloor();
-					//((weapon*)s)->step = ((val / 100.0).getFloat());
+					//s->step = ((val / 100.0).getFloat());
 					
 					//old, buggy code replication, round THREE: Go! -Z
-					((weapon*)s)->step = ((value/10000)/100.0);
+					s->step = ((value/10000)/100.0);
 				}
 			}
 				
 			break;
 			
 		case EWPNANGLE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)s)->angle=(double)(value/10000.0);
-				((weapon*)(s))->doAutoRotate();
+				s->angle=(double)(value/10000.0);
+				s->doAutoRotate();
 			}
 				
 			break;
 			
 		case EWPNDEGANGLE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				double rangle = (value / 10000.0) * (PI / 180.0);
-				((weapon*)s)->angle=(double)(rangle);
-				((weapon*)(s))->doAutoRotate();
+				s->angle=(double)(rangle);
+				s->doAutoRotate();
 			}
 				
 			break;
 			
 		case EWPNVX:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				double vy;
 				double vx = (value / 10000.0);
-				if (((weapon*)(s))->angular)
-					vy = zc::math::Sin(((weapon*)s)->angle)*((weapon*)s)->step;
+				if (s->angular)
+					vy = zc::math::Sin(s->angle)*s->step;
 				else
 				{
-					switch(NORMAL_DIR(((weapon*)(s))->dir))
+					switch(NORMAL_DIR(s->dir))
 					{
 						case l_up:
 						case r_up:
 						case up:
-							vy = -1.0*((weapon*)s)->step;
+							vy = -1.0*s->step;
 							break;
 						case l_down:
 						case r_down:
 						case down:
-							vy = ((weapon*)s)->step;
+							vy = s->step;
 							break;
 							
 						default:
@@ -13156,34 +13377,34 @@ void set_register(int32_t arg, int32_t value)
 							break;
 					}
 				}
-				((weapon*)s)->angular = true;
-				((weapon*)s)->angle=atan2(vy, vx);
-				((weapon*)s)->step=FFCore.Distance(0, 0, vx, vy)/10000;
-				((weapon*)(s))->doAutoRotate();
+				s->angular = true;
+				s->angle=atan2(vy, vx);
+				s->step=FFCore.Distance(0, 0, vx, vy)/10000;
+				s->doAutoRotate();
 			}
 				
 			break;
 		
 		case EWPNVY:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				double vx;
 				double vy = (value / 10000.0);
-				if (((weapon*)(s))->angular)
-					vx = zc::math::Cos(((weapon*)s)->angle)*((weapon*)s)->step;
+				if (s->angular)
+					vx = zc::math::Cos(s->angle)*s->step;
 				else
 				{
-					switch(NORMAL_DIR(((weapon*)(s))->dir))
+					switch(NORMAL_DIR(s->dir))
 					{
 						case l_up:
 						case l_down:
 						case left:
-							vx = -1.0*((weapon*)s)->step;
+							vx = -1.0*s->step;
 							break;
 						case r_down:
 						case r_up:
 						case right:
-							vx = ((weapon*)s)->step;
+							vx = s->step;
 							break;
 							
 						default:
@@ -13191,123 +13412,123 @@ void set_register(int32_t arg, int32_t value)
 							break;
 					}
 				}
-				((weapon*)s)->angular = true;
-				((weapon*)s)->angle=atan2(vy, vx);
-				((weapon*)s)->step=FFCore.Distance(0, 0, vx, vy)/10000;
-				((weapon*)(s))->doAutoRotate();
+				s->angular = true;
+				s->angle=atan2(vy, vx);
+				s->step=FFCore.Distance(0, 0, vx, vy)/10000;
+				s->doAutoRotate();
 			}
 				
 			break;
 			
 		case EWPNANGULAR:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)s)->angular=(value!=0);
-				((weapon*)(s))->doAutoRotate(false, true);
+				s->angular=(value!=0);
+				s->doAutoRotate(false, true);
 			}
 				
 			break;
 			
 		case EWPNAUTOROTATE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)s)->autorotate=(value!=0);
-				((weapon*)(s))->doAutoRotate(false, true);
+				s->autorotate=(value!=0);
+				s->doAutoRotate(false, true);
 			}
 				
 			break;
 			
 		case EWPNBEHIND:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->behind=(value!=0);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->behind=(value!=0);
 				
 			break;
 			
 		case EWPNDRAWTYPE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->drawstyle=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->drawstyle=(value/10000);
 				
 			break;
 			
 		case EWPNPOWER:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->power=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->power=(value/10000);
 				
 			break;
 			
 		case EWPNDEAD:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
 				auto dead = value/10000;
-				((weapon*)s)->dead=dead;
-				if(dead != 0) ((weapon*)s)->weapon_dying_frame = false;
+				s->dead=dead;
+				if(dead != 0) s->weapon_dying_frame = false;
 			}
 				
 			break;
 			
-		case EWPNID:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->id=(value/10000);
+		case EWPNTYPE:
+			if(auto s=checkEWpn(ri->ewpn))
+				s->id=(value/10000);
 				
 			break;
 			
 		case EWPNTILE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->tile=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->tile=(value/10000);
 				
 			break;
 			
 		case EWPNSCRIPTTILE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->scripttile=vbound((value/10000),-1, NEWMAXTILES-1);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->scripttile=vbound((value/10000),-1, NEWMAXTILES-1);
 				
 			break;
 		
 		case EWPNSCRIPTFLIP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->scriptflip=vbound((value/10000),-1, 127);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->scriptflip=vbound((value/10000),-1, 127);
 				
 			break;
 			
 		case EWPNCSET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->cs=(value/10000)&15;
+			if(auto s=checkEWpn(ri->ewpn))
+				s->cs=(value/10000)&15;
 				
 			break;
 			
 		case EWPNFLASHCSET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->o_cset)|=(value/10000)<<4;
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->o_cset)|=(value/10000)<<4;
 				
 			break;
 			
 		case EWPNFRAMES:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->frames=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->frames=(value/10000);
 				
 			break;
 			
 		case EWPNFRAME:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->aframe=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->aframe=(value/10000);
 				
 			break;
 			
 		case EWPNASPEED:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->o_speed=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->o_speed=(value/10000);
 				
 			break;
 			
 		case EWPNFLASH:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->flash=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->flash=(value/10000);
 				
 			break;
 			
 		case EWPNFLIP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->flip=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->flip=(value/10000);
 				
 			break;
 			
@@ -13317,265 +13538,265 @@ void set_register(int32_t arg, int32_t value)
 				scripting_log_error_with_context("To use this you must disable the quest rule 'Old (Faster) Sprite Drawing'");
 				break;
 			}
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->rotation=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->rotation=(value/10000);
 				
 			break;
 			
 		case EWPNEXTEND:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				((weapon*)s)->extend=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				s->extend=(value/10000);
 				
 			break;
 			
 		case EWPNOTILE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)s)->o_tile=(value/10000);
-				((weapon*)s)->ref_o_tile=(value/10000);
+				s->o_tile=(value/10000);
+				s->ref_o_tile=(value/10000);
 			}
 				
 			break;
 			
 		case EWPNOCSET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->o_cset)|=(value/10000)&15;
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->o_cset)|=(value/10000)&15;
 				
 			break;
 			
 		case EWPNHXOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->hxofs)=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->hxofs)=(value/10000);
 				
 			break;
 			
 		case EWPNHYOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->hyofs)=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->hyofs)=(value/10000);
 				
 			break;
 			
 		case EWPNXOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->xofs)=(zfix)(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->xofs)=(zfix)(value/10000);
 				
 			break;
 			
 		case EWPNYOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->yofs)=(zfix)(value/10000)+(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->yofs)=(zfix)(value/10000)+(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset);
 				
 			break;
 			
 		case EWPNSHADOWXOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->shadowxofs)=(zfix)(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->shadowxofs)=(zfix)(value/10000);
 				
 			break;
 			
 		case EWPNSHADOWYOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->shadowyofs)=(zfix)(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->shadowyofs)=(zfix)(value/10000);
 				
 			break;
 			
 		case EWPNZOFS:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->zofs)=(zfix)(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->zofs)=(zfix)(value/10000);
 				
 			break;
 			
 		case EWPNHXSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->hit_width)=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->hit_width)=(value/10000);
 				
 			break;
 			
 		case EWPNHYSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->hit_height)=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->hit_height)=(value/10000);
 				
 			break;
 			
 		case EWPNHZSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->hzsz)=(value/10000);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->hzsz)=(value/10000);
 				
 			break;
 			
 		case EWPNTXSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->txsz)=vbound((value/10000),1,20);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->txsz)=vbound((value/10000),1,20);
 				
 			break;
 			
 		case EWPNTYSZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)s)->tysz)=vbound((value/10000),1,20);
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->tysz)=vbound((value/10000),1,20);
 				
 			break;
 			
 		case EWPNCOLLDET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)(s))->scriptcoldet)=value;
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->scriptcoldet)=value;
 				
 			break;
 		
 		case EWPNENGINEANIMATE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)(s))->do_animation)=value;
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->do_animation)=value;
 				
 			break;
 		
 		
 		case EWPNPARENTUID:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 				s->setParent(sprite::getByUID(value));
 			break;
 		
 		case EWPNPARENT:
-			if(0!=(s=checkEWpn(ri->ewpn)))
-				(((weapon*)(s))->parentid)= ( (get_qr(qr_OLDEWPNPARENT)) ? value / 10000 : value );
+			if(auto s=checkEWpn(ri->ewpn))
+				(s->parentid)= ( (get_qr(qr_OLDEWPNPARENT)) ? value / 10000 : value );
 				
 			break;
 		
 		case EWPNSCRIPT:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				(((weapon*)(s))->script)=vbound(value/10000,0,NUMSCRIPTWEAPONS-1);
+				(s->script)=vbound(value/10000,0,NUMSCRIPTWEAPONS-1);
 				if ( get_qr(qr_CLEARINITDONSCRIPTCHANGE))
 				{
 					for(int32_t q=0; q<8; q++)
-						(((weapon*)(s))->initD[q]) = 0;
+						(s->initD[q]) = 0;
 				}
 				on_reassign_script_engine_data(ScriptType::Ewpn, ri->ewpn);
 			}
 			break;
 		
 		case EWPNFALLCLK:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				if(((weapon*)(s))->fallclk != 0 && value == 0)
+				if(s->fallclk != 0 && value == 0)
 				{
-					((weapon*)(s))->cs = ((weapon*)(s))->o_cset;
-					((weapon*)(s))->tile = ((weapon*)(s))->o_tile;
+					s->cs = s->o_cset;
+					s->tile = s->o_tile;
 				}
-				else if(((weapon*)(s))->fallclk == 0 && value != 0) ((weapon*)(s))->o_cset = ((weapon*)(s))->cs;
-				((weapon*)(s))->fallclk = vbound(value/10000,0,70);
+				else if(s->fallclk == 0 && value != 0) s->o_cset = s->cs;
+				s->fallclk = vbound(value/10000,0,70);
 			}
 			break;
 		case EWPNFALLCMB:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->fallCombo = vbound(value/10000,0,MAXCOMBOS-1);
+				s->fallCombo = vbound(value/10000,0,MAXCOMBOS-1);
 			}
 			break;
 		case EWPNDROWNCLK:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				if(((weapon*)(s))->drownclk != 0 && value == 0)
+				if(s->drownclk != 0 && value == 0)
 				{
-					((weapon*)(s))->cs = ((weapon*)(s))->o_cset;
-					((weapon*)(s))->tile = ((weapon*)(s))->o_tile;
+					s->cs = s->o_cset;
+					s->tile = s->o_tile;
 				}
-				else if(((weapon*)(s))->drownclk == 0 && value != 0) ((weapon*)(s))->o_cset = ((weapon*)(s))->cs;
-				((weapon*)(s))->drownclk = vbound(value/10000,0,70);
+				else if(s->drownclk == 0 && value != 0) s->o_cset = s->cs;
+				s->drownclk = vbound(value/10000,0,70);
 			}
 			break;
 		case EWPNDROWNCMB:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->drownCombo = vbound(value/10000,0,MAXCOMBOS-1);
+				s->drownCombo = vbound(value/10000,0,MAXCOMBOS-1);
 			}
 			break;
 		case EWPNFAKEZ:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)s)->fakez=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
-				if(((weapon*)s)->fakez < 0) ((weapon*)s)->fakez = 0_zf;
+				s->fakez=get_qr(qr_SPRITEXY_IS_FLOAT) ? zslongToFix(value) : zfix(value/10000);
+				if(s->fakez < 0) s->fakez = 0_zf;
 			}
 				
 			break;
 		
 		case EWPNGLOWRAD:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->glowRad = vbound(value/10000,0,255);
+				s->glowRad = vbound(value/10000,0,255);
 			}
 			break;
 		case EWPNGLOWSHP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->glowShape = vbound(value/10000,0,255);
+				s->glowShape = vbound(value/10000,0,255);
 			}
 			break;
 			
 		case EWPNUNBL:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->unblockable = (value/10000)&WPNUNB_ALL;
+				s->unblockable = (value/10000)&WPNUNB_ALL;
 			}
 			break;
 			
 		case EWPNSHADOWSPR:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->spr_shadow = vbound(value/10000, 0, 255);
+				s->spr_shadow = vbound(value/10000, 0, 255);
 			}
 			break;
 		case EWSWHOOKED:
 			break; //read-only
 		case EWPNTIMEOUT:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->weap_timeout = vbound(value/10000,0,214748);
+				s->weap_timeout = vbound(value/10000,0,214748);
 			}
 			break;case EWPNDEATHITEM:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->death_spawnitem = vbound(value/10000,-1,MAXITEMS-1);
+				s->death_spawnitem = vbound(value/10000,-1,MAXITEMS-1);
 			}
 			break;
 		case EWPNDEATHDROPSET:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->death_spawndropset = vbound(value/10000,-1,MAXITEMDROPSETS-1);
+				s->death_spawndropset = vbound(value/10000,-1,MAXITEMDROPSETS-1);
 			}
 			break;
 		case EWPNDEATHIPICKUP:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->death_item_pflags = value/10000;
+				s->death_item_pflags = value/10000;
 			}
 			break;
 		case EWPNDEATHSPRITE:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->death_sprite = vbound(value/10000,-255,MAXWPNS-1);
+				s->death_sprite = vbound(value/10000,-255,MAXWPNS-1);
 			}
 			break;
 		case EWPNDEATHSFX:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->death_sfx = vbound(value/10000,0,WAV_COUNT);
+				s->death_sfx = vbound(value/10000,0,WAV_COUNT);
 			}
 			break;
 		case EWPNLIFTLEVEL:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->lift_level = vbound(value/10000,0,255);
+				s->lift_level = vbound(value/10000,0,255);
 			}
 			break;
 		case EWPNLIFTTIME:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->lift_time = vbound(value/10000,0,255);
+				s->lift_time = vbound(value/10000,0,255);
 			}
 			break;
 		case EWPNLIFTHEIGHT:
-			if(0!=(s=checkEWpn(ri->ewpn)))
+			if(auto s=checkEWpn(ri->ewpn))
 			{
-				((weapon*)(s))->lift_height = zslongToFix(value);
+				s->lift_height = zslongToFix(value);
 			}
 			break;
 		
@@ -13847,6 +14068,16 @@ void set_register(int32_t arg, int32_t value)
 		case SCREENDATASCREENMIDI:
 		{
 			get_scr(ri->screenref)->screen_midi = vbound((value / 10000)-(MIDIOFFSET_MAPSCR-MIDIOFFSET_ZSCRIPT),-1,32767);
+			break;
+		}
+		case SCREENDATA_GRAVITY_STRENGTH:
+		{
+			get_scr(ri->screenref)->screen_gravity = zslongToFix(value);
+			break;
+		}
+		case SCREENDATA_TERMINAL_VELOCITY:
+		{
+			get_scr(ri->screenref)->screen_terminal_v = zslongToFix(value);
 			break;
 		}
 		case SCREENDATALENSLAYER:	 	SET_SCREENDATA_VAR_BYTE(lens_layer, "LensLayer"); break;	//B, OLD QUESTS ONLY?
@@ -14309,6 +14540,22 @@ void set_register(int32_t arg, int32_t value)
 			}
 			break;
 		}
+		case MAPDATA_GRAVITY_STRENGTH:
+		{
+			if (mapscr *m = ResolveMapdataScr(ri->mapsref))
+			{
+				m->screen_gravity = zslongToFix(value);
+			}
+			break;
+		}
+		case MAPDATA_TERMINAL_VELOCITY:
+		{
+			if (mapscr *m = ResolveMapdataScr(ri->mapsref))
+			{
+				m->screen_terminal_v = zslongToFix(value);
+			}
+			break;
+		}
 		case MAPDATALENSLAYER:	 	SET_MAPDATA_VAR_BYTE(lens_layer); break;	//B, OLD QUESTS ONLY?
 
 		case MAPDATASCRDATASIZE:
@@ -14384,6 +14631,16 @@ void set_register(int32_t arg, int32_t value)
 		case DMAPDATAMIDI:	//byte
 		{
 			DMaps[ri->dmapsref].midi = ((byte)((value / 10000)+MIDIOFFSET_DMAP)); break;
+		}
+		case DMAPDATA_GRAVITY_STRENGTH:
+		{
+			DMaps[ri->dmapsref].dmap_gravity = zslongToFix(value);
+			break;
+		}
+		case DMAPDATA_TERMINAL_VELOCITY:
+		{
+			DMaps[ri->dmapsref].dmap_terminal_v = zslongToFix(value);
+			break;
 		}
 		case DMAPDATACONTINUE:	//byte
 		{
@@ -15148,7 +15405,7 @@ void set_register(int32_t arg, int32_t value)
 				scripting_log_error_with_context("Invalid combodata ID: {}", ri->combosref);
 			}
 			else if(auto* trig = get_first_combo_trigger())
-				trig->trig_levelitems = (value/10000)&liALL;
+				trig->trig_levelitems = (value/10000)&LI_ALL;
 			break;
 		}
 		case COMBODTRIGDMAPLVL:
@@ -15534,6 +15791,36 @@ void set_register(int32_t arg, int32_t value)
 				combobuf[ri->combosref].only_gentrig = value != 0 ? 1 : 0;
 			break;
 		}
+		case COMBOD_Z_HEIGHT:
+		{
+			if(ri->combosref < 0 || ri->combosref > (MAXCOMBOS-1) )
+			{
+				scripting_log_error_with_context("Invalid combodata ID: {}", ri->combosref);
+			}
+			else
+				combobuf[ri->combosref].z_height = zslongToFix(value);
+			break;
+		}
+		case COMBOD_Z_STEP_HEIGHT:
+		{
+			if(ri->combosref < 0 || ri->combosref > (MAXCOMBOS-1) )
+			{
+				scripting_log_error_with_context("Invalid combodata ID: {}", ri->combosref);
+			}
+			else
+				combobuf[ri->combosref].z_step_height = zslongToFix(zc_max(0,value));
+			break;
+		}
+		case COMBOD_DIVE_UNDER_LEVEL:
+		{
+			if(ri->combosref < 0 || ri->combosref > (MAXCOMBOS-1) )
+			{
+				scripting_log_error_with_context("Invalid combodata ID: {}", ri->combosref);
+			}
+			else
+				combobuf[ri->combosref].dive_under_level = (byte)vbound(value / 10000, 0, 255);
+			break;
+		}
 	
 		
 
@@ -15804,7 +16091,7 @@ void set_register(int32_t arg, int32_t value)
 		{
 			if(auto* trig = get_combo_trigger(ri->combotrigref))
 			{
-				trig->trig_levelitems = (value/10000) & liALL;
+				trig->trig_levelitems = (value/10000) & LI_ALL;
 			}
 			break;
 		}
@@ -15971,49 +16258,85 @@ void set_register(int32_t arg, int32_t value)
 		case CMBTRIGGERPLAYERBOUNCE:
 		{
 			if(auto* trig = get_combo_trigger(ri->combotrigref))
-				trig->player_bounce = value;
+				trig->player_bounce = zslongToFix(value);
 			break;
 		}
 		case CMBTRIGGERREQPLAYERZ:
 		{
 			if(auto* trig = get_combo_trigger(ri->combotrigref))
-				trig->req_player_z = value;
+				trig->req_player_z = zslongToFix(value);
 			break;
 		}
 		case CMBTRIGGERDESTHEROX:
 		{
 			if(auto* trig = get_combo_trigger(ri->combotrigref))
-				trig->dest_player_x = value;
+				trig->dest_player_x = zslongToFix(value);
 			break;
 		}
 		case CMBTRIGGERDESTHEROY:
 		{
 			if(auto* trig = get_combo_trigger(ri->combotrigref))
-				trig->dest_player_y = value;
+				trig->dest_player_y = zslongToFix(value);
 			break;
 		}
 		case CMBTRIGGERDESTHEROZ:
 		{
 			if(auto* trig = get_combo_trigger(ri->combotrigref))
-				trig->dest_player_z = value;
+				trig->dest_player_z = zslongToFix(value);
 			break;
 		}
 		case CMBTRIGGERREQPLAYERJUMP:
 		{
 			if(auto* trig = get_combo_trigger(ri->combotrigref))
-				trig->req_player_jump = value;
+				trig->req_player_jump = zslongToFix(value);
 			break;
 		}
 		case CMBTRIGGERREQPLAYERX:
 		{
 			if(auto* trig = get_combo_trigger(ri->combotrigref))
-				trig->req_player_x = value;
+				trig->req_player_x = zslongToFix(value);
 			break;
 		}
 		case CMBTRIGGERREQPLAYERY:
 		{
 			if(auto* trig = get_combo_trigger(ri->combotrigref))
-				trig->req_player_y = value;
+				trig->req_player_y = zslongToFix(value);
+			break;
+		}
+		case CMBTRIGGERFORCEPLAYERDIR:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				trig->dest_player_dir = vbound(value/10000, 3, -1);
+			break;
+		}
+		case CMBTRIGGERICECOMBO:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				trig->force_ice_combo = vbound(value/10000, MAXCOMBOS-1, -1);
+			break;
+		}
+		case CMBTRIGGERICEVX:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				trig->force_ice_vx = zslongToFix(value);
+			break;
+		}
+		case CMBTRIGGERICEVY:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				trig->force_ice_vy = zslongToFix(value);
+			break;
+		}
+		case CMBTRIGGER_GRAVITY:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				trig->trig_gravity = zslongToFix(value);
+			break;
+		}
+		case CMBTRIGGER_TERMINAL_VELOCITY:
+		{
+			if(auto* trig = get_combo_trigger(ri->combotrigref))
+				trig->trig_terminal_v = zslongToFix(value);
 			break;
 		}
 		///----------------------------------------------------------------------------------------------------//
@@ -16069,7 +16392,7 @@ void set_register(int32_t arg, int32_t value)
 		case NPCDATASCRIPT: SET_NPCDATA_VAR_BYTE(script, "Script"); break;
 		case NPCDATAEHEIGHT: SET_NPCDATA_VAR_BYTE(e_height, "ExHeight"); break;
 		case NPCDATAHP: SET_NPCDATA_VAR_DWORD(hp, "HP"); break;
-		case NPCDATAFAMILY: SET_NPCDATA_VAR_DWORD(family, "Family"); break;
+		case NPCDATATYPE: SET_NPCDATA_VAR_DWORD(type, "Family"); break;
 		case NPCDATACSET: SET_NPCDATA_VAR_DWORD(cset, "CSet"); break;
 		case NPCDATAANIM: SET_NPCDATA_VAR_DWORD(anim, "Anim"); break;
 		case NPCDATAEANIM: SET_NPCDATA_VAR_DWORD(e_anim, "ExAnim"); break;
@@ -16190,12 +16513,10 @@ void set_register(int32_t arg, int32_t value)
 	//Misc./Internal
 		case SP:
 			ri->sp = value / 10000;
-			ri->sp &= MASK_SP;
 			break;
 		
 		case SP2:
 			ri->sp = value;
-			ri->sp &= MASK_SP;
 			break;
 			
 		case PC:
@@ -16744,7 +17065,7 @@ void set_register(int32_t arg, int32_t value)
 		case SUBWIDGREQLITEMS:
 		{
 			if(SubscrWidget* widg = checkSubWidg(ri->subwidgref))
-				widg->req_litems = vbound(value/10000,0,liALL);
+				widg->req_litems = vbound(value/10000,0,LI_ALL);
 			break;
 		}
 		case SUBWIDGREQLITEMLEVEL:
@@ -16833,6 +17154,9 @@ void set_register(int32_t arg, int32_t value)
 					case widgTEXT:
 						((SW_Text*)widg)->fontid = val;
 						break;
+					case widgITMCOOLDOWNTEXT:
+						((SW_ItemCooldownText*)widg)->fontid = val;
+						break;
 					case widgTEXTBOX:
 						((SW_TextBox*)widg)->fontid = val;
 						break;
@@ -16872,6 +17196,9 @@ void set_register(int32_t arg, int32_t value)
 					case widgTEXT:
 						((SW_Text*)widg)->align = val;
 						break;
+					case widgITMCOOLDOWNTEXT:
+						((SW_ItemCooldownText*)widg)->align = val;
+						break;
 					case widgTEXTBOX:
 						((SW_TextBox*)widg)->align = val;
 						break;
@@ -16907,6 +17234,9 @@ void set_register(int32_t arg, int32_t value)
 				{
 					case widgTEXT:
 						((SW_Text*)widg)->shadtype = val;
+						break;
+					case widgITMCOOLDOWNTEXT:
+						((SW_ItemCooldownText*)widg)->shadtype = val;
 						break;
 					case widgTEXTBOX:
 						((SW_TextBox*)widg)->shadtype = val;
@@ -16946,6 +17276,9 @@ void set_register(int32_t arg, int32_t value)
 				{
 					case widgTEXT:
 						((SW_Text*)widg)->c_text.set_int_color(val);
+						break;
+					case widgITMCOOLDOWNTEXT:
+						((SW_ItemCooldownText*)widg)->c_text.set_int_color(val);
 						break;
 					case widgTEXTBOX:
 						((SW_TextBox*)widg)->c_text.set_int_color(val);
@@ -16989,6 +17322,9 @@ void set_register(int32_t arg, int32_t value)
 					case widgTEXT:
 						((SW_Text*)widg)->c_shadow.set_int_color(val);
 						break;
+					case widgITMCOOLDOWNTEXT:
+						((SW_ItemCooldownText*)widg)->c_shadow.set_int_color(val);
+						break;
 					case widgTEXTBOX:
 						((SW_TextBox*)widg)->c_shadow.set_int_color(val);
 						break;
@@ -17027,6 +17363,9 @@ void set_register(int32_t arg, int32_t value)
 				{
 					case widgTEXT:
 						((SW_Text*)widg)->c_bg.set_int_color(val);
+						break;
+					case widgITMCOOLDOWNTEXT:
+						((SW_ItemCooldownText*)widg)->c_bg.set_int_color(val);
 						break;
 					case widgTEXTBOX:
 						((SW_TextBox*)widg)->c_bg.set_int_color(val);;
@@ -17177,15 +17516,21 @@ void set_register(int32_t arg, int32_t value)
 		{
 			if(SubscrWidget* widg = checkSubWidg(ri->subwidgref))
 			{
-				auto val = vbound(value/10000,0,3);
+				auto val = vbound(value/10000,-1,3);
 				auto ty = widg->getType();
 				switch(ty)
 				{
 					case widgBTNITM:
-						((SW_ButtonItem*)widg)->btn = val;
+						((SW_ButtonItem*)widg)->btn = zc_max(0, val);
 						break;
 					case widgBTNCOUNTER:
-						((SW_BtnCounter*)widg)->btn = val;
+						((SW_BtnCounter*)widg)->btn = zc_max(0, val);
+						break;
+					case widgITMCOOLDOWNGAUGE:
+						((SW_ItemCooldownGauge*)widg)->button_id = val;
+						break;
+					case widgITMCOOLDOWNTEXT:
+						((SW_ItemCooldownText*)widg)->button_id = val;
 						break;
 					default:
 						bad_subwidg_type(false, ty);
@@ -17253,11 +17598,10 @@ void set_register(int32_t arg, int32_t value)
 					case widgOLDCTR:
 						((SW_Counters*)widg)->infitm = val;
 						break;
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE:
 						((SW_GaugePiece*)widg)->inf_item = val;
 						break;
+					case widgITMCOOLDOWNGAUGE:
 					default:
 						bad_subwidg_type(false, ty);
 						break;
@@ -17393,6 +17737,12 @@ void set_register(int32_t arg, int32_t value)
 					case widgITEMSLOT:
 						((SW_ItemSlot*)widg)->iclass = val;
 						break;
+					case widgITMCOOLDOWNGAUGE:
+						((SW_ItemCooldownGauge*)widg)->item_class = val;
+						break;
+					case widgITMCOOLDOWNTEXT:
+						((SW_ItemCooldownText*)widg)->item_class = val;
+						break;
 					default:
 						bad_subwidg_type(false, ty);
 						break;
@@ -17410,6 +17760,12 @@ void set_register(int32_t arg, int32_t value)
 				{
 					case widgITEMSLOT:
 						((SW_ItemSlot*)widg)->iid = val;
+						break;
+					case widgITMCOOLDOWNGAUGE:
+						((SW_ItemCooldownGauge*)widg)->specific_item_id = val;
+						break;
+					case widgITMCOOLDOWNTEXT:
+						((SW_ItemCooldownText*)widg)->specific_item_id = val;
 						break;
 					default:
 						bad_subwidg_type(false, ty);
@@ -17540,9 +17896,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->frames = val;
 						break;
 					default:
@@ -17560,9 +17914,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->speed = val;
 						break;
 					default:
@@ -17580,9 +17932,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->delay = val;
 						break;
 					default:
@@ -17600,9 +17950,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->container = val;
 						break;
 					default:
@@ -17620,9 +17968,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->gauge_wid = val;
 						break;
 					default:
@@ -17640,9 +17986,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->gauge_hei = val;
 						break;
 					default:
@@ -17660,9 +18004,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->unit_per_frame = val-1;
 						break;
 					default:
@@ -17680,9 +18022,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->hspace = val;
 						break;
 					default:
@@ -17700,9 +18040,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->vspace = val;
 						break;
 					default:
@@ -17720,9 +18058,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->grid_xoff = val;
 						break;
 					default:
@@ -17740,9 +18076,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->grid_yoff = val;
 						break;
 					default:
@@ -17760,9 +18094,7 @@ void set_register(int32_t arg, int32_t value)
 				auto ty = widg->getType();
 				switch(ty)
 				{
-					case widgLGAUGE:
-					case widgMGAUGE:
-					case widgMISCGAUGE:
+					case widgLGAUGE: case widgMGAUGE: case widgMISCGAUGE: case widgITMCOOLDOWNGAUGE:
 						((SW_GaugePiece*)widg)->anim_val = val;
 						break;
 					default:
@@ -17794,12 +18126,33 @@ void set_register(int32_t arg, int32_t value)
 		{
 			if(SubscrWidget* widg = checkSubWidg(ri->subwidgref))
 			{
-				auto val = vbound(value/10000,1,65535);
+				auto val = zc_max(value/10000,1);
 				auto ty = widg->getType();
 				switch(ty)
 				{
 					case widgMISCGAUGE:
 						((SW_MiscGaugePiece*)widg)->per_container = val;
+						break;
+					case widgITMCOOLDOWNGAUGE:
+						((SW_ItemCooldownGauge*)widg)->per_container = val;
+						break;
+					default:
+						bad_subwidg_type(false, ty);
+						break;
+				}
+			}
+			break;
+		}
+		case SUBWIDGTY_TOTAL:
+		{
+			if(SubscrWidget* widg = checkSubWidg(ri->subwidgref))
+			{
+				auto val = zc_max(value/10000,1);
+				auto ty = widg->getType();
+				switch(ty)
+				{
+					case widgITMCOOLDOWNGAUGE:
+						((SW_ItemCooldownGauge*)widg)->total_points = val;
 						break;
 					default:
 						bad_subwidg_type(false, ty);
@@ -18081,35 +18434,48 @@ int32_t legacy_sz_int_arr(const int32_t ptr)
 //                                       ASM Functions                                                 //
 ///----------------------------------------------------------------------------------------------------//
 
+bool check_stack(uint32_t sp)
+{
+	if (sp >= MAX_STACK_SIZE)
+	{
+		log_stack_overflow_error();
+		ri->overflow = true;
+		return false;
+	}
+
+	return true;
+}
+
 void retstack_push(int32_t val)
 {
-	if(ri->retsp >= ret_stack->size())
+	if(ri->retsp >= MAX_CALL_FRAMES)
 	{
-		scripting_log_error_with_context("RetStack over or underflow, retstack pointer = {}", ri->retsp);
+		log_call_limit_error();
+		ri->overflow = true;
 		return;
 	}
-	ret_stack->at(ri->retsp++) = val;
+	(*ret_stack)[ri->retsp++] = val;
 }
 optional<int32_t> retstack_pop()
 {
 	if(!ri->retsp)
 		return nullopt; //return from root, so, QUIT
-	return ret_stack->at(--ri->retsp);
+	return (*ret_stack)[--ri->retsp];
 }
 
 void stack_push(int32_t val)
 {
-	--ri->sp;
-	ri->sp &= MASK_SP;
-	SH::write_stack(ri->sp, val);
+	SH::write_stack(--ri->sp, val);
 }
 void stack_push(int32_t val, size_t count)
 {
+	if (!check_stack(ri->sp - count))
+		return;
+
 	for(int q = 0; q < count; ++q)
 	{
 		--ri->sp;
-		ri->sp &= MASK_SP;
-		SH::write_stack(ri->sp, val);
+		(*stack)[ri->sp] = val;
 	}
 }
 
@@ -18117,14 +18483,12 @@ int32_t stack_pop()
 {
 	const int32_t val = SH::read_stack(ri->sp);
 	++ri->sp;
-	ri->sp &= MASK_SP;
 	return val;
 }
 int32_t stack_pop(size_t count)
 {
 	ri->sp += count;
-	ri->sp &= MASK_SP;
-	const int32_t val = SH::read_stack((ri->sp-1) & MASK_SP);
+	const int32_t val = SH::read_stack(ri->sp-1);
 	return val;
 }
 
@@ -18350,7 +18714,7 @@ void do_store(const bool v)
 
 void script_store_object(uint32_t offset, uint32_t new_id)
 {
-	DCHECK(offset < MAX_SCRIPT_REGISTERS);
+	DCHECK(offset < MAX_STACK_SIZE);
 
 	// Increase, then decrease, to handle the case where a variable (holding the only reference to an object) is assigned to itself.
 	// This is unlikely so lets not bother with a conditional that skips both ref modifications when the ids are equal.
@@ -18376,7 +18740,7 @@ void do_store_object(const bool v)
 
 void script_remove_object_ref(int32_t offset)
 {
-	if (offset < 0 || offset >= MAX_SCRIPT_REGISTERS)
+	if (offset < 0 || offset >= MAX_STACK_SIZE)
 	{
 		assert(false);
 		return;
@@ -18454,6 +18818,32 @@ void do_own_array(int arrindx, ScriptType scriptType, const int32_t UID)
 		if(arrindx > 0 && arrindx < NUM_ZSCRIPT_ARRAYS)
 		{
 			arrayOwner[arrindx].reown(scriptType, UID);
+			arrayOwner[arrindx].specOwned = true;
+		}
+		else if(arrindx < 0) //object array
+			Z_scripterrlog_force_trace("Cannot 'OwnArray()' an object-based array '%d'\n", arrindx);
+	}
+	else Z_scripterrlog_force_trace("Tried to 'OwnArray()' an invalid array '%d'\n", arrindx);
+}
+
+void do_own_array(int arrindx, sprite* spr)
+{
+	ArrayManager am(arrindx);
+	
+	if(am.internal())
+	{
+		Z_scripterrlog_force_trace("Cannot 'OwnArray()' an internal array '%d'\n", arrindx);
+		return;
+	}
+	if(arrindx >= NUM_ZSCRIPT_ARRAYS && arrindx < NUM_ZSCRIPT_ARRAYS*2)
+	{
+		//ignore global arrays
+	}
+	else if(!am.invalid())
+	{
+		if(arrindx > 0 && arrindx < NUM_ZSCRIPT_ARRAYS)
+		{
+			arrayOwner[arrindx].reown(spr);
 			arrayOwner[arrindx].specOwned = true;
 		}
 		else if(arrindx < 0) //object array
@@ -19687,48 +20077,49 @@ void do_lwpnmakeangular()
 {
 	if(LwpnH::loadWeapon(ri->lwpn) == SH::_NoError)
 	{
-		if (!LwpnH::getWeapon()->angular)
+		auto w = LwpnH::getWeapon();
+		if (!w->angular)
 		{
 			double vx;
 			double vy;
-			switch(NORMAL_DIR(LwpnH::getWeapon()->dir))
+			switch(NORMAL_DIR(w->dir))
 			{
 				case l_up:
 				case l_down:
 				case left:
-					vx = -1.0*((weapon*)s)->step;
+					vx = -1.0*w->step;
 					break;
 				case r_down:
 				case r_up:
 				case right:
-					vx = ((weapon*)s)->step;
+					vx = w->step;
 					break;
 					
 				default:
 					vx = 0;
 					break;
 			}
-			switch(NORMAL_DIR(LwpnH::getWeapon()->dir))
+			switch(NORMAL_DIR(w->dir))
 			{
 				case l_up:
 				case r_up:
 				case up:
-					vy = -1.0*((weapon*)s)->step;
+					vy = -1.0*w->step;
 					break;
 				case l_down:
 				case r_down:
 				case down:
-					vy = ((weapon*)s)->step;
+					vy = w->step;
 					break;
 					
 				default:
 					vy = 0;
 					break;
 			}
-			LwpnH::getWeapon()->angular = true;
-			LwpnH::getWeapon()->angle=atan2(vy, vx);
-			LwpnH::getWeapon()->step=FFCore.Distance(0, 0, vx, vy)/10000.0;
-			LwpnH::getWeapon()->doAutoRotate();
+			w->angular = true;
+			w->angle=atan2(vy, vx);
+			w->step=FFCore.Distance(0, 0, vx, vy)/10000.0;
+			w->doAutoRotate();
 		}
 	}
 }
@@ -19750,48 +20141,49 @@ void do_ewpnmakeangular()
 {
 	if(EwpnH::loadWeapon(ri->ewpn) == SH::_NoError)
 	{
-		if (!EwpnH::getWeapon()->angular)
+		auto w = EwpnH::getWeapon();
+		if (!w->angular)
 		{
 			double vx;
 			double vy;
-			switch(NORMAL_DIR(EwpnH::getWeapon()->dir))
+			switch(NORMAL_DIR(w->dir))
 			{
 				case l_up:
 				case l_down:
 				case left:
-					vx = -1.0*((weapon*)s)->step;
+					vx = -1.0*w->step;
 					break;
 				case r_down:
 				case r_up:
 				case right:
-					vx = ((weapon*)s)->step;
+					vx = w->step;
 					break;
 					
 				default:
 					vx = 0;
 					break;
 			}
-			switch(NORMAL_DIR(EwpnH::getWeapon()->dir))
+			switch(NORMAL_DIR(w->dir))
 			{
 				case l_up:
 				case r_up:
 				case up:
-					vy = -1.0*((weapon*)s)->step;
+					vy = -1.0*w->step;
 					break;
 				case l_down:
 				case r_down:
 				case down:
-					vy = ((weapon*)s)->step;
+					vy = w->step;
 					break;
 					
 				default:
 					vy = 0;
 					break;
 			}
-			EwpnH::getWeapon()->angular = true;
-			EwpnH::getWeapon()->angle=atan2(vy, vx);
-			EwpnH::getWeapon()->step=FFCore.Distance(0, 0, vx, vy)/10000.0;
-			EwpnH::getWeapon()->doAutoRotate();
+			w->angular = true;
+			w->angle=atan2(vy, vx);
+			w->step=FFCore.Distance(0, 0, vx, vy)/10000.0;
+			w->doAutoRotate();
 		}
 	}
 }
@@ -21911,7 +22303,7 @@ void FFScript::do_loadmapdata_scrollscr2(const bool v)
 		return;
 	}
 
-	if (!is_in_scrolling_region(screen))
+	if (!is_in_screenscrolling_region(screen))
 	{
 		scripting_log_error_with_context("Must use a screen in the current scrolling region. got: {}", screen);
 		ri->mapsref = 0;
@@ -23011,8 +23403,7 @@ void FFScript::AlloffLimited(int32_t flagset)
 	
 	watch=freeze_guys=loaded_guys=blockpath=false;
 
-	activation_counters.clear();
-	activation_counters_ffc.clear();
+	activation_counters.fill({});
 	for_every_base_screen_in_region([&](mapscr* scr, unsigned int region_scr_x, unsigned int region_scr_y) {
 		get_screen_state(scr->screen).loaded_enemies = false;
 	});
@@ -23162,6 +23553,7 @@ bool FFScript::warp_player(int32_t warpType, int32_t dmap, int32_t screen, int32
 			return false;
 		}
 	} 
+	Hero.finish_auto_walk();
 	//warp coordinates are wx, wy, not x, y! -Z
 	if ( !(warpFlags&warpFlagDONTKILLSCRIPTDRAWS) ) script_drawing_commands.Clear();
 	//we also need to check if dmaps are sideview here! -Z
@@ -23195,12 +23587,12 @@ bool FFScript::warp_player(int32_t warpType, int32_t dmap, int32_t screen, int32
 			if(wasswimming)
 			{
 				Hero.setAction(swimming); FFCore.setHeroAction(swimming);
-				Hero.diveclk = olddiveclk;
+				Hero.set_dive(olddiveclk);
 			}
 			if(wassideswim)
 			{
 				Hero.setAction(sideswimming); FFCore.setHeroAction(sideswimming);
-				Hero.diveclk = 0;
+				Hero.set_dive(0);
 			}
 			doWarpEffect(warpEffect, true);
 			int32_t c = DMaps[cur_dmap].color;
@@ -23236,7 +23628,7 @@ bool FFScript::warp_player(int32_t warpType, int32_t dmap, int32_t screen, int32
 				loadlvlpal(DMaps[cur_dmap].color);
 			
 			lightingInstant(); // Also sets naturaldark
-			int prev_screen = hero_screen;
+			int prev_screen = Hero.current_screen;
 			loadscr(cur_dmap, screen + DMaps[cur_dmap].xoff, -1, overlay);
 
 			// In the case where we did not call ALLOFF, preserve the "enemies have spawned"
@@ -23244,7 +23636,7 @@ bool FFScript::warp_player(int32_t warpType, int32_t dmap, int32_t screen, int32
 			if (warpFlags&warpFlagDONTCLEARSPRITES)
 			{
 				if (get_screen_state(prev_screen).loaded_enemies)
-					get_screen_state(hero_screen).loaded_enemies = true;
+					get_screen_state(Hero.current_screen).loaded_enemies = true;
 			}
 			
 			Hero.x = (zfix)wx;
@@ -23280,7 +23672,7 @@ bool FFScript::warp_player(int32_t warpType, int32_t dmap, int32_t screen, int32
 					}
 			}
 			
-			markBmap(Hero.dir^1, hero_screen);
+			markBmap(Hero.dir^1, Hero.current_screen);
 			
 			if(iswaterex_z3(MAPCOMBO((int32_t)Hero.x,(int32_t)Hero.y+8), -1, Hero.x, Hero.y+8, true) && _walkflag((int32_t)Hero.x,(int32_t)Hero.y+8,0) && current_item(itype_flippers))
 			{
@@ -23417,7 +23809,7 @@ bool FFScript::warp_player(int32_t warpType, int32_t dmap, int32_t screen, int32
 				}
 			}
 			
-			markBmap(Hero.dir^1, hero_screen);
+			markBmap(Hero.dir^1, Hero.current_screen);
 			//preloaded freeform combos
 			ffscript_engine(true);
 			Hero.reset_hookshot();
@@ -23596,7 +23988,7 @@ bool FFScript::warp_player(int32_t warpType, int32_t dmap, int32_t screen, int32
 				guys.spr(i)->z = 0;
 			}
 			
-			if(((enemy*)guys.spr(i))->family!=eeTRAP && ((enemy*)guys.spr(i))->family!=eeSPINTILE)
+			if(((enemy*)guys.spr(i))->type!=eeTRAP && ((enemy*)guys.spr(i))->type!=eeSPINTILE)
 			guys.spr(i)->yofs += 2;
 		}
 	}
@@ -23604,7 +23996,7 @@ bool FFScript::warp_player(int32_t warpType, int32_t dmap, int32_t screen, int32
 	{
 		for(int32_t i=0; i<guys.Count(); i++)
 		{
-			if(((enemy*)guys.spr(i))->family!=eeTRAP && ((enemy*)guys.spr(i))->family!=eeSPINTILE)
+			if(((enemy*)guys.spr(i))->type!=eeTRAP && ((enemy*)guys.spr(i))->type!=eeSPINTILE)
 			guys.spr(i)->yofs -= 2;
 		}
 	}
@@ -24222,23 +24614,22 @@ void do_writepodarr()
 	ArrayH::setArray(id, sargvec->size(), sargvec->data(), false);
 }
 
-int32_t get_own_i(ScriptType type)
+sprite* get_own_sprite(ScriptType type)
 {
 	switch(type)
 	{
 		case ScriptType::Lwpn:
-			return ri->lwpn;
+			return checkLWpn(ri->lwpn);
 		case ScriptType::Ewpn:
-			return ri->ewpn;
+			return checkEWpn(ri->ewpn);
 		case ScriptType::ItemSprite:
-			return ri->itemref;
+			return checkItem(ri->itemref);
 		case ScriptType::NPC:
-			return ri->guyref;
+			return checkNPC(ri->guyref);
 		case ScriptType::FFC:
-			if (auto ffc = ResolveFFC(ri->ffcref))
-				return ffc->index;
+			return ResolveFFC(ri->ffcref);
 	}
-	return 0;
+	return nullptr;
 }
 
 portal* loadportal(savedportal& p);
@@ -24464,36 +24855,8 @@ int32_t run_script(ScriptType type, word script, int32_t i)
 		return RUNSCRIPT_ERROR;
 	}
 
-	switch(type)
-	{
-		case ScriptType::FFC:
-		case ScriptType::Global:
-		case ScriptType::Hero:
-		case ScriptType::DMap:
-		case ScriptType::OnMap:
-		case ScriptType::ScriptedActiveSubscreen:
-		case ScriptType::ScriptedPassiveSubscreen:
-		case ScriptType::EngineSubscreen:
-		case ScriptType::Screen:
-		case ScriptType::Combo:
-		case ScriptType::Item:
-		case ScriptType::NPC:
-		case ScriptType::Lwpn:
-		case ScriptType::Ewpn:
-		case ScriptType::ItemSprite:
-		case ScriptType::Generic:
-		case ScriptType::GenericFrozen:
-		{
-			set_current_script_engine_data(type, script, i);
-		}
-		break;
-
-		default:
-		{
-			al_trace("No other scripts are currently supported\n");
-			return RUNSCRIPT_ERROR;
-		}
-	}
+	auto& data = get_script_engine_data(type, i);
+	bool got_initialized = set_current_script_engine_data(data, type, script, i);
 
 	// Because qst.cpp likes to write script_data without setting this.
 	curscript->meta.script_type = type;
@@ -24507,17 +24870,13 @@ int32_t run_script(ScriptType type, word script, int32_t i)
 
 	script_funcrun = false;
 
-	JittedScriptHandle* jitted_script = nullptr;
+	JittedScriptInstance* j_instance = nullptr;
 	if (jit_is_enabled())
 	{
 		auto& data = get_script_engine_data(type, i);
-		if (!data.jitted_script)
-			data.jitted_script = std::unique_ptr<JittedScriptHandle>(jit_create_script_handle(curscript, ri));
-		jitted_script = data.jitted_script.get();
-	}
-	else if (zasm_optimize_enabled() && curscript->valid() && !curscript->zasm_script->optimized)
-	{
-		zasm_optimize_and_log(curscript->zasm_script.get());
+		if (!data.j_instance)
+			data.j_instance = std::shared_ptr<JittedScriptInstance>(jit_create_script_instance(curscript, ri, got_initialized));
+		j_instance = data.j_instance.get();
 	}
 
 	runtime_script_debug_handle = nullptr;
@@ -24548,7 +24907,7 @@ int32_t run_script(ScriptType type, word script, int32_t i)
 	}
 
 	int32_t result;
-	if (jitted_script)
+	if (j_instance)
 	{
 		if (ri->waitframes)
 		{
@@ -24557,12 +24916,36 @@ int32_t run_script(ScriptType type, word script, int32_t i)
 		}
 		else
 		{
-			result = jit_run_script(jitted_script);
+			// Retain the script instance because if deleted while running, terrible things can happen (crash),
+			// as the jit runtimes often write to it. Typically a script won't delete its own script handle,
+			// but scripts can run nested, so lets capture a temporary retaining reference as part of the
+			// call stack.
+			auto retainer = data.j_instance;
+			result = jit_run_script(j_instance);
+
+			if (result == RUNSCRIPT_JIT_STACK_OVERFLOW || result == RUNSCRIPT_JIT_CALL_LIMIT)
+			{
+				ri->overflow = true;
+				if (result == RUNSCRIPT_JIT_STACK_OVERFLOW)
+					log_stack_overflow_error();
+				else
+					log_call_limit_error();
+
+				if (!(script_funcrun && curscript->meta.ffscript_v < 23))
+				{
+					script_exit_cleanup(false);
+					result = RUNSCRIPT_STOPPED;
+				}
+				else
+				{
+					result = RUNSCRIPT_OK;
+				}
+			}
 		}
 	}
 	else
 	{
-		result = run_script_int(false);
+		result = run_script_int();
 	}
 
 	if (ZScriptVersion::gc())
@@ -24593,8 +24976,57 @@ int32_t run_script(ScriptType type, word script, int32_t i)
 	return result;
 }
 
-int32_t run_script_int(bool is_jitted)
+// Run [count] number of commands (unless something errors).
+int32_t run_script_jit_sequence(JittedScriptInstance* j_instance, int32_t pc, uint32_t sp, int32_t count)
 {
+	ri->pc = pc;
+	ri->sp = sp;
+	j_instance->uncompiled_command_count = count;
+	j_instance->sequence_mode = true;
+	j_instance->should_wait = false;
+	int r = run_script_int(j_instance);
+	if (r != RUNSCRIPT_OK)
+		return r;
+
+	return j_instance->should_wait ? RUNSCRIPT_STOPPED : RUNSCRIPT_OK;
+}
+
+// Run a single command.
+int32_t run_script_jit_one(JittedScriptInstance* j_instance, int32_t pc, uint32_t sp)
+{
+	ri->pc = pc;
+	ri->sp = sp;
+	j_instance->uncompiled_command_count = 1;
+	j_instance->sequence_mode = true;
+	j_instance->should_wait = false;
+	int r = run_script_int(j_instance);
+	if (r != RUNSCRIPT_OK)
+		return r;
+
+	return j_instance->should_wait ? RUNSCRIPT_STOPPED : RUNSCRIPT_OK;
+}
+
+// Runs the script until the next function call, return, wait frame, or error.
+int32_t run_script_jit_until_call_or_return(JittedScriptInstance* j_instance, int32_t pc, uint32_t sp)
+{
+	ri->pc = pc;
+	ri->sp = sp;
+	j_instance->uncompiled_command_count = -1;
+	j_instance->sequence_mode = false;
+	j_instance->should_wait = false;
+	int r = run_script_int(j_instance);
+	if (r != RUNSCRIPT_OK)
+		return r;
+
+	return j_instance->should_wait ? RUNSCRIPT_STOPPED : RUNSCRIPT_OK;
+}
+
+// When j_instance is null, that means the interperter is fully in charge.
+// Otherwise, the JIT may still call this function for the many commands that are not compiled, or
+// during the period before a function is "hot" enough to have been compiled.
+int32_t run_script_int(JittedScriptInstance* j_instance)
+{
+	bool is_jitted = j_instance;
 	ScriptType type = curScriptType;
 	word script = curScriptNum;
 	int32_t i = curScriptIndex;
@@ -24602,7 +25034,6 @@ int32_t run_script_int(bool is_jitted)
 	current_zasm_command=(ASM_DEFINE)0; // this is actually SETV, but we never will print that as a context string, so it's fine.
 
 	int commands_run = 0;
-	int jit_waiting_nop = false;
 	bool old_script_funcrun = script_funcrun && curscript->meta.ffscript_v < 23;
 	if(!is_jitted)
 	{
@@ -24639,7 +25070,8 @@ int32_t run_script_int(bool is_jitted)
 		
 	#endif
 	}
-	//j_command
+
+	// This is used to help debug differences w/ the JIT implementation. See scripts/jit_runtime_debug.py.
 	bool is_debugging = script_debug_is_runtime_debugging() == 2;
 	bool increment = true;
 	static std::vector<ffscript> empty_zasm = {{0xFFFF}};
@@ -24657,9 +25089,9 @@ int32_t run_script_int(bool is_jitted)
 		sargstr = op.strptr;
 		sargvec = op.vecptr;
 
-		current_zasm_command = (ASM_DEFINE)op.command;
+		current_zasm_command = (ASM_DEFINE)scommand;
 
-		if (is_debugging && (!is_jitted || commands_run > 0))
+		if (is_debugging && (!is_jitted || !j_instance->sequence_mode || commands_run > 0))
 		{
 			runtime_script_debug_handle->pre_command();
 		}
@@ -24791,7 +25223,7 @@ int32_t run_script_int(bool is_jitted)
 		if(waiting && scommand != NOP)
 		{
 			if (is_jitted)
-				jit_waiting_nop = true;
+				j_instance->should_wait = true;
 			break;
 		}
 		
@@ -24856,7 +25288,7 @@ int32_t run_script_int(bool is_jitted)
 				// of the interpreter loop. This is especially good for how `zasm_optimize`
 				// works, since it replaces many commands with a sequence of NOPs.
 				// No need to do a bounds check - the last command should always be 0xFFFF.
-				if (is_debugging)
+				if (is_debugging || is_jitted)
 					break;
 				while (zasm[ri->pc + 1].command == NOP)
 					ri->pc++;
@@ -24870,6 +25302,13 @@ int32_t run_script_int(bool is_jitted)
 					scommand = 0xFFFF;
 					break;
 				}
+
+				// When is_jitted is true, GOTO can only be processed here when j_instance->sequence_mode is false.
+				// Track back edges (jumps to a loop head). The JIT will compiled the current
+				// function if this is called enough.
+				if (is_jitted && ri->pc > sarg1)
+					jit_profiler_increment_function_back_edge(j_instance, sarg1);
+
 				ri->pc = sarg1;
 				increment = false;
 				break;
@@ -24978,6 +25417,11 @@ int32_t run_script_int(bool is_jitted)
 				}
 				ri->pc = sarg1;
 				increment = false;
+
+				// When is_jitted is true, CALLFUNC can only be processed here when j_instance->sequence_mode is false.
+				// And when it is called, it marks the end of run_script_int.
+				if (is_jitted)
+					j_instance->uncompiled_command_count = commands_run + 1;
 				break;
 			}
 			case RETURNFUNC:
@@ -24997,6 +25441,11 @@ int32_t run_script_int(bool is_jitted)
 				{
 					scommand = 0xFFFF;
 				}
+
+				// When is_jitted is true, RETURNFUNC can only be processed here when j_instance->sequence_mode is false.
+				// And when it is called, it marks the end of run_script_int.
+				if (is_jitted)
+					j_instance->uncompiled_command_count = commands_run + 1;
 				break;
 			}
 				
@@ -25020,7 +25469,6 @@ int32_t run_script_int(bool is_jitted)
 					break; //handled below, poorly. 'RETURNFUNC' does this better now.
 				ri->pc = SH::read_stack(ri->sp) - 1;
 				++ri->sp;
-				ri->sp &= MASK_SP;
 				increment = false;
 				break;
 			}
@@ -26703,8 +27151,8 @@ int32_t run_script_int(bool is_jitted)
 				user_bitmap* b = checkBitmap(bmpid, false);
 				if(!b) break;
 				ScriptType own_type = (ScriptType)sarg2;
-				int32_t own_i = get_own_i(own_type);
-				own_script_object(b, own_type, own_i);
+				sprite* own_sprite = get_own_sprite(own_type);
+				own_script_object(b, own_sprite);
 				break;
 			}
 			case OBJ_OWN_PALDATA:
@@ -26713,8 +27161,8 @@ int32_t run_script_int(bool is_jitted)
 				user_paldata* pd = checkPalData(palid, false);
 				if(!pd) break;
 				ScriptType own_type = (ScriptType)sarg2;
-				int32_t own_i = get_own_i(own_type);
-				own_script_object(pd, own_type, own_i);
+				sprite* own_sprite = get_own_sprite(own_type);
+				own_script_object(pd, own_sprite);
 				break;
 			}
 			case OBJ_OWN_FILE:
@@ -26723,8 +27171,8 @@ int32_t run_script_int(bool is_jitted)
 				user_file* f = checkFile(fileid, false);
 				if(!f) break;
 				ScriptType own_type = (ScriptType)sarg2;
-				int32_t own_i = get_own_i(own_type);
-				own_script_object(f, own_type, own_i);
+				sprite* own_sprite = get_own_sprite(own_type);
+				own_script_object(f, own_sprite);
 				break;
 			}
 			case OBJ_OWN_DIR:
@@ -26733,8 +27181,8 @@ int32_t run_script_int(bool is_jitted)
 				user_dir* dr = checkDir(dirid, false);
 				if(!dr) break;
 				ScriptType own_type = (ScriptType)sarg2;
-				int32_t own_i = get_own_i(own_type);
-				own_script_object(dr, own_type, own_i);
+				sprite* own_sprite = get_own_sprite(own_type);
+				own_script_object(dr, own_sprite);
 				break;
 			}
 			case OBJ_OWN_STACK:
@@ -26743,8 +27191,8 @@ int32_t run_script_int(bool is_jitted)
 				user_stack* st = checkStack(stackid, false);
 				if(!st) break;
 				ScriptType own_type = (ScriptType)sarg2;
-				int32_t own_i = get_own_i(own_type);
-				own_script_object(st, own_type, own_i);
+				sprite* own_sprite = get_own_sprite(own_type);
+				own_script_object(st, own_sprite);
 				break;
 			}
 			case OBJ_OWN_RNG:
@@ -26753,16 +27201,16 @@ int32_t run_script_int(bool is_jitted)
 				user_rng* r = checkRNG(rngid, false);
 				if(!r) break;
 				ScriptType own_type = (ScriptType)sarg2;
-				int32_t own_i = get_own_i(own_type);
-				own_script_object(r, own_type, own_i);
+				sprite* own_sprite = get_own_sprite(own_type);
+				own_script_object(r, own_sprite);
 				break;
 			}
 			case OBJ_OWN_ARRAY:
 			{
 				int arrid = get_register(sarg1);
 				ScriptType own_type = (ScriptType)sarg2;
-				int32_t own_i = get_own_i(own_type);
-				do_own_array(arrid, own_type, own_i);
+				sprite* own_sprite = get_own_sprite(own_type);
+				do_own_array(arrid, own_sprite);
 				break;
 			}
 				
@@ -28509,15 +28957,18 @@ int32_t run_script_int(bool is_jitted)
 			{
 				if(SubscrWidget* widg = checkSubWidg(ri->subwidgref))
 				{
-					std::string const* str = nullptr;
+					optional<string> str;
 					byte ty = widg->getType();
 					switch(ty)
 					{
 						case widgTEXT:
-							str = &((SW_Text*)widg)->text;
+							str = ((SW_Text*)widg)->text;
 							break;
 						case widgTEXTBOX:
-							str = &((SW_TextBox*)widg)->text;
+							str = ((SW_TextBox*)widg)->text;
+							break;
+						case widgITMCOOLDOWNTEXT:
+							str = ((SW_ItemCooldownText*)widg)->get_text();
 							break;
 						default:
 							bad_subwidg_type(true, ty);
@@ -28636,7 +29087,7 @@ int32_t run_script_int(bool is_jitted)
 			case REF_AUTORELEASE:
 			{
 				uint32_t id = get_register(sarg1);
-				if (!util::contains(script_object_autorelease_pool, id))
+				if (id && !util::contains(script_object_autorelease_pool, id))
 				{
 					script_object_autorelease_pool.push_back(id);
 					if (auto object = get_script_object_checked(id))
@@ -28661,7 +29112,7 @@ int32_t run_script_int(bool is_jitted)
 			case MARK_TYPE_STACK:
 			{
 				int offset = ri->d[rSFRAME] + sarg2;
-				if (offset < 0 || offset >= MAX_SCRIPT_REGISTERS)
+				if (offset < 0 || offset >= MAX_STACK_SIZE)
 				{
 					assert(false);
 					break;
@@ -28747,11 +29198,11 @@ int32_t run_script_int(bool is_jitted)
 			earlyretval = -1;
 			return RUNSCRIPT_SELFDELETE;
 		}
-		if (ri->sp >= MAX_SCRIPT_REGISTERS)
+		if (ri->overflow)
 		{
 			if (old_script_funcrun)
 				return RUNSCRIPT_OK;
-			Z_scripterrlog("Stack over/underflow caused by command %d!\n", scommand);
+			scommand = 0xFFFF;
 		}
 		if(hit_invalid_zasm) break;
 		if(old_script_funcrun && (ri->pc == MAX_PC || scommand == RETURN))
@@ -28786,7 +29237,11 @@ int32_t run_script_int(bool is_jitted)
 		
 		// If running a JIT compiled script, we're only here to do a few commands.
 		commands_run += 1;
-		if (is_jitted && commands_run == jitted_uncompiled_command_count) break;
+		if (is_jitted && commands_run == j_instance->uncompiled_command_count)
+		{
+			current_zasm_command=(ASM_DEFINE)0;
+			break;
+		}
 	}
 	if(script_funcrun) return RUNSCRIPT_OK;
 	
@@ -28851,11 +29306,11 @@ int32_t run_script_int(bool is_jitted)
 		script_exit_cleanup(no_dealloc);
 		return RUNSCRIPT_STOPPED;
 	}
-	else
-		ri->pc++;
 
-	if(jit_waiting_nop)
-		return RUNSCRIPT_STOPPED;
+	if (is_jitted && commands_run == j_instance->uncompiled_command_count)
+		return RUNSCRIPT_OK;
+
+	ri->pc++;
 
 	return RUNSCRIPT_OK;
 }
@@ -30188,7 +30643,7 @@ void FFScript::getNPCData_e_tile(){ GET_NPCDATA_FUNCTION_VAR_INT(e_tile); }
 void FFScript::getNPCData_e_width(){ GET_NPCDATA_FUNCTION_VAR_INT(e_width); } 
 void FFScript::getNPCData_e_height() { GET_NPCDATA_FUNCTION_VAR_INT(e_height); }
 void FFScript::getNPCData_hp(){ GET_NPCDATA_FUNCTION_VAR_INT(hp); } 
-void FFScript::getNPCData_family(){ GET_NPCDATA_FUNCTION_VAR_INT(family); } 
+void FFScript::getNPCData_family(){ GET_NPCDATA_FUNCTION_VAR_INT(type); } 
 void FFScript::getNPCData_cset(){ GET_NPCDATA_FUNCTION_VAR_INT(cset); } 
 void FFScript::getNPCData_anim(){ GET_NPCDATA_FUNCTION_VAR_INT(anim); } 
 void FFScript::getNPCData_e_anim(){ GET_NPCDATA_FUNCTION_VAR_INT(e_anim); } 
@@ -30347,7 +30802,7 @@ void FFScript::setNPCData_e_tile(){SET_NPCDATA_FUNCTION_VAR_INT(e_tile,ZS_WORD);
 void FFScript::setNPCData_e_width(){SET_NPCDATA_FUNCTION_VAR_INT(e_width,ZS_BYTE);}
 void FFScript::setNPCData_e_height() { SET_NPCDATA_FUNCTION_VAR_INT(e_height, ZS_BYTE); }
 void FFScript::setNPCData_hp(){SET_NPCDATA_FUNCTION_VAR_INT(hp,ZS_SHORT);}
-void FFScript::setNPCData_family(){SET_NPCDATA_FUNCTION_VAR_INT(family,ZS_SHORT);}
+void FFScript::setNPCData_family(){SET_NPCDATA_FUNCTION_VAR_INT(type,ZS_SHORT);}
 void FFScript::setNPCData_cset(){SET_NPCDATA_FUNCTION_VAR_INT(cset,ZS_SHORT);}
 void FFScript::setNPCData_anim(){SET_NPCDATA_FUNCTION_VAR_INT(anim,ZS_SHORT);}
 void FFScript::setNPCData_e_anim(){SET_NPCDATA_FUNCTION_VAR_INT(e_anim,ZS_SHORT);}
@@ -31544,7 +31999,7 @@ bool FFScript::itemScriptEngine()
 			if(game->item[q] && (get_qr(qr_ITEMSCRIPTSKEEPRUNNING)))
 			{
 				if(get_qr(qr_PASSIVE_ITEM_SCRIPT_ONLY_HIGHEST)
-					&& current_item(itemsbuf[q].family) > itemsbuf[q].fam_type)
+					&& current_item(itemsbuf[q].type) > itemsbuf[q].level)
 					data.doscript = 0;
 				else ZScriptVersion::RunScript(ScriptType::Item, itemsbuf[q].script, q&0xFFF);
 				if(!data.doscript)  //Item script ended. Clear the data, if any remains.
@@ -31637,7 +32092,7 @@ bool FFScript::itemScriptEngineOnWaitdraw()
 			if(game->item[q] && (get_qr(qr_ITEMSCRIPTSKEEPRUNNING)))
 			{
 				if(get_qr(qr_PASSIVE_ITEM_SCRIPT_ONLY_HIGHEST)
-					&& current_item(itemsbuf[q].family) > itemsbuf[q].fam_type)
+					&& current_item(itemsbuf[q].type) > itemsbuf[q].level)
 					data.doscript = 0;
 				else ZScriptVersion::RunScript(ScriptType::Item, itemsbuf[q].script, q&0xFFF);
 				if(!data.doscript)  //Item script ended. Clear the data, if any remains.
@@ -31793,7 +32248,7 @@ int32_t FFScript::getTime(int32_t type)
 
 void FFScript::do_lweapon_delete()
 {
-	if(0!=(s=checkLWpn(ri->lwpn)))
+	if(auto s=checkLWpn(ri->lwpn))
 	{
 		if(s==Hero.lift_wpn)
 		{
@@ -31806,7 +32261,7 @@ void FFScript::do_lweapon_delete()
 
 void FFScript::do_eweapon_delete()
 {
-	if(0!=(s=checkEWpn(ri->ewpn)))
+	if(auto s=checkEWpn(ri->ewpn))
 	{
 		Ewpns.del(s);
 	}
@@ -33970,13 +34425,8 @@ void FFScript::read_combos(PACKFILE *f, int32_t version_id)
 		}	 
 		if(combobuf[i].triggers.empty())
 			combobuf[i].triggers.emplace_back();
-		for ( int32_t q = 0; q < 6; q++ ) 
-		{
-			if(!p_igetl(&combobuf[i].triggers[0].triggerflags[q],f))
-			{
+		if(!p_getbitstr(&combobuf[i].triggers[0].trigger_flags,f))
 			Z_scripterrlog("do_savegamestructs FAILED to read COMBO NODE: %d",22);
-			}
-		}
 		
 		if(!p_igetl(&combobuf[i].triggers[0].triggerlevel,f))
 		{
@@ -34115,13 +34565,8 @@ void FFScript::write_combos(PACKFILE *f, int32_t version_id)
 		}	 
 		if(combobuf[i].triggers.empty())
 			combobuf[i].triggers.emplace_back();
-		for ( int32_t q = 0; q < 6; q++ ) 
-		{
-			if(!p_iputl(combobuf[i].triggers[0].triggerflags[q],f))
-			{
+		if(!p_putbitstr(combobuf[i].triggers[0].trigger_flags,f));
 			Z_scripterrlog("do_savegamestructs FAILED to read COMBO NODE: %d",22);
-			}
-		}
 		
 		if(!p_iputl(combobuf[i].triggers[0].triggerlevel,f))
 		{
@@ -34327,7 +34772,7 @@ void FFScript::read_enemies(PACKFILE *f, int32_t vers_id)
 			Z_scripterrlog("do_savegamestructs FAILED to read GUY NODE: %d",17);
 			}
 			
-			if(!p_igetw(&guysbuf[i].family,f))
+			if(!p_igetw(&guysbuf[i].type,f))
 			{
 			Z_scripterrlog("do_savegamestructs FAILED to read GUY NODE: %d",18);
 			}
@@ -34682,7 +35127,7 @@ void FFScript::write_enemies(PACKFILE *f, int32_t vers_id)
 		Z_scripterrlog("do_savegamestructs FAILED to write GUY NODE: %d",17);
 		}
 		
-		if(!p_iputw(guysbuf[i].family,f))
+		if(!p_iputw(guysbuf[i].type,f))
 		{
 		Z_scripterrlog("do_savegamestructs FAILED to write GUY NODE: %d",18);
 		}
@@ -35012,12 +35457,12 @@ void FFScript::write_items(PACKFILE *f, int32_t vers_id)
 				Z_scripterrlog("do_savegamestructs FAILED to read ITEM NODE: %d",12);
 			}
 			
-			if(!p_iputl(itemsbuf[i].family,f))
+			if(!p_iputl(itemsbuf[i].type,f))
 			{
 				Z_scripterrlog("do_savegamestructs FAILED to read ITEM NODE: %d",13);
 			}
 			
-			if(!p_putc(itemsbuf[i].fam_type,f))
+			if(!p_putc(itemsbuf[i].level,f))
 			{
 				Z_scripterrlog("do_savegamestructs FAILED to read ITEM NODE: %d",14);
 			}
@@ -35427,12 +35872,12 @@ void FFScript::read_items(PACKFILE *f, int32_t vers_id)
 				Z_scripterrlog("do_savegamestructs FAILED to write ITEM NODE: %d",12);
 			}
 			
-			if(!p_igetl(&itemsbuf[i].family,f))
+			if(!p_igetl(&itemsbuf[i].type,f))
 			{
 				Z_scripterrlog("do_savegamestructs FAILED to write ITEM NODE: %d",13);
 			}
 			
-			if(!p_getc(&itemsbuf[i].fam_type,f))
+			if(!p_getc(&itemsbuf[i].level,f))
 			{
 				Z_scripterrlog("do_savegamestructs FAILED to write ITEM NODE: %d",14);
 			}
@@ -36054,7 +36499,7 @@ void FFScript::write_mapscreens(PACKFILE *f,int32_t vers_id)
 			Z_scripterrlog("do_savegamestructs FAILED to write MAPSCR NODEz\n"); return;
 			}
 			
-			if(!p_iputw(m->nocarry,f))
+			if(!p_iputl(m->nocarry,f))
 			{
 			Z_scripterrlog("do_savegamestructs FAILED to write MAPSCR NODEz\n"); return;
 			}
@@ -36633,7 +37078,7 @@ void FFScript::read_mapscreens(PACKFILE *f,int32_t vers_id)
 			Z_scripterrlog("do_savegamestructs FAILED to read MAPSCR NODE\n"); return;
 			}
 			
-			if(!p_igetw(&(m->nocarry),f))
+			if(!p_igetl(&(m->nocarry),f))
 			{
 			Z_scripterrlog("do_savegamestructs FAILED to read MAPSCR NODE\n"); return;
 			}

@@ -1323,7 +1323,7 @@ enum ASM_DEFINE
 #define LWPNDRAWTYPE         0x025F
 #define LWPNPOWER            0x0260
 #define LWPNDEAD             0x0261
-#define LWPNID               0x0262
+#define LWPNTYPE               0x0262
 #define LWPNTILE             0x0263
 #define LWPNCSET             0x0264
 #define LWPNFLASHCSET        0x0265
@@ -1381,7 +1381,7 @@ enum ASM_DEFINE
 #define ITEMFLASH            0x0297
 #define ITEMFLIP             0x0298
 #define ITEMCOUNT            0x0299
-#define IDATAFAMILY          0x029A
+#define IDATATYPE          0x029A
 #define IDATALEVEL           0x029B
 #define IDATAKEEP            0x029C
 #define IDATAAMOUNT          0x029D
@@ -1526,7 +1526,7 @@ enum ASM_DEFINE
 #define EWPNDRAWTYPE         0x089E
 #define EWPNPOWER            0x089F
 #define EWPNDEAD             0x08A0
-#define EWPNID               0x08A1
+#define EWPNTYPE               0x08A1
 #define EWPNTILE             0x08A2
 #define EWPNCSET             0x08A3
 #define EWPNFLASHCSET        0x08A4
@@ -1966,7 +1966,7 @@ enum ASM_DEFINE
 #define NPCDATAEWIDTH 0x11A0
 #define NPCDATAEHEIGHT 0x11A1
 #define NPCDATAHP 0x11A2
-#define NPCDATAFAMILY 0x11A3
+#define NPCDATATYPE 0x11A3
 #define NPCDATACSET 0x11A4
 #define NPCDATAANIM 0x11A5
 #define NPCDATAEANIM 0x11A6
@@ -2373,7 +2373,7 @@ enum ASM_DEFINE
 #define NPCMATCHINITDLABEL			0x1322	
 #define LWPNSCRIPT			0x1323
 #define LWPNINITD			0x1324	
-#define ITEMFAMILY			0x1325	
+#define ITEMTYPE			0x1325	
 #define ITEMLEVEL			0x1326	
 
 #define EWPNSCRIPT			0x1327	
@@ -3141,7 +3141,7 @@ enum ASM_DEFINE
 #define SPRITE_SHADOW_SPR       0x15E4
 #define SPRITE_DROWN_CLK        0x15E5
 #define SPRITE_DROWN_CMB        0x15E6
-#define SPRITE_SHADOW_XOFS      0x16E7
+// unused      0x15E7
 #define SPRITE_SHADOW_YOFS      0x15E8
 #define SPRITE_MISCD            0x15E9
 
@@ -3260,7 +3260,47 @@ enum ASM_DEFINE
 #define SCREEN_PORTALS       0x164F
 #define GAME_SAVED_PORTALS   0x1650
 
-#define NUMVARIABLES         0x1651
+#define COMBOD_Z_HEIGHT      0x1651
+#define COMBOD_Z_STEP_HEIGHT 0x1652
+
+#define CMBTRIGGERFORCEPLAYERDIR   0x1653
+#define CMBTRIGGERICECOMBO         0x1654
+#define CMBTRIGGERICEVX            0x1655
+#define CMBTRIGGERICEVY            0x1656
+#define SCREENDATANOCARRYARR       0x1657
+#define SCREENDATANORESETARR       0x1658
+#define MAPDATANOCARRYARR          0x1659
+#define MAPDATANORESETARR          0x165A
+#define SCREENDATAEXCARRY          0x165B
+#define SCREENDATAEXRESET          0x165C
+#define MAPDATAEXCARRY             0x165D
+#define MAPDATAEXRESET             0x165E
+
+#define SPRITE_GRAVITY_STRENGTH             0x165F
+#define SPRITE_TERMINAL_VELOCITY            0x1660
+#define SPRITE_CUSTOM_GRAVITY_STRENGTH      0x1661
+#define SPRITE_CUSTOM_TERMINAL_VELOCITY     0x1662
+
+#define IDATACOOLDOWN        0x1663
+#define HEROITEMCOOLDOWN     0x1664
+#define SUBWIDGTY_TOTAL      0x1665
+
+#define SCREENDATA_GRAVITY_STRENGTH    0x1666
+#define SCREENDATA_TERMINAL_VELOCITY   0x1667
+#define MAPDATA_GRAVITY_STRENGTH       0x1668
+#define MAPDATA_TERMINAL_VELOCITY      0x1669
+#define DMAPDATA_GRAVITY_STRENGTH      0x166A
+#define DMAPDATA_TERMINAL_VELOCITY     0x166B
+#define SPRITE_CURRENT_SCREEN          0x166C
+#define CMBTRIGGER_GRAVITY             0x166D
+#define CMBTRIGGER_TERMINAL_VELOCITY   0x166E
+#define COMBOD_DIVE_UNDER_LEVEL        0x166F
+#define GAMELAYERZTHRESHOLDS           0x1670
+// unused block (we can fill this out)
+#define SPRITE_SHADOW_XOFS      0x16E7
+// Note: define new variables in above unused block
+
+#define NUMVARIABLES         0x16E8
 
 //} End variables
 

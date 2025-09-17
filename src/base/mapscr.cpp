@@ -9,7 +9,7 @@
 
 std::array<regions_data, MAXMAPS> Regions;
 std::vector<mapscr> TheMaps;
-std::vector<word> map_autolayers;
+std::vector<map_info> map_infos;
 word map_count = 0;
 
 byte regions_data::get_region_id(int screen_x, int screen_y) const
@@ -211,7 +211,7 @@ void mapscr::zero_memory()
 	*this = mapscr();
 }
 
-void mapscr::shinkToFitFFCs()
+void mapscr::shrinkToFitFFCs()
 {
 	int lastffc = -1;
 	for (int w = ffcs.size() - 1; w >= 0; --w)

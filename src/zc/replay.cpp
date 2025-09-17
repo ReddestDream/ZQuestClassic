@@ -33,7 +33,7 @@ struct ReplayStep;
 
 static const int ASSERT_SNAPSHOT_BUFFER = 10;
 static const int ASSERT_FAILED_EXIT_CODE = 120;
-static const int VERSION = 42;
+static const int VERSION = 44;
 
 static const std::string ANNOTATION_MARKER = "«";
 static const char TypeMeta = 'M';
@@ -58,8 +58,8 @@ static bool sync_rng;
 static int frame_arg;
 static std::filesystem::path replay_path;
 static std::filesystem::path output_dir;
-static std::vector<std::shared_ptr<ReplayStep>> replay_log;
-static std::vector<std::shared_ptr<ReplayStep>> record_log;
+static std::vector<std::unique_ptr<ReplayStep>> replay_log;
+static std::vector<std::unique_ptr<ReplayStep>> record_log;
 static std::map<std::string, std::string> meta_map;
 static std::vector<int> snapshot_frames;
 static std::vector<int> expected_loadscr_frame_count;
@@ -69,7 +69,6 @@ static size_t replay_log_current_index;
 static size_t replay_log_current_quit_index;
 static size_t replay_log_current_state_index;
 static size_t assert_current_index;
-static size_t manual_takeover_start_index;
 static bool has_assert_failed;
 static bool has_aborted;
 static int failing_frame;
@@ -433,14 +432,14 @@ static int get_rng_index(zc_randgen *rng)
 // Find the RNG step associated with the given |rng_index|, starting at |starting_step_index|.
 // Only RNG steps for the current |frame_count| are valid.
 // If an offset is given, the nth RNG step will be returned (offset = 1 means the first).
-static RngReplayStep *find_rng_step(int rng_index, size_t starting_step_index, const std::vector<std::shared_ptr<ReplayStep>> &log, int offset = 1)
+static RngReplayStep *find_rng_step(int rng_index, size_t starting_step_index, const std::vector<std::unique_ptr<ReplayStep>> &log, int offset = 1)
 {
     ASSERT(offset >= 1);
 
     int num_seen = 0;
     for (size_t i = starting_step_index; i < log.size(); i++)
     {
-        auto step = log[i];
+        auto& step = log[i];
         if (step->frame != frame_count)
             break;
         if (step->type != TypeRng)
@@ -621,7 +620,7 @@ static void do_recording_poll()
 		if (new_key_map.button_keys != KeyMapReplayStep::current.button_keys)
 		{
 			KeyMapReplayStep::current = new_key_map;
-			record_log.push_back(std::make_shared<KeyMapReplayStep>(frame_count, new_key_map.button_keys));
+			record_log.push_back(std::make_unique<KeyMapReplayStep>(frame_count, new_key_map.button_keys));
 		}
 	}
 
@@ -632,7 +631,7 @@ static void do_recording_poll()
 			continue;
 
 		int key_index = KeyMapReplayStep::current.button_keys[i];
-		record_log.push_back(std::make_shared<KeyReplayStep>(frame_count, state ? TypeKeyDown : TypeKeyUp, i, key_index));
+		record_log.push_back(std::make_unique<KeyReplayStep>(frame_count, state ? TypeKeyDown : TypeKeyUp, i, key_index));
 		previous_control_state[i] = state;
 	}
 
@@ -646,14 +645,14 @@ static void do_recording_poll()
 			if (KeyMapReplayStep::current.find_button_index_for_key(i) != -1)
 			    continue;
 
-			record_log.push_back(std::make_shared<KeyReplayStep>(frame_count, state ? TypeKeyDown : TypeKeyUp, -1, i));
+			record_log.push_back(std::make_unique<KeyReplayStep>(frame_count, state ? TypeKeyDown : TypeKeyUp, -1, i));
 			previous_keys[i] = state;
 		}
 	}
 
 	if (current_mouse_state != prev_mouse_state)
 	{
-		record_log.push_back(std::make_shared<MouseReplayStep>(frame_count, current_mouse_state));
+		record_log.push_back(std::make_unique<MouseReplayStep>(frame_count, current_mouse_state));
 		prev_mouse_state = current_mouse_state;
 	}
 }
@@ -759,13 +758,13 @@ static void load_replay(std::map<std::string, std::string>& meta_map, std::files
         {
             std::string comment;
             util::portable_get_line(iss, comment);
-            replay_log.push_back(std::make_shared<CommentReplayStep>(frame, comment));
+            replay_log.push_back(std::make_unique<CommentReplayStep>(frame, comment));
         }
         else if (type == TypeQuit)
         {
             int quit_state;
             iss >> quit_state;
-            replay_log.push_back(std::make_shared<QuitReplayStep>(frame, quit_state));
+            replay_log.push_back(std::make_unique<QuitReplayStep>(frame, quit_state));
         }
         else if (type == TypeCheat)
         {
@@ -790,7 +789,7 @@ static void load_replay(std::map<std::string, std::string>& meta_map, std::files
                 if (!(iss >> arg2))
                     arg2 = -1;
             }
-            replay_log.push_back(std::make_shared<CheatReplayStep>(frame, (Cheat)cheat, arg1, arg2, arg3));
+            replay_log.push_back(std::make_unique<CheatReplayStep>(frame, (Cheat)cheat, arg1, arg2, arg3));
         }
         else if (type == TypeQR)
         {
@@ -802,7 +801,7 @@ static void load_replay(std::map<std::string, std::string>& meta_map, std::files
 
             ASSERT(qr >= 0 && qr < qr_MAX);
 
-            replay_log.push_back(std::make_shared<QRReplayStep>(frame, qr, value));
+            replay_log.push_back(std::make_unique<QRReplayStep>(frame, qr, value));
         }
         else if (type == TypeRng)
         {
@@ -811,7 +810,7 @@ static void load_replay(std::map<std::string, std::string>& meta_map, std::files
             iss >> end_index;
             iss >> seed;
             ASSERT(start_index <= end_index);
-            replay_log.push_back(std::make_shared<RngReplayStep>(frame, start_index, end_index, seed));
+            replay_log.push_back(std::make_unique<RngReplayStep>(frame, start_index, end_index, seed));
         }
         else if (type == TypeKeyMap)
         {
@@ -821,7 +820,7 @@ static void load_replay(std::map<std::string, std::string>& meta_map, std::files
             {
                 iss >> keys[i];
             }
-            replay_log.push_back(std::make_shared<KeyMapReplayStep>(frame, keys));
+            replay_log.push_back(std::make_unique<KeyMapReplayStep>(frame, keys));
             if (!found_key_map)
             {
                 KeyMapReplayStep::current = KeyMapReplayStep(frame, keys);
@@ -856,7 +855,7 @@ static void load_replay(std::map<std::string, std::string>& meta_map, std::files
                 key_index = key_map.button_keys[button_index];
             }
 
-            replay_log.push_back(std::make_shared<KeyReplayStep>(frame, type, button_index, key_index));
+            replay_log.push_back(std::make_unique<KeyReplayStep>(frame, type, button_index, key_index));
         }
         else if (type == TypeMouse)
         {
@@ -868,17 +867,17 @@ static void load_replay(std::map<std::string, std::string>& meta_map, std::files
             if (!(iss >> b))
                 b = 0;
             std::array<int, 4> state = {x, y, z, b};
-            replay_log.push_back(std::make_shared<MouseReplayStep>(frame, state));
+            replay_log.push_back(std::make_unique<MouseReplayStep>(frame, state));
         }
         else if (type == TypeState)
         {
             int state_type, value;
             iss >> state_type;
             iss >> value;
-            replay_log.push_back(std::make_shared<StateReplayStep>(frame, (ReplayStateType)state_type, value));
+            replay_log.push_back(std::make_unique<StateReplayStep>(frame, (ReplayStateType)state_type, value));
         }
 
-        if (frame_arg != -1 && replay_log.size() && replay_log.back()->frame > frame_arg && mode != ReplayMode::Update)
+        if (frame_arg != -1 && replay_log.size() && replay_log.back()->frame > frame_arg)
         {
             replay_log.pop_back();
             break;
@@ -896,7 +895,7 @@ static void load_replay(std::map<std::string, std::string>& meta_map, std::files
     if (mode == ReplayMode::Assert || mode == ReplayMode::Update)
     {
         expected_loadscr_frame_count.clear();
-        for (auto step : replay_log)
+        for (auto& step : replay_log)
         {
             if (step->type != TypeComment) continue;
 
@@ -907,7 +906,7 @@ static void load_replay(std::map<std::string, std::string>& meta_map, std::files
     }
 }
 
-static void save_replay(std::string filename, const std::vector<std::shared_ptr<ReplayStep>> &log)
+static void save_replay(std::string filename, const std::vector<std::unique_ptr<ReplayStep>> &log)
 {
 	bool insert_baseline_annotations =
 		has_assert_failed &&
@@ -929,12 +928,12 @@ static void save_replay(std::string filename, const std::vector<std::shared_ptr<
         out << fmt::format("{} {} {}", TypeMeta, it.first, it.second) << '\n';
     for (size_t i = 0; i < log.size(); i++)
     {
-        auto step = log[i];
+        auto& step = log[i];
         std::string step_as_string = step->print();
         out << step_as_string;
         if (insert_baseline_annotations && i < replay_log.size())
         {
-            auto replay_log_step = replay_log[i];
+            auto& replay_log_step = replay_log[i];
             if (!steps_are_equal(step.get(), replay_log_step.get()))
                 out << std::string(std::max(0, 60 - (int)step_as_string.size()), ' ')
                     << ANNOTATION_MARKER
@@ -950,7 +949,7 @@ static void save_replay(std::string filename, const std::vector<std::shared_ptr<
         size_t num_extra_to_print = std::min(num_extra, num_extra_to_print_limit);
         for (size_t i = log.size(); i < log.size() + num_extra_to_print; i++)
         {
-            auto replay_log_step = replay_log[i];
+            auto& replay_log_step = replay_log[i];
             out << std::string(60, ' ')
                 << ANNOTATION_MARKER
                 << ' '
@@ -1088,8 +1087,8 @@ static void check_assert()
         if (assert_current_index >= record_log.size())
             break;
 
-        auto replay_step = replay_log[assert_current_index];
-        auto record_step = record_log[assert_current_index];
+        auto& replay_step = replay_log[assert_current_index];
+        auto& record_step = record_log[assert_current_index];
         if (!steps_are_equal(replay_step.get(), record_step.get()))
         {
             has_assert_failed = true;
@@ -1117,54 +1116,6 @@ static void check_assert()
 
         assert_current_index++;
     }
-}
-
-static size_t old_start_of_next_screen_index;
-static bool stored_control_state[KeyMapReplayStep::NumButtons];
-
-static void start_manual_takeover()
-{
-    manual_takeover_start_index = replay_log_current_index;
-    old_start_of_next_screen_index = -1;
-    for (size_t i = manual_takeover_start_index; i < replay_log.size(); i++)
-    {
-        if (replay_log[i]->type != TypeComment)
-            continue;
-
-        auto comment_step = static_cast<CommentReplayStep *>(replay_log[i].get());
-        if (comment_step->comment.rfind("scr=", 0) != 0 && comment_step->comment.rfind("dmap=", 0) != 0)
-            continue;
-
-        old_start_of_next_screen_index = i;
-        break;
-    }
-    // TODO: support updating the very last screen.
-    ASSERT(old_start_of_next_screen_index != -1);
-
-    // Calculate what the button state is at the beginning of the next screen.
-    // The state will be restored to this after the manual takeover is done.
-    for (int i = 0; i < KeyMapReplayStep::NumButtons; i++)
-        stored_control_state[i] = raw_control_state[i];
-    for (size_t i = manual_takeover_start_index; i < old_start_of_next_screen_index; i++)
-    {
-        if (replay_log[i]->type != TypeKeyDown && replay_log[i]->type != TypeKeyUp)
-            continue;
-
-        auto key_step = static_cast<KeyReplayStep *>(replay_log[i].get());
-        stored_control_state[key_step->key_index] = key_step->type == TypeKeyDown;
-    }
-
-    // Avoid unexpected input when manual takeover starts, which can be awkward to play.
-	for (int i = 0; i < KEY_MAX; i++)
-	{
-		_key[i] = 0;
-		key[i] = 0;
-	}
-
-    mode = ReplayMode::ManualTakeover;
-    uninstall_keyboard_handlers();
-    Throttlefps = true;
-    Paused = true;
 }
 
 static void maybe_take_snapshot()
@@ -1241,7 +1192,6 @@ std::string replay_mode_to_string(ReplayMode mode)
 		case ReplayMode::Record: return "record";
 		case ReplayMode::Assert: return "assert";
 		case ReplayMode::Update: return "update";
-		case ReplayMode::ManualTakeover: return "manual_takeover";
 	}
 	return "unknown";
 }
@@ -1257,7 +1207,6 @@ std::map<std::string, std::string> replay_load_meta(std::filesystem::path path)
 void replay_start(ReplayMode mode_, std::filesystem::path path, int frame)
 {
     ASSERT(mode == ReplayMode::Off);
-    ASSERT(mode_ != ReplayMode::Off && mode_ != ReplayMode::ManualTakeover);
     time_started = std::chrono::steady_clock::now();
     time_started_system = std::chrono::system_clock::now();
     mode = mode_;
@@ -1278,7 +1227,7 @@ void replay_start(ReplayMode mode_, std::filesystem::path path, int frame)
     gfx_got_mismatch = false;
     replay_path = path;
     if (output_dir.empty()) output_dir = replay_path.parent_path();
-    manual_takeover_start_index = assert_current_index = replay_log_current_index = frame_count = 0;
+    assert_current_index = replay_log_current_index = frame_count = 0;
     frame_arg = frame;
     prev_gfx_hash = 0;
     prev_gfx_hash_was_same = false;
@@ -1295,7 +1244,6 @@ void replay_start(ReplayMode mode_, std::filesystem::path path, int frame)
     switch (mode)
     {
     case ReplayMode::Off:
-    case ReplayMode::ManualTakeover:
         return;
     case ReplayMode::Record:
     {
@@ -1331,7 +1279,7 @@ void replay_start(ReplayMode mode_, std::filesystem::path path, int frame)
 
     if (replay_is_recording() && version >= 5)
     {
-        record_log.push_back(std::make_shared<KeyMapReplayStep>(0, KeyMapReplayStep::current.button_keys));
+        record_log.push_back(std::make_unique<KeyMapReplayStep>(0, KeyMapReplayStep::current.button_keys));
     }
 
     save_result();
@@ -1348,7 +1296,7 @@ void replay_continue(std::filesystem::path path)
     replay_forget_input();
     replay_path = path;
     load_replay(meta_map, replay_path);
-    record_log = replay_log;
+    record_log = std::move(replay_log);
     frame_count = record_log.back()->frame + 1;
 }
 
@@ -1397,14 +1345,7 @@ void replay_poll()
 
     if (frame_arg != -1 && frame_arg <= frame_count && replay_is_replaying())
     {
-        if (mode == ReplayMode::Update)
-        {
-            start_manual_takeover();
-            enter_sys_pal();
-            jwin_alert("Recording", "Re-recording until new screen is loaded", NULL, NULL, "OK", NULL, 13, 27, get_zc_font(font_lfont));
-            exit_sys_pal();
-        }
-        else if (mode != ReplayMode::Assert)
+        if (mode != ReplayMode::Assert)
         {
             Throttlefps = true;
             Paused = true;
@@ -1438,9 +1379,6 @@ void replay_poll()
         do_recording_poll();
         if (frame_count == replay_log.back()->frame)
             replay_stop();
-        break;
-    case ReplayMode::ManualTakeover:
-        do_recording_poll();
         break;
     }
 
@@ -1809,85 +1747,12 @@ void replay_save(std::filesystem::path path)
     save_replay(path.string(), record_log);
 }
 
-void replay_stop_manual_takeover()
-{
-    ASSERT(mode == ReplayMode::ManualTakeover);
-
-    // Update the replay log to account for the newly added steps.
-    int old_frame_duration = replay_log[old_start_of_next_screen_index]->frame - frame_arg;
-    int new_frame_duration = frame_count - frame_arg;
-    int frame_delta = new_frame_duration - old_frame_duration;
-    for (size_t i = old_start_of_next_screen_index; i < replay_log.size(); i++)
-    {
-        replay_log[i]->frame += frame_delta;
-    }
-
-    // Restore button state.
-    std::vector<std::shared_ptr<ReplayStep>> restore_log;
-    for (int i = 0; i < KeyMapReplayStep::NumButtons; i++)
-        raw_control_state[i] = stored_control_state[i];
-
-    // Insert some button steps to make the replay_log match what the record_log will have inserted on the next
-    // call to do_recording_poll.
-    // This is the same as do_recording_poll, but without setting the previous control state variable.
-    for (int i = 0; i < KeyMapReplayStep::NumButtons; i++)
-    {
-        bool state = raw_control_state[i];
-        if (state == previous_control_state[i])
-            continue;
-
-        int key_index = KeyMapReplayStep::current.button_keys[i];
-        restore_log.push_back(std::make_shared<KeyReplayStep>(frame_count, state ? TypeKeyDown : TypeKeyUp, i, key_index));
-    }
-
-    int num_steps_before = replay_log.size();
-    // TODO: technically these should be inserted at the end of this frame's steps (button steps are always at the end),
-    // but even then they could be out-of-order from how the record log would write them (since button steps are written
-    // in a specific order, this is additive, and we aren't taking into account the presence of existing button steps on this frame).
-    // But whatever. This is just so we can do save_replay on the replay_log to write _something_ when the player is done,
-    // in case the recording needs to have multiple screens updated (just have to repeat this manual takeover once for every screen,
-    // picking up from the previous replay_log saved at the end of this function).
-    replay_log.insert(replay_log.begin() + old_start_of_next_screen_index, restore_log.begin(), restore_log.end());
-    // Erase the old steps.
-    replay_log.erase(replay_log.begin() + manual_takeover_start_index, replay_log.begin() + old_start_of_next_screen_index);
-    // Insert the new steps.
-    replay_log.insert(replay_log.begin() + manual_takeover_start_index, record_log.begin() + manual_takeover_start_index, record_log.end());
-    int steps_delta = replay_log.size() - num_steps_before;
-
-    save_replay(replay_path.string(), replay_log);
-    replay_log_current_index = record_log.size();
-    mode = ReplayMode::Update;
-    install_keyboard_handlers();
-    frame_arg = -1;
-    enter_sys_pal();
-    jwin_alert("Recording", "Done re-recording, resuming replay from here", NULL, NULL, "OK", NULL, 13, 27, get_zc_font(font_lfont));
-    exit_sys_pal();
-
-    // TODO currently just for manually debugging this system. Instead, should somehow enable assert mode when going back to ::Update.
-    bool DEBUG_MANUAL_OVERRIDE = false;
-    if (DEBUG_MANUAL_OVERRIDE)
-    {
-        // Skip the assertion index to the first step after the mark of the new frame, to skip over the injected out-of-order button steps.
-        assert_current_index = old_start_of_next_screen_index + steps_delta;
-        for (size_t i = assert_current_index; i < replay_log.size(); i++)
-        {
-            if (replay_log[i]->frame != frame_count)
-            {
-                assert_current_index = i;
-                break;
-            }
-        }
-        // assert_current_index = record_log.size() - 1; // Should be this, but can't b/c out-of-order reason from big comment above.
-        mode = ReplayMode::Assert;
-    }
-}
-
 void replay_step_comment(std::string comment)
 {
     if (replay_is_recording())
     {
         util::trimstr(comment);
-        record_log.push_back(std::make_shared<CommentReplayStep>(frame_count, comment));
+        record_log.push_back(std::make_unique<CommentReplayStep>(frame_count, comment));
         // Not necessary to call this here, but helps to halt the program exactly when an unexpected
         // comment occurs instead of at the next call to replay_poll.
         if (mode == ReplayMode::Assert)
@@ -1930,7 +1795,7 @@ void replay_step_gfx(uint32_t gfx_hash)
 	{
 		std::string expected_gfx_comment;
 		auto it_start = std::lower_bound(replay_log.begin(), replay_log.end(), frame_count,
-			[](auto step, const int value) {
+			[](auto& step, const int value) {
 				return step->frame < value;
 			});
 		for (auto it = it_start; it < replay_log.end(); it++)
@@ -2067,19 +1932,19 @@ bool replay_has_meta(std::string key)
 void replay_step_quit(int quit_state)
 {
     if (replay_is_recording())
-        record_log.push_back(std::make_shared<QuitReplayStep>(frame_count, quit_state));
+        record_log.push_back(std::make_unique<QuitReplayStep>(frame_count, quit_state));
 }
 
 void replay_step_cheat(Cheat cheat, int arg1, int arg2, std::string arg3)
 {
     if (replay_is_recording())
-        record_log.push_back(std::make_shared<CheatReplayStep>(frame_count, cheat, arg1, arg2, arg3));
+        record_log.push_back(std::make_unique<CheatReplayStep>(frame_count, cheat, arg1, arg2, arg3));
 }
 
 void replay_step_qr(int qr, bool value)
 {
     if (replay_is_recording())
-        record_log.push_back(std::make_shared<QRReplayStep>(frame_count, qr, value));
+        record_log.push_back(std::make_unique<QRReplayStep>(frame_count, qr, value));
 }
 
 ReplayMode replay_get_mode()
@@ -2177,7 +2042,7 @@ bool replay_is_replaying()
 
 bool replay_is_recording()
 {
-    return mode == ReplayMode::Record || mode == ReplayMode::Assert || mode == ReplayMode::Update || mode == ReplayMode::ManualTakeover;
+    return mode == ReplayMode::Record || mode == ReplayMode::Assert || mode == ReplayMode::Update;
 }
 
 void replay_set_frame_arg(int frame)
@@ -2255,7 +2120,7 @@ void replay_set_rng_seed(zc_randgen *rng, int seed)
         }
 
         if (!did_extend)
-            record_log.push_back(std::make_shared<RngReplayStep>(frame_count, index, index, seed));
+            record_log.push_back(std::make_unique<RngReplayStep>(frame_count, index, index, seed));
     }
 
     rng->seed(seed);
@@ -2321,7 +2186,7 @@ int replay_get_state(ReplayStateType state_type, int fn())
 
 	if (replay_is_recording())
 	{
-		record_log.push_back(std::make_shared<StateReplayStep>(frame_count, state_type, value));
+		record_log.push_back(std::make_unique<StateReplayStep>(frame_count, state_type, value));
 	}
 
 	return value;

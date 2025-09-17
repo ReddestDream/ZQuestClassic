@@ -1,3 +1,4 @@
+#include "base/general.h"
 #include "base/zdefs.h"
 #include "user_object.h"
 #include "zasm/table.h"
@@ -9,8 +10,8 @@ void push_ri();
 void pop_ri();
 extern refInfo* ri;
 extern script_data* curscript;
-extern int32_t(*stack)[MAX_SCRIPT_REGISTERS];
-extern bounded_vec<word, int32_t>* ret_stack;
+extern int32_t(*stack)[MAX_STACK_SIZE];
+extern int32_t(*ret_stack)[MAX_CALL_FRAMES];
 extern ScriptType curScriptType;
 extern word curScriptNum;
 extern int32_t curScriptIndex;
@@ -24,12 +25,49 @@ bool can_restore_object_type(script_object_type type)
 	return type == script_object_type::object || type == script_object_type::array;
 }
 
-void user_abstract_obj::own(ScriptType type, int32_t i)
+// About object ownership.
+//
+// Two things can "own" an object:
+//
+// 1) a script
+// 2) a sprite
+//
+// Only one thing may own an object. Updating the ownership of an object automatically removes any
+// previous ownership.
+//
+// Prior to 3.0 (ZScriptVersion::gc()), when a script or sprite object is removed, all objects
+// it owns are deleted. Starting in 3.0, instead just a reference is deleted (and the object is
+// only deleted if there are no more references to it).
+//
+// Only scripts can assign object ownership.
+//
+// Ownership can be assigned to a script in a few ways. For all the following cases, the currently
+// running script is what will "own" the object.
+//
+// - the global OwnObject / OwnArray functions 
+// - various `Own()` functions on script objects that are not sprites (ex: bitmap, paldata)
+// - (prior to 3.0) when an class instance is constructed
+//
+// Ownership can be assigned to a sprite in just one way:
+//
+// - various `Own(object)` functions on scripts objects that are sprites (ex: lweapon::Own(file b)`
+//
+// When a script or sprite ends, the functions "destroySprite" / "deallocateAllScriptOwned" etc.
+// handle removing the reference.
+
+void user_abstract_obj::set_owned_by_script(ScriptType type, int32_t i)
 {
 	owned_type = type;
 	owned_i = i;
+	owned_sprite_id = 0;
 }
-bool user_abstract_obj::own_clear(ScriptType type, int32_t i)
+void user_abstract_obj::set_owned_by_sprite(sprite* sprite)
+{
+	owned_sprite_id = sprite->getUID();
+	owned_type = ScriptType::None;
+	owned_i = 0;
+}
+bool user_abstract_obj::script_own_clear(ScriptType type, int32_t i)
 {
 	if(owned_type == type && owned_i == i)
 	{
@@ -37,7 +75,7 @@ bool user_abstract_obj::own_clear(ScriptType type, int32_t i)
 	}
 	return false;
 }
-bool user_abstract_obj::own_clear_any()
+bool user_abstract_obj::script_own_clear_any()
 {
 	if(owned_type != ScriptType::None || owned_i != 0)
 	{
@@ -45,7 +83,7 @@ bool user_abstract_obj::own_clear_any()
 	}
 	return false;
 }
-bool user_abstract_obj::own_clear_cont()
+bool user_abstract_obj::script_own_clear_cont()
 {
 	if(owned_type != ScriptType::None || owned_i != 0)
 	{
@@ -65,6 +103,14 @@ bool user_abstract_obj::own_clear_cont()
 	}
 	return false;
 }
+bool user_abstract_obj::sprite_own_clear(int32_t id)
+{
+	if (id && id == owned_sprite_id)
+	{
+		return true;
+	}
+	return false;
+}
 
 ArrayOwner::ArrayOwner() : user_abstract_obj(),
 	specOwned(false), specCleared(false)
@@ -79,7 +125,13 @@ void ArrayOwner::reset()
 void ArrayOwner::reown(ScriptType ty, int32_t i)
 {
 	reset();
-	own(ty,i);
+	set_owned_by_script(ty,i);
+}
+
+void ArrayOwner::reown(sprite* spr)
+{
+	reset();
+	set_owned_by_sprite(spr);
 }
 
 bool script_array::internal_array_id::matches(ScriptType script_type, int32_t uid) const
@@ -145,8 +197,8 @@ void scr_func_exec::clear()
 
 void scr_func_exec::execute()
 {
-	static int32_t static_stack[MAX_SCRIPT_REGISTERS];
-	static bounded_vec<word, int32_t> static_ret_stack;
+	static int32_t static_stack[MAX_STACK_SIZE];
+	static int32_t static_ret_stack[MAX_CALL_FRAMES];
 	script_data* sc_data = load_scrdata(type,script,i);
 	if(!pc || !sc_data || !sc_data->valid())
 		return;
@@ -168,16 +220,17 @@ void scr_func_exec::execute()
 		curScriptType = type;
 		curScriptNum = script;
 		curScriptIndex = i;
-		memset(static_stack, 0, sizeof(int32_t)*MAX_SCRIPT_REGISTERS);
-		static_ret_stack.clear();
+		memset(static_stack, 0, sizeof(int32_t)*MAX_STACK_SIZE);
+		memset(static_stack, 0, sizeof(int32_t)*MAX_CALL_FRAMES);
 		// Run  the destructor script
 		std::string* oldstr = destructstr;
 		destructstr = &name;
 		bool old_funcrun = script_funcrun;
 		script_funcrun = true;
-		
-		run_script_int(false);
-		
+
+		// TODO: doesn't use JIT...
+		run_script_int();
+
 		script_funcrun = old_funcrun;
 		destructstr = oldstr;
 		//

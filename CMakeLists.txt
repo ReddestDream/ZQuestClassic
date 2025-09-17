@@ -20,6 +20,7 @@ option(COPY_RESOURCES "Copy runtime resources to build folder, but only if they 
 set(USE_PCH FALSE CACHE BOOL "Use precompiled headers")
 set(UNITY_BUILD FALSE CACHE BOOL "Unity build")
 set(WANT_SENTRY FALSE CACHE BOOL "Include Sentry for crash dump handling")
+set(WANT_NFD TRUE CACHE BOOL "Include nativefiledialog")
 set(WANT_DEBUG_FILES FALSE CACHE BOOL "Generate separate debug files - .dSYM on Mac, .debug on Linux")
 set(WANT_FUZZ FALSE CACHE BOOL "Set FUZZ CXX definition")
 set(WANT_GIT_HOOKS TRUE CACHE BOOL "Install git hooks")
@@ -253,17 +254,23 @@ if (NOT EMSCRIPTEN)
 	FetchContent_MakeAvailable(stduuid)
 endif()
 
-if (NOT EMSCRIPTEN)
-	FetchContent_Declare(
-		nativefiledialog
-		GIT_REPOSITORY
-			https://github.com/btzy/nativefiledialog-extended
-		GIT_TAG
-			17b6e8ce219c0677f94b63636abb9296b28841ca
-		EXCLUDE_FROM_ALL
-	)
-	FetchContent_MakeAvailable(nativefiledialog) # exposed as nfd
-	zc_install_targets(nfd)
+set(USE_NFD OFF)
+if (WANT_NFD)
+	if (EMSCRIPTEN)
+		message(WARNING "WANT_NFD is set, but can't support web, so ignoring")
+	else()
+		FetchContent_Declare(
+			nativefiledialog
+			GIT_REPOSITORY
+				https://github.com/btzy/nativefiledialog-extended
+			GIT_TAG
+				17b6e8ce219c0677f94b63636abb9296b28841ca
+			EXCLUDE_FROM_ALL
+		)
+		FetchContent_MakeAvailable(nativefiledialog) # exposed as nfd
+		zc_install_targets(nfd)
+		set(USE_NFD ON)
+	endif()
 endif()
 
 find_package(CURL)
@@ -616,6 +623,7 @@ set(zcbase_sources
 	src/base/version.cpp
 	src/base/weapon_data.cpp
 	src/base/win32.cpp
+	src/base/worker_pool.cpp
 	src/base/zapp.cpp
 	src/base/zc_alleg.cpp
 	src/base/zc_math.cpp
@@ -639,8 +647,9 @@ endif()
 if(NOT WIN32)
 	target_include_directories(zcbase PUBLIC include/pstream)
 endif()
-if (NOT EMSCRIPTEN)
+if (USE_NFD)
 	target_link_libraries(zcbase PUBLIC nfd)
+	target_compile_definitions(zcbase PUBLIC HAS_NFD)
 endif()
 
 # std::execution supplementation.
@@ -892,7 +901,7 @@ elseif(JIT_BACKEND STREQUAL "x64")
 		GIT_REPOSITORY
 			https://github.com/connorjclark/asmjit.git
 		GIT_TAG
-			6d153ad8e13984841c2c642c0fa11e60f41e54dc
+			9e9494808f1d9101e71e75046d75e762b5ece21c
 		EXCLUDE_FROM_ALL
 	)
 	FetchContent_MakeAvailable(asmjit)
@@ -919,6 +928,7 @@ endif()
 #   RelWithDebInfo/libzcbase.a(zsys.cpp.o): in function `temp_name(char*)':
 if(NOT EMSCRIPTEN AND NOT (DEFINED ENV{CI} AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
 	file(GLOB_RECURSE zscript_binding_files "resources/include/bindings/*.zh")
+	list(REMOVE_ITEM zscript_binding_files "${CMAKE_CURRENT_SOURCE_DIR}/resources/include/bindings/qrs.zh")
 	set(gen_zscript_context_strings scripts/generate_zasm_context_strings.py zscript ${zscript_binding_files})
 	add_custom_command(
 		COMMAND ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_zasm_context_strings.py --build_folder "${BUILD_FOLDER}"
@@ -928,6 +938,16 @@ if(NOT EMSCRIPTEN AND NOT (DEFINED ENV{CI} AND CMAKE_CXX_COMPILER_ID MATCHES "Cl
 	add_custom_target(gen_zscript_context_strings DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/zc/scripting/context_strings.cpp)
 	add_dependencies(zplayer gen_zscript_context_strings)
 endif()
+
+# qr generation
+set(gen_zscript_qr_enum scripts/generate_qr_constants.py zeditor)
+add_custom_command(
+	COMMAND ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_qr_constants.py --build_folder "${BUILD_FOLDER}"
+	OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/resources/include/bindings/qrs.zh
+	DEPENDS ${gen_zscript_qr_enum}
+)
+add_custom_target(gen_zscript_qr_enum DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/resources/include/bindings/qrs.zh zeditor)
+
 
 #############################################################
 # ZQuest

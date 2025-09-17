@@ -64,7 +64,7 @@ do { \
 
 #define CPYFLAG(v, fl, other) \
 do { \
-	v = (v&~fl)|(other&fl); \
+	v = (v&~(fl))|(other&(fl)); \
 } while(false)
 
 int wrap(int x,int low,int high);
@@ -91,9 +91,9 @@ int wrap(int x,int low,int high);
 //Script-related
 #define INITIAL_D                  8
 #define FFSCRIPT_MISC              32
-#define BITS_SP                    10
-#define MASK_SP                    ((1<<BITS_SP)-1)
-#define MAX_SCRIPT_REGISTERS       (1<<BITS_SP)
+#define MAX_STACK_SIZE             5120
+#define MAX_CALL_FRAMES            1024
+#define MAX_SCRIPT_REGISTERS       1024
 #define MAX_SCRIPT_REGISTERS_250   256
 #define MAX_PC                     dword(-1)
 
@@ -104,6 +104,8 @@ int wrap(int x,int low,int high);
 #define MIN_ZSCRIPT_INT            (-214748)
 #define MAX_DWORD                  dword(-1)
 #define MIN_DWORD                  0
+
+#define STANDING_Z_MAX             214748.3648_zf
 
 #define SINGLE_TILE_SIZE           128
 #define TILES_PER_ROW              20
@@ -208,7 +210,14 @@ int wrap(int x,int low,int high);
 
 #define QSTPWD_LEN                 256
 
-enum controls //Args for 'getInput()'
+// Args for 'getInput()'
+#define INPUT_PRESS                0x01
+#define INPUT_DRUNK                0x02
+#define INPUT_IGNORE_DISABLE       0x04
+#define INPUT_EAT_ENTIRELY         0x08
+#define INPUT_PEEK                 0x10
+#define INPUT_HERO_ACTION          0x20
+enum controls
 {
 	//control_state indeces
 	btnUp, btnDown, btnLeft, btnRight, btnA, btnB, btnS, btnL, btnR, btnP, btnEx1, btnEx2, btnEx3, btnEx4, btnAxisUp, btnAxisDown, btnAxisLeft, btnAxisRight,
@@ -277,7 +286,8 @@ enum // used for gamedata ITEMS
 	itype_script2, itype_script3, itype_script4, itype_script5, itype_script6, itype_script7, itype_script8, itype_script9, itype_script10,
 	itype_icerod, itype_atkring, itype_lantern, itype_pearl, itype_bottle, itype_bottlefill, itype_bugnet,
 	itype_mirror, itype_switchhook, itype_itmbundle, itype_progressive_itm, itype_note, itype_refill,
-	itype_liftglove,
+	itype_liftglove, itype_gravity_boots, itype_gravity_up_boots, itype_gravity_down_boots,
+	itype_cooldown_ring,
 	/*
 	itype_templast,
 	itype_ether, itype_bombos, itype_quake, 
@@ -339,7 +349,10 @@ enum generic_ind //game->generic[]
 	genDITH_TYPE, genDITH_ARG, genDITH_PERC, genLIGHT_RAD,genTDARK_PERC,genDARK_COL,
 	genWATER_GRAV, genSIDESWIM_UP, genSIDESWIM_SIDE, genSIDESWIM_DOWN, genSIDESWIM_JUMP,
 	genBUNNY_LTM, genSWITCHSTYLE, genSPRITEFLICKERSPEED, genSPRITEFLICKERCOLOR,
-	genSPRITEFLICKERTRANSP, genLIGHT_WAVE_RATE, genLIGHT_WAVE_SIZE, genREGIONMAPPING, genLAST,
+	genSPRITEFLICKERTRANSP, genLIGHT_WAVE_RATE, genLIGHT_WAVE_SIZE, genREGIONMAPPING,
+	genITEM_SPAWN_FLICKER, genITEM_TIMEOUT_TIME, genITEM_TIMEOUT_FLICKER,
+	genITEM_FLICKER_SPEED,
+	genLAST,
 	genMAX = 256
 };
 
@@ -369,6 +382,12 @@ enum class ScriptType {
 	// - ScriptType get_script_type(string const& name)
 	First = Global,
 	Last = EngineSubscreen,
+};
+
+enum cutscene_effect_types : byte
+{
+	CUTEFF_PLAYER_WALK,
+	CUTEFF_MAX
 };
 
 // directions

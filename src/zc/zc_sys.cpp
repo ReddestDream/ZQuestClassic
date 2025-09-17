@@ -23,7 +23,9 @@
 #include "base/version.h"
 #include "base/zc_alleg.h"
 #include "gamedata.h"
+#include "zc/frame_timings.h"
 #include "zc/replay_upload.h"
+#include "zc/zasm_pipeline.h"
 #include "zc/zc_init.h"
 #include "init.h"
 #include "zc/replay.h"
@@ -86,7 +88,7 @@ static int32_t d_joylist_proc(int32_t msg,DIALOG *d,int32_t c);
 extern byte monochrome_console;
 
 extern sprite_list  guys, items, Ewpns, Lwpns, chainlinks, decorations;
-extern int32_t loadlast;
+extern std::string loadlast;
 extern char *sfx_string[WAV_COUNT];
 byte use_dwm_flush;
 byte use_save_indicator;
@@ -187,7 +189,8 @@ void zc_exit(int code)
 	save_game_configs();
 
 	zscript_coloured_console.kill();
-	jit_shutdown();
+	zasm_pipeline_shutdown();
+	frame_timings_end();
 	quit_game();
 
 	Z_message("ZQuest Classic website: https://zquestclassic.com\n");
@@ -471,7 +474,7 @@ void load_game_configs()
 	scaleForceInteger = zc_get_config("zeldadx","scaling_force_integer",1)!=0;
 	stretchGame = zc_get_config("zeldadx","stretch_game_area",0)!=0;
 	
-	loadlast = zc_get_config(cfg_sect,"load_last",0);
+	loadlast = zc_get_config(cfg_sect,"load_last_path","");
 	
 	fullscreen = zc_get_config(cfg_sect,"fullscreen",0);
 	
@@ -609,7 +612,7 @@ void save_game_configs()
 		zc_set_config(cfg_sect,"window_height",window_height);
 	}
 	
-	zc_set_config(cfg_sect,"load_last",loadlast);
+	zc_set_config(cfg_sect,"load_last_path",loadlast.c_str());
 	zc_set_config(cfg_sect,"use_sfx_dat",sfxdat);
 	
 	flush_config_file();
@@ -1810,7 +1813,7 @@ bool has_item(int32_t item_type, int32_t it)						//does Hero possess this item?
 				{
 					for(int32_t i=0; i<MAXLEVELS; i++)
 					{
-						if(game->lvlitems[i]&liTRIFORCE)
+						if(game->lvlitems[i]&(1 << li_mcguffin))
 						{
 							return true;
 						}
@@ -1820,12 +1823,12 @@ bool has_item(int32_t item_type, int32_t it)						//does Hero possess this item?
 				}
 				
 				case -1:
-					return (game->lvlitems[dlevel]&liTRIFORCE);
+					return (game->lvlitems[dlevel]&(1 << li_mcguffin));
 					
 				default:
 					if(it>=0&&it<MAXLEVELS)
 					{
-						return (game->lvlitems[it]&liTRIFORCE);
+						return (game->lvlitems[it]&(1 << li_mcguffin));
 					}
 					
 					break;
@@ -1842,7 +1845,7 @@ bool has_item(int32_t item_type, int32_t it)						//does Hero possess this item?
 				{
 					for(int32_t i=0; i<MAXLEVELS; i++)
 					{
-						if(game->lvlitems[i]&liMAP)
+						if(game->lvlitems[i]&(1 << li_map))
 						{
 							return true;
 						}
@@ -1852,12 +1855,12 @@ bool has_item(int32_t item_type, int32_t it)						//does Hero possess this item?
 				}
 				
 				case -1:
-					return (game->lvlitems[dlevel]&liMAP)!=0;
+					return (game->lvlitems[dlevel]&(1 << li_map))!=0;
 					
 				default:
 					if(it>=0&&it<MAXLEVELS)
 					{
-						return (game->lvlitems[it]&liMAP)!=0;
+						return (game->lvlitems[it]&(1 << li_map))!=0;
 					}
 					
 					break;
@@ -1874,7 +1877,7 @@ bool has_item(int32_t item_type, int32_t it)						//does Hero possess this item?
 				{
 					for(int32_t i=0; i<MAXLEVELS; i++)
 					{
-						if(game->lvlitems[i]&liCOMPASS)
+						if(game->lvlitems[i]&(1 << li_compass))
 						{
 							return true;
 						}
@@ -1884,12 +1887,12 @@ bool has_item(int32_t item_type, int32_t it)						//does Hero possess this item?
 				}
 				
 				case -1:
-					return (game->lvlitems[dlevel]&liCOMPASS)!=0;
+					return (game->lvlitems[dlevel]&(1 << li_compass))!=0;
 					
 				default:
 					if(it>=0&&it<MAXLEVELS)
 					{
-						return (game->lvlitems[it]&liCOMPASS)!=0;
+						return (game->lvlitems[it]&(1 << li_compass))!=0;
 					}
 					
 					break;
@@ -1905,7 +1908,7 @@ bool has_item(int32_t item_type, int32_t it)						//does Hero possess this item?
 				{
 					for(int32_t i=0; i<MAXLEVELS; i++)
 					{
-						if(game->lvlitems[i]&liBOSSKEY)
+						if(game->lvlitems[i]&(1 << li_boss_key))
 						{
 							return true;
 						}
@@ -1915,12 +1918,12 @@ bool has_item(int32_t item_type, int32_t it)						//does Hero possess this item?
 				}
 				
 				case -1:
-					return (game->lvlitems[dlevel]&liBOSSKEY)?1:0;
+					return (game->lvlitems[dlevel]&(1 << li_boss_key))?1:0;
 					
 				default:
 					if(it>=0&&it<MAXLEVELS)
 					{
-						return (game->lvlitems[it]&liBOSSKEY)?1:0;
+						return (game->lvlitems[it]&(1 << li_boss_key))?1:0;
 					}
 					break;
 			}
@@ -1946,7 +1949,7 @@ int current_item(int item_type, bool checkmagic, bool jinx_check, bool check_bun
 			int maxid = current_item_id(item_type, checkmagic, jinx_check, check_bunny);
 			
 			if(maxid != -1 && (itemsbuf[maxid].flags & item_flag1)) //Active clock
-				return itemsbuf[maxid].fam_type;
+				return itemsbuf[maxid].level;
 			
 			return has_item(itype_clock,1) ? 1 : 0;
 		}
@@ -1966,7 +1969,7 @@ int current_item(int item_type, bool checkmagic, bool jinx_check, bool check_bun
 			
 			for(int i=0; i<MAXLEVELS; i++)
 			{
-				count+=(game->lvlitems[i]&liTRIFORCE)?1:0;
+				count+=(game->lvlitems[i]&(1 << li_mcguffin))?1:0;
 			}
 			
 			return count;
@@ -1978,7 +1981,7 @@ int current_item(int item_type, bool checkmagic, bool jinx_check, bool check_bun
 			
 			for(int i=0; i<MAXLEVELS; i++)
 			{
-				count+=(game->lvlitems[i]&liMAP)?1:0;
+				count+=(game->lvlitems[i]&(1 << li_map))?1:0;
 			}
 			
 			return count;
@@ -1990,7 +1993,7 @@ int current_item(int item_type, bool checkmagic, bool jinx_check, bool check_bun
 			
 			for(int i=0; i<MAXLEVELS; i++)
 			{
-				count+=(game->lvlitems[i]&liCOMPASS)?1:0;
+				count+=(game->lvlitems[i]&(1 << li_compass))?1:0;
 			}
 			
 			return count;
@@ -2002,7 +2005,7 @@ int current_item(int item_type, bool checkmagic, bool jinx_check, bool check_bun
 			
 			for(int i=0; i<MAXLEVELS; i++)
 			{
-				count+=(game->lvlitems[i]&liBOSSKEY)?1:0;
+				count+=(game->lvlitems[i]&(1 << li_boss_key))?1:0;
 			}
 			
 			return count;
@@ -2014,7 +2017,7 @@ int current_item(int item_type, bool checkmagic, bool jinx_check, bool check_bun
 			if(maxid == -1)
 				return 0;
 				
-			return itemsbuf[maxid].fam_type;
+			return itemsbuf[maxid].level;
 	}
 }
 
@@ -2076,7 +2079,7 @@ int _c_item_id_internal(int itemtype, bool checkmagic, bool jinx_check, bool che
 	
 	for(int i=0; i<MAXITEMS; i++)
 	{
-		if(game->get_item(i) && itemsbuf[i].family==itemtype && !item_disabled(i))
+		if(game->get_item(i) && itemsbuf[i].type==itemtype && !item_disabled(i))
 		{
 			if(checkmagic && itemtype != itype_magicring)
 				if(!checkmagiccost(i))
@@ -2087,9 +2090,9 @@ int _c_item_id_internal(int itemtype, bool checkmagic, bool jinx_check, bool che
 			if(check_bunny && !checkbunny(i))
 				continue;
 			
-			if(itemsbuf[i].fam_type >= highestlevel)
+			if(itemsbuf[i].level >= highestlevel)
 			{
-				highestlevel = itemsbuf[i].fam_type;
+				highestlevel = itemsbuf[i].level;
 				result=i;
 			}
 		}
@@ -2121,7 +2124,7 @@ int current_item_id(int itype, bool checkmagic, bool jinx_check, bool check_bunn
 		auto ovid = game->OverrideItems[itype];
 		if(ovid < 0 || ovid >= MAXITEMS)
 			return -1;
-		if(itemsbuf[ovid].family == itype)
+		if(itemsbuf[ovid].type == itype)
 		{
 			if(itype == itype_magicring)
 				checkmagic = false;
@@ -2164,7 +2167,7 @@ int32_t heart_container_id()
 {
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(itemsbuf[i].family == itype_heartcontainer)
+		if(itemsbuf[i].type == itype_heartcontainer)
 		{
 			return i;
 		}
@@ -2324,7 +2327,7 @@ int32_t item_tile_mod()
 		
 		itemdata const& itm = itemsbuf[itemid];
 		
-		switch(itm.family)
+		switch(itm.type)
 		{
 			case itype_shield:
 				if(itm.flags & item_flag9) //active shield
@@ -3380,11 +3383,14 @@ void draw_lens_under(BITMAP *dest, bool layer)
 						
 					case mfARMOS_ITEM:
 					case mfDIVE_ITEM:
-						if((!getmapflag(scr, mSPECIALITEM) || (scr->flags9&fBELOWRETURN)) && !(itemsbuf[Hero.getLastLensID()].flags & item_flag3))
+					{
+						int flag = (cur_screen < 128 && get_qr(qr_ITEMPICKUPSETSBELOW)) ? mITEM : mSPECIALITEM;
+						if((!getmapflag(scr, flag) || (scr->flags9&fBELOWRETURN)) && !(itemsbuf[Hero.getLastLensID()].flags & item_flag3))
 						{
 							putitem2(dest,x,y,scr->catchall, lens_hint_item[scr->catchall][0], lens_hint_item[scr->catchall][1], 0);
 						}
 						break;
+					}
 						
 					case 16:
 					case 17:
@@ -3652,7 +3658,7 @@ void updatescr(bool allowwavy)
 	update_bmp_size(&wavybuf, framebuf->w, framebuf->h);
 	update_bmp_size(&panorama, framebuf->w, framebuf->h);
 
-	if(toogam)
+	if(walk_through_walls)
 	{
 		textout_ex(framebuf,font,"no walls",8,216,1,-1);
 	}
@@ -3844,6 +3850,7 @@ int32_t onSaveMapPic()
 	
 	// draw the map
 	
+	bool classic_draw = get_qr(qr_CLASSIC_DRAWING_ORDER);
 	for(int32_t y=0; y<8; y++)
 	{
 		for(int32_t x=0; x<16; x++)
@@ -3863,17 +3870,28 @@ int32_t onSaveMapPic()
 
 			int xx = 0;
 			int yy = -playing_field_offset;
+			
+			if (!classic_draw)
+				for (int layer = -7; layer <= -4; ++layer)
+					do_ffc_layer(_screen_draw_buffer, layer, screen_handles[0], xx, yy);
 
-			if(XOR(scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG))
+			if(classic_draw)
 			{
-				do_layer(_screen_draw_buffer, 0, screen_handles[2], xx, yy);
+				if(XOR(scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG))
+					do_layer(_screen_draw_buffer, 0, screen_handles[2], xx, yy);
 				do_ffc_layer(_screen_draw_buffer, -2, screen_handles[0], xx, yy);
 			}
 
 			if(XOR(scr->flags7&fLAYER3BG, DMaps[cur_dmap].flags&dmfLAYER3BG))
-			{
 				do_layer(_screen_draw_buffer, 0, screen_handles[3], xx, yy);
-				do_ffc_layer(_screen_draw_buffer, -3, screen_handles[0], xx, yy);
+			do_ffc_layer(_screen_draw_buffer, -3, screen_handles[0], xx, yy);
+
+			if(!classic_draw)
+			{
+				if(XOR(scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG))
+					do_layer(_screen_draw_buffer, 0, screen_handles[2], xx, yy);
+				do_ffc_layer(_screen_draw_buffer, -2, screen_handles[0], xx, yy);
+				do_ffc_layer(_screen_draw_buffer, -1, screen_handles[0], xx, yy);
 			}
 
 			if(lenscheck(scr,0))
@@ -3916,7 +3934,7 @@ int32_t onSaveMapPic()
 			do_layer(_screen_draw_buffer, 0, screen_handles[5], xx, yy);
 			do_ffc_layer(_screen_draw_buffer, 5, screen_handles[0], xx, yy);
 			if(replay_version_check(40))
-				do_ffc_layer(_screen_draw_buffer, -1, screen_handles[0], xx, yy);
+				do_ffc_layer(_screen_draw_buffer, -1000, screen_handles[0], xx, yy);
 			do_layer(_screen_draw_buffer, 0, screen_handles[6], xx, yy);
 			do_ffc_layer(_screen_draw_buffer, 6, screen_handles[0], xx, yy);
 			do_ffc_layer(_screen_draw_buffer, 7, screen_handles[0], xx, yy);
@@ -4544,8 +4562,8 @@ void advanceframe(bool allowwavy, bool sfxcleanup, bool allowF6Script)
 	
 	if(sfxcleanup)
 		sfx_cleanup();
-	
-	jit_poll();
+
+	frame_timings_poll();
 
 #ifdef __EMSCRIPTEN__
 	// Yield the main thread back to the browser occasionally.
@@ -4888,7 +4906,7 @@ int32_t TriforceCount()
 	int32_t c=0;
 	
 	for(int32_t i=1; i<=8; i++)
-		if(game->lvlitems[i]&liTRIFORCE)
+		if(game->lvlitems[i]&(1 << li_mcguffin))
 			++c;
 			
 	return c;
@@ -7774,7 +7792,7 @@ void System()
 			if(cheat < 4)
 				cheat_menu.chop_index = cheat_menu.ind_at(MENUID_CHEAT_CHOP_L1+cheat);
 			cheat_menu.select_uid(MENUID_CHEAT_INVULN, getClock());
-			cheat_menu.select_uid(MENUID_CHEAT_NOCLIP, toogam);
+			cheat_menu.select_uid(MENUID_CHEAT_NOCLIP, walk_through_walls);
 			cheat_menu.select_uid(MENUID_CHEAT_IGNORESV, ignoreSideview);
 			cheat_menu.select_uid(MENUID_CHEAT_GOFAST, gofast);
 			
@@ -8832,8 +8850,17 @@ bool zc_key_pressed()
 	return false;
 }
 
-bool getInput(int32_t btn, bool press, bool drunk, bool ignoreDisable, bool eatEntirely, bool peek)
+bool getInput(int32_t btn, int input_flags)
 {
+	if((input_flags & INPUT_HERO_ACTION) && Hero.no_control())
+		return false;
+	
+	bool press = input_flags & INPUT_PRESS;
+	bool drunk = input_flags & INPUT_DRUNK;
+	bool ignoreDisable = input_flags & INPUT_IGNORE_DISABLE;
+	bool eatEntirely = input_flags & INPUT_EAT_ENTIRELY;
+	bool peek = input_flags & INPUT_PEEK;
+	
 	bool ret = false, drunkstate = false, rawret = false;;
 	bool* flag = &down_control_states[btn];
 	switch(btn)
@@ -8888,17 +8915,17 @@ bool getInput(int32_t btn, bool press, bool drunk, bool ignoreDisable, bool eatE
 	return ret;
 }
 
-byte getIntBtnInput(byte intbtn, bool press, bool drunk, bool ignoreDisable, bool eatEntirely, bool peek)
+byte getIntBtnInput(byte intbtn, int input_flags)
 {
 	byte ret = 0;
-	if(intbtn & INT_BTN_A) ret |= getInput(btnA, press, drunk, ignoreDisable, eatEntirely, peek) ? INT_BTN_A : 0;
-	if(intbtn & INT_BTN_B) ret |= getInput(btnB, press, drunk, ignoreDisable, eatEntirely, peek) ? INT_BTN_B : 0;
-	if(intbtn & INT_BTN_L) ret |= getInput(btnL, press, drunk, ignoreDisable, eatEntirely, peek) ? INT_BTN_L : 0;
-	if(intbtn & INT_BTN_R) ret |= getInput(btnR, press, drunk, ignoreDisable, eatEntirely, peek) ? INT_BTN_R : 0;
-	if(intbtn & INT_BTN_EX1) ret |= getInput(btnEx1, press, drunk, ignoreDisable, eatEntirely, peek) ? INT_BTN_EX1 : 0;
-	if(intbtn & INT_BTN_EX2) ret |= getInput(btnEx2, press, drunk, ignoreDisable, eatEntirely, peek) ? INT_BTN_EX2 : 0;
-	if(intbtn & INT_BTN_EX3) ret |= getInput(btnEx3, press, drunk, ignoreDisable, eatEntirely, peek) ? INT_BTN_EX3 : 0;
-	if(intbtn & INT_BTN_EX4) ret |= getInput(btnEx4, press, drunk, ignoreDisable, eatEntirely, peek) ? INT_BTN_EX4 : 0;
+	if(intbtn & INT_BTN_A) ret |= getInput(btnA, input_flags) ? INT_BTN_A : 0;
+	if(intbtn & INT_BTN_B) ret |= getInput(btnB, input_flags) ? INT_BTN_B : 0;
+	if(intbtn & INT_BTN_L) ret |= getInput(btnL, input_flags) ? INT_BTN_L : 0;
+	if(intbtn & INT_BTN_R) ret |= getInput(btnR, input_flags) ? INT_BTN_R : 0;
+	if(intbtn & INT_BTN_EX1) ret |= getInput(btnEx1, input_flags) ? INT_BTN_EX1 : 0;
+	if(intbtn & INT_BTN_EX2) ret |= getInput(btnEx2, input_flags) ? INT_BTN_EX2 : 0;
+	if(intbtn & INT_BTN_EX3) ret |= getInput(btnEx3, input_flags) ? INT_BTN_EX3 : 0;
+	if(intbtn & INT_BTN_EX4) ret |= getInput(btnEx4, input_flags) ? INT_BTN_EX4 : 0;
 	return ret; //No early return, to make sure all button presses are eaten that should be! -Em
 }
 
@@ -9007,221 +9034,221 @@ bool cI()
 
 bool rUp()
 {
-	return getInput(btnUp, true);
+	return getInput(btnUp, INPUT_PRESS);
 }
 bool rDown()
 {
-	return getInput(btnDown, true);
+	return getInput(btnDown, INPUT_PRESS);
 }
 bool rLeft()
 {
-	return getInput(btnLeft, true);
+	return getInput(btnLeft, INPUT_PRESS);
 }
 bool rRight()
 {
-	return getInput(btnRight, true);
+	return getInput(btnRight, INPUT_PRESS);
 }
 bool rAbtn()
 {
-	return getInput(btnA, true);
+	return getInput(btnA, INPUT_PRESS);
 }
 bool rBbtn()
 {
-	return getInput(btnB, true);
+	return getInput(btnB, INPUT_PRESS);
 }
 bool rSbtn()
 {
-	return getInput(btnS, true);
+	return getInput(btnS, INPUT_PRESS);
 }
 bool rMbtn()
 {
-	return getInput(btnM, true);
+	return getInput(btnM, INPUT_PRESS);
 }
 bool rLbtn()
 {
-	return getInput(btnL, true);
+	return getInput(btnL, INPUT_PRESS);
 }
 bool rRbtn()
 {
-	return getInput(btnR, true);
+	return getInput(btnR, INPUT_PRESS);
 }
 bool rPbtn()
 {
-	return getInput(btnP, true);
+	return getInput(btnP, INPUT_PRESS);
 }
 bool rEx1btn()
 {
-	return getInput(btnEx1, true);
+	return getInput(btnEx1, INPUT_PRESS);
 }
 bool rEx2btn()
 {
-	return getInput(btnEx2, true);
+	return getInput(btnEx2, INPUT_PRESS);
 }
 bool rEx3btn()
 {
-	return getInput(btnEx3, true);
+	return getInput(btnEx3, INPUT_PRESS);
 }
 bool rEx4btn()
 {
-	return getInput(btnEx4, true);
+	return getInput(btnEx4, INPUT_PRESS);
 }
 bool rAxisUp()
 {
-	return getInput(btnAxisUp, true);
+	return getInput(btnAxisUp, INPUT_PRESS);
 }
 bool rAxisDown()
 {
-	return getInput(btnAxisDown, true);
+	return getInput(btnAxisDown, INPUT_PRESS);
 }
 bool rAxisLeft()
 {
-	return getInput(btnAxisLeft, true);
+	return getInput(btnAxisLeft, INPUT_PRESS);
 }
 bool rAxisRight()
 {
-	return getInput(btnAxisRight, true);
+	return getInput(btnAxisRight, INPUT_PRESS);
 }
 
 bool rF11()
 {
-	return getInput(btnF11, true);
+	return getInput(btnF11, INPUT_PRESS);
 }
 bool rQ()
 {
-	return getInput(btnQ, true);
+	return getInput(btnQ, INPUT_PRESS);
 }
 bool rI()
 {
-	return getInput(btnI, true);
+	return getInput(btnI, INPUT_PRESS);
 }
 
 bool DrunkUp()
 {
-	return getInput(btnUp, false, true);
+	return getInput(btnUp, INPUT_DRUNK);
 }
 bool DrunkDown()
 {
-	return getInput(btnDown, false, true);
+	return getInput(btnDown, INPUT_DRUNK);
 }
 bool DrunkLeft()
 {
-	return getInput(btnLeft, false, true);
+	return getInput(btnLeft, INPUT_DRUNK);
 }
 bool DrunkRight()
 {
-	return getInput(btnRight, false, true);
+	return getInput(btnRight, INPUT_DRUNK);
 }
 bool DrunkcAbtn()
 {
-	return getInput(btnA, false, true);
+	return getInput(btnA, INPUT_DRUNK);
 }
 bool DrunkcBbtn()
 {
-	return getInput(btnB, false, true);
+	return getInput(btnB, INPUT_DRUNK);
 }
 bool DrunkcEx1btn()
 {
-	return getInput(btnEx1, false, true);
+	return getInput(btnEx1, INPUT_DRUNK);
 }
 bool DrunkcEx2btn()
 {
-	return getInput(btnEx2, false, true);
+	return getInput(btnEx2, INPUT_DRUNK);
 }
 bool DrunkcSbtn()
 {
-	return getInput(btnS, false, true);
+	return getInput(btnS, INPUT_DRUNK);
 }
 bool DrunkcMbtn()
 {
-	return getInput(btnM, false, true);
+	return getInput(btnM, INPUT_DRUNK);
 }
 bool DrunkcLbtn()
 {
-	return getInput(btnL, false, true);
+	return getInput(btnL, INPUT_DRUNK);
 }
 bool DrunkcRbtn()
 {
-	return getInput(btnR, false, true);
+	return getInput(btnR, INPUT_DRUNK);
 }
 bool DrunkcPbtn()
 {
-	return getInput(btnP, false, true);
+	return getInput(btnP, INPUT_DRUNK);
 }
 
 bool DrunkrUp()
 {
-	return getInput(btnUp, true, true);
+	return getInput(btnUp, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrDown()
 {
-	return getInput(btnDown, true, true);
+	return getInput(btnDown, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrLeft()
 {
-	return getInput(btnLeft, true, true);
+	return getInput(btnLeft, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrRight()
 {
-	return getInput(btnRight, true, true);
+	return getInput(btnRight, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrAbtn()
 {
-	return getInput(btnA, true, true);
+	return getInput(btnA, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrBbtn()
 {
-	return getInput(btnB, true, true);
+	return getInput(btnB, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrEx1btn()
 {
-	return getInput(btnEx1, true, true);
+	return getInput(btnEx1, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrEx2btn()
 {
-	return getInput(btnEx2, true, true);
+	return getInput(btnEx2, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrEx3btn()
 {
-	return getInput(btnEx3, true, true);
+	return getInput(btnEx3, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrEx4btn()
 {
-	return getInput(btnEx4, true, true);
+	return getInput(btnEx4, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrSbtn()
 {
-	return getInput(btnS, true, true);
+	return getInput(btnS, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrMbtn()
 {
-	return getInput(btnM, true, true);
+	return getInput(btnM, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrLbtn()
 {
-	return getInput(btnL, true, true);
+	return getInput(btnL, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrRbtn()
 {
-	return getInput(btnR, true, true);
+	return getInput(btnR, INPUT_PRESS | INPUT_DRUNK);
 }
 bool DrunkrPbtn()
 {
-	return getInput(btnP, true, true);
+	return getInput(btnP, INPUT_PRESS | INPUT_DRUNK);
 }
 
 void eat_buttons()
 {
-	getInput(btnA, true, false, true);
-	getInput(btnB, true, false, true);
-	getInput(btnS, true, false, true);
-	getInput(btnM, true, false, true);
-	getInput(btnL, true, false, true);
-	getInput(btnR, true, false, true);
-	getInput(btnP, true, false, true);
-	getInput(btnEx1, true, false, true);
-	getInput(btnEx2, true, false, true);
-	getInput(btnEx3, true, false, true);
-	getInput(btnEx4, true, false, true);
+	getInput(btnA, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnB, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnS, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnM, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnL, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnR, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnP, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnEx1, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnEx2, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnEx3, INPUT_PRESS | INPUT_IGNORE_DISABLE);
+	getInput(btnEx4, INPUT_PRESS | INPUT_IGNORE_DISABLE);
 }
 
 // Is true for the _first frame_ of a key press.

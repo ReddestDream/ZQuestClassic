@@ -64,6 +64,8 @@ zinitdata *copyIntoZinit(gamedata *gdata)
 	zinit2->gravity=zinit.gravity;
 	zinit2->terminalv=zinit.terminalv;
 	zinit2->jump_hero_layer_threshold=zinit.jump_hero_layer_threshold;
+	for(int q = 0; q < SPRITE_THRESHOLD_MAX; ++q)
+		zinit2->sprite_z_thresholds[q] = zinit.sprite_z_thresholds[q];
 	zinit2->heroStep=zinit.heroStep;
 	zinit2->shove_offset=zinit.shove_offset;
 	zinit2->air_drag=zinit.air_drag;
@@ -94,6 +96,10 @@ zinitdata *copyIntoZinit(gamedata *gdata)
 	zinit2->spriteflickercolor = gdata->get_spriteflickercolor();
 	zinit2->spriteflickertransp = gdata->get_spriteflickertransp();
 	zinit2->region_mapping = gdata->get_regionmapping();
+	zinit2->item_spawn_flicker = gdata->get_item_spawn_flicker();
+	zinit2->item_timeout_dur = gdata->get_item_timeout_dur();
+	zinit2->item_timeout_flicker = gdata->get_item_timeout_flicker();
+	zinit2->item_flicker_speed = gdata->get_item_flicker_speed();
 	
 	for(int32_t q = 0; q < MAX_COUNTERS; ++q)
 	{
@@ -103,6 +109,7 @@ zinitdata *copyIntoZinit(gamedata *gdata)
 	
 	for(int32_t i=0; i<MAXLEVELS; i++)
 		zinit2->litems[i] = gdata->lvlitems[i];
+	zinit2->lvlswitches = gdata->lvlswitches;
 	zinit2->level_keys = gdata->lvlkeys;
 	for(uint q = 0; q < NUM_BOTTLE_SLOTS; ++q)
 		zinit2->bottle_slot[q] = gdata->bottleSlots[q];

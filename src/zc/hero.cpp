@@ -45,7 +45,7 @@ extern refInfo playerScriptData;
 #include <array>
 
 extern refInfo *ri; //= NULL;
-extern int32_t(*stack)[MAX_SCRIPT_REGISTERS];
+extern int32_t(*stack)[MAX_STACK_SIZE];
 extern portal mirror_portal;
 using std::set;
 
@@ -80,8 +80,17 @@ byte lsteps[8] = { 1, 1, 2, 1, 1, 2, 1, 1 };
 
 #define CANFORCEFACEUP	(get_qr(qr_SIDEVIEWLADDER_FACEUP)!=0 && dir!=up && (action==walking || action==none))
 #define NO_GRIDLOCK		(get_qr(qr_DISABLE_4WAY_GRIDLOCK)||get_qr(qr_NEW_HERO_MOVEMENT2))
-#define SWITCHBLOCK_STATE (switchblock_z<0?switchblock_z:(switchblock_z+z+fakez < 0 ? zslongToFix(2147483647) : switchblock_z+z+fakez))
 #define FIXED_Z3_ANIMATION ((zinit.heroAnimationStyle==las_zelda3||zinit.heroAnimationStyle==las_zelda3slow)&&!get_qr(qr_BROKEN_Z3_ANIMATION))
+
+zfix HeroClass::get_standing_z_state() const
+{
+	if (standing_on_z < 0) // diving under stuff
+		return standing_on_z;
+	zfix ret = standing_on_z + z + fakez;
+	if (ret < 0) // overflow?
+		return STANDING_Z_MAX;
+	return ret;
+}
 
 bool item_error()
 {
@@ -97,7 +106,7 @@ static inline bool on_sideview_slope(int32_t x, int32_t y, int32_t oldx, int32_t
 
 static inline bool platform_fallthrough(bool doslopecheck = true)
 {
-	if (!getInput(btnDown, false, get_qr(qr_SIDEVIEW_FALLTHROUGH_USES_DRUNK)!=0))
+	if (!getInput(btnDown, INPUT_HERO_ACTION | (get_qr(qr_SIDEVIEW_FALLTHROUGH_USES_DRUNK) ? INPUT_DRUNK : 0)))
 		return false;
 
 	if (get_qr(qr_DOWN_FALL_THROUGH_SIDEVIEW_PLATFORMS))
@@ -150,7 +159,7 @@ static inline bool on_sideview_solid_oldpos(sprite* obj, bool ignoreFallthrough 
 
 static inline bool no_plat_action()
 {
-	if(Hero.fallclk || Hero.drownclk || toogam || Hero.getOnSideviewLadder())
+	if(Hero.fallclk || Hero.drownclk || walk_through_walls || Hero.getOnSideviewLadder())
 		return true;
 	switch(Hero.action)
 	{
@@ -238,7 +247,6 @@ void HeroClass::snap_platform()
 	movexy(0,1,false,true,false,false);
 }
 
-
 bool usingActiveShield(int32_t itmid)
 {
 	if(Hero.shieldjinxclk) return false;
@@ -254,6 +262,7 @@ bool usingActiveShield(int32_t itmid)
 		itmid = (Hero.active_shield_id < 0
 			? current_item_id(itype_shield,true,true) : Hero.active_shield_id);
 	if(itmid < 0) return false;
+	if (Hero.active_shield_id != itmid && Hero.on_cooldown(itmid)) return false;
 	auto const& itm = itemsbuf[itmid];
 	if(item_disabled(itmid)) return false;
 	if(!checkitem_jinx(itmid)) return false;
@@ -261,7 +270,7 @@ bool usingActiveShield(int32_t itmid)
 	if(!isItmPressed(itmid))
 	{
 		byte intbtn = byte(itm.misc5&0xFF);
-		if(!itm.misc5 || !getIntBtnInput(intbtn, false, true, false, false, true))
+		if(!itm.misc5 || !getIntBtnInput(intbtn, INPUT_DRUNK | INPUT_PEEK))
 			return false;
 	}
 	return (checkbunny(itmid) && checkmagiccost(itmid));
@@ -284,46 +293,46 @@ int32_t getCurrentActiveShield()
 int32_t refreshActiveShield()
 {
 	int32_t id = -1;
-    if(DrunkcBbtn())
+	if (getInput(btnB, INPUT_DRUNK | INPUT_HERO_ACTION))
 	{
-		itemdata const& dat = itemsbuf[NEG_OR_MASK(Bwpn,0xFFF)];
-		if(dat.family == itype_shield && (dat.flags & item_flag9))
+		itemdata const& dat = itemsbuf[NEG_OR_MASK(Bwpn, 0xFFF)];
+		if (dat.type == itype_shield && (dat.flags & item_flag9))
 		{
-			id = NEG_OR_MASK(Bwpn,0xFFF);
+			id = NEG_OR_MASK(Bwpn, 0xFFF);
 		}
 	}
-    if(id < 0 && DrunkcAbtn())
+	if (id < 0 && getInput(btnA, INPUT_DRUNK | INPUT_HERO_ACTION))
 	{
-		itemdata const& dat = itemsbuf[NEG_OR_MASK(Awpn,0xFFF)];
-		if(dat.family == itype_shield && (dat.flags & item_flag9))
+		itemdata const& dat = itemsbuf[NEG_OR_MASK(Awpn, 0xFFF)];
+		if (dat.type == itype_shield && (dat.flags & item_flag9))
 		{
-			id = NEG_OR_MASK(Awpn,0xFFF);
+			id = NEG_OR_MASK(Awpn, 0xFFF);
 		}
 	}
-    if(id < 0 && DrunkcEx1btn())
+	if (id < 0 && getInput(btnEx1, INPUT_DRUNK | INPUT_HERO_ACTION))
 	{
-		itemdata const& dat = itemsbuf[NEG_OR_MASK(Xwpn,0xFFF)];
-		if(dat.family == itype_shield && (dat.flags & item_flag9))
+		itemdata const& dat = itemsbuf[NEG_OR_MASK(Xwpn, 0xFFF)];
+		if (dat.type == itype_shield && (dat.flags & item_flag9))
 		{
-			id = NEG_OR_MASK(Xwpn,0xFFF);
+			id = NEG_OR_MASK(Xwpn, 0xFFF);
 		}
 	}
-    if(id < 0 && DrunkcEx2btn())
+	if (id < 0 && getInput(btnEx2, INPUT_DRUNK | INPUT_HERO_ACTION))
 	{
-		itemdata const& dat = itemsbuf[NEG_OR_MASK(Ywpn,0xFFF)];
-		if(dat.family == itype_shield && (dat.flags & item_flag9))
+		itemdata const& dat = itemsbuf[NEG_OR_MASK(Ywpn, 0xFFF)];
+		if (dat.type == itype_shield && (dat.flags & item_flag9))
 		{
-			id = NEG_OR_MASK(Ywpn,0xFFF);
+			id = NEG_OR_MASK(Ywpn, 0xFFF);
 		}
 	}
-	if(id < 0)
+	if (id < 0)
 	{
-		auto shield_id = current_item_id(itype_shield,false,true);
+		auto shield_id = current_item_id(itype_shield, false, true);
 		itemdata const& dat = itemsbuf[shield_id];
-		if(dat.family == itype_shield && (dat.flags & item_flag9))
+		if (dat.type == itype_shield && (dat.flags & item_flag9))
 		{
-			byte intbtn = byte(dat.misc5&0xFF);
-			if(getIntBtnInput(intbtn, false, true, false, false, true))
+			byte intbtn = byte(dat.misc5 & 0xFF);
+			if (getIntBtnInput(intbtn, INPUT_DRUNK | INPUT_PEEK))
 				id = shield_id;
 		}
 	}
@@ -408,6 +417,95 @@ void HeroClass::set_liftflags(int liftid)
 	SETFLAG(liftflags, LIFTFL_DROP_ON_HIT, itm.flags & item_flag5);
 }
 
+int32_t get_grav_boots_id()
+{
+	if (Hero.last_grav_boots_id > -1)
+		return Hero.last_grav_boots_id;;
+	int32_t grav_id;
+	if (Hero.sideview_mode())
+	{
+		if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
+		{
+			if ((grav_id = current_item_id(itype_gravity_down_boots, true)) >= 0)
+				if (checkmagiccost(grav_id) && checkbunny(grav_id))
+					return (Hero.last_grav_boots_id = grav_id);
+		}
+		if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION))
+		{
+			if ((grav_id = current_item_id(itype_gravity_up_boots, true)) >= 0)
+				if (checkmagiccost(grav_id) && checkbunny(grav_id))
+					return (Hero.last_grav_boots_id = grav_id);
+		}
+	}
+	if ((grav_id = current_item_id(itype_gravity_boots, true)) >= 0)
+		if (checkmagiccost(grav_id) && checkbunny(grav_id))
+			if (!(itemsbuf[grav_id].flags & item_flag1) || Hero.sideview_mode()) // sideview-only boots only work in sideview
+				return (Hero.last_grav_boots_id = grav_id);
+	return -1;
+}
+zfix HeroClass::get_gravity(bool skip_custom) const
+{
+	if (custom_gravity && !skip_custom)
+		return custom_gravity;
+	if (last_rocs_id != -1)
+	{
+		itemdata const& itm = itemsbuf[last_rocs_id];
+		if (itm.flags & item_flag2)
+		{
+			if ((!(itm.flags & item_flag3) || fall < 0) &&
+				(!(itm.flags & item_flag4) || fall > 0))
+				return zslongToFix(itm.misc3 * 100);
+		}
+	}
+	int32_t grav_id = get_grav_boots_id();
+	if (grav_id > -1)
+		return zslongToFix(itemsbuf[grav_id].misc1);
+	return sprite::get_gravity(skip_custom);
+}
+zfix HeroClass::get_terminalv(bool skip_custom) const
+{
+	if (custom_terminal_v && !skip_custom)
+		return custom_terminal_v;
+	if (last_rocs_id != -1)
+	{
+		itemdata const& itm = itemsbuf[last_rocs_id];
+		if (itm.flags & item_flag5)
+			return zslongToFix(itm.misc4 * 100);
+	}
+	int32_t grav_id = get_grav_boots_id();
+	if (grav_id >= 0)
+		return zslongToFix(itemsbuf[grav_id].misc2);
+	return sprite::get_terminalv(skip_custom);
+}
+
+void HeroClass::update_current_screen()
+{
+	int cx = x + 8, cy = y + 8;
+	if (replay_version_check(0, 43)) // hero_screen previously used top-left, not center
+	{
+		cx = x;
+		cy = y;
+	}
+	
+	int scr_x = vbound(cx, 0, world_w - 1) / 256;
+	int scr_y = vbound(cy, 0, world_h - 1) / 176;
+	int new_screen = cur_screen + scr_x + scr_y * 16;
+	if (maze_state.active == 1)
+		new_screen = maze_state.scr->screen;
+	if (current_screen != new_screen && scr_x >= 0 && scr_y >= 0 && scr_x < 16 && scr_y < 8 && is_in_current_region(new_screen))
+	{
+		region_scr_dx = scr_x;
+		region_scr_dy = scr_y;
+		current_screen = new_screen;
+		prev_hero_scr = hero_scr;
+		hero_scr = get_scr(current_screen);
+		screen_spawned = current_screen;
+		playLevelMusic();
+	}
+	if (game->get_regionmapping() == REGION_MAPPING_PHYSICAL)
+		mark_visited(new_screen); // Mark each screen the hero steps foot in as visited
+}
+
 void HeroClass::set_respawn_point(bool setwarp)
 {
 	zfix oldx = x, oldy = y;
@@ -442,52 +540,7 @@ void HeroClass::set_respawn_point(bool setwarp)
 			if(sideview_mode() && !on_sideview_solid(x,y,true)) break; //in air sideview
 			if(check_pitslide(true) != -1) break; //On a pit
 			if (ladderx+laddery) break; //on the ladder
-			
-			{ //Check water
-				int32_t water = 0;
-				int32_t types[4] = {0};
-				int32_t x1 = x+4, x2 = x+11,
-					y1 = y+9, y2 = y+15;
-				if (get_qr(qr_SMARTER_WATER))
-				{
-					if (iswaterex_z3(0, -1, x1, y1, true, false) &&
-					iswaterex_z3(0, -1, x1, y2, true, false) &&
-					iswaterex_z3(0, -1, x2, y1, true, false) &&
-					iswaterex_z3(0, -1, x2, y2, true, false)) water = iswaterex_z3(0, -1, (x2+x1)/2,(y2+y1)/2, true, false);
-				}
-				else
-				{
-					types[0] = COMBOTYPE(x1,y1);
-					
-					if(MAPFFCOMBO(x1,y1))
-						types[0] = FFCOMBOTYPE(x1,y1);
-						
-					types[1] = COMBOTYPE(x1,y2);
-					
-					if(MAPFFCOMBO(x1,y2))
-						types[1] = FFCOMBOTYPE(x1,y2);
-						
-					types[2] = COMBOTYPE(x2,y1);
-					
-					if(MAPFFCOMBO(x2,y1))
-						types[2] = FFCOMBOTYPE(x2,y1);
-						
-					types[3] = COMBOTYPE(x2,y2);
-					
-					if(MAPFFCOMBO(x2,y2))
-						types[3] = FFCOMBOTYPE(x2,y2);
-						
-					int32_t typec = COMBOTYPE((x2+x1)/2,(y2+y1)/2);
-					if(MAPFFCOMBO((x2+x1)/2,(y2+y1)/2))
-						typec = FFCOMBOTYPE((x2+x1)/2,(y2+y1)/2);
-						
-					if(combo_class_buf[types[0]].water && combo_class_buf[types[1]].water &&
-							combo_class_buf[types[2]].water && combo_class_buf[types[3]].water && combo_class_buf[typec].water)
-						water = typec;
-				}
-				if(water > 0)
-					break;
-			} //End check water
+			if (onWater(false)) break;
 			
 			rpos_t rposes[] = {
 				COMBOPOS_REGION_B(x,y+(bigHitbox?0:8)),
@@ -526,7 +579,29 @@ void HeroClass::clear_ice()
 	ice_combo = 0;
 	sliding = 0;
 }
-
+void HeroClass::force_ice_velocity(optional<zfix> vx, optional<zfix> vy)
+{
+	auto ic = ice_combo;
+	if(script_ice_combo)
+	{
+		if((unsigned(script_ice_combo) < MAXCOMBOS) && check_icy(combobuf[script_ice_combo], ICY_PLAYER))
+			ic = script_ice_combo;
+		else ic = 0;
+	}
+	if(!ic) return;
+	
+	auto const& icecmb = combobuf[ic];
+	if(script_ice_combo && ic && !sliding)
+	{
+		//Special case to prevent the forced vx/vy from being overwritten
+		sliding = 1;
+		ice_vx = ice_vy = 0;
+		ice_entry_count = ice_entry_mcount = icecmb.attribytes[1];
+	}
+	zfix cap = zslongToFix(zc_max(1,abs(icecmb.attributes[2])));
+	if(vx) ice_vx = vbound(*vx, -cap, cap);
+	if(vy) ice_vy = vbound(*vy, -cap, cap);
+}
 void HeroClass::go_respawn_point()
 {
 	x = respawn_x;
@@ -567,7 +642,7 @@ bool HeroClass::can_pitfall(bool ignore_hover)
 		|| action==rafting
 		|| z>0 || fakez>0 || fall<0 || fakefall<0
 		|| (hoverclk && !ignore_hover)
-		|| inlikelike || inwallm || pull_hero || toogam
+		|| inlikelike || inwallm || pull_hero || walk_through_walls
 		|| (ladderx||laddery) || getOnSideviewLadder()
 		|| drownclk || !(moveflags & move_can_pitfall)
 		|| platform_ffc);
@@ -603,6 +678,7 @@ void HeroClass::setBunnyClock(int32_t v)
 HeroClass::HeroClass() : sprite()
 {
 	lift_wpn = nullptr;
+	uid = 1; // hardcoded hero uid
     init();
 }
 
@@ -735,7 +811,7 @@ void HeroClass::herostep()
 
 bool is_moving()
 {
-    return DrunkUp()||DrunkDown()||DrunkLeft()||DrunkRight();
+	return getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION);
 }
 
 // called by ALLOFF()
@@ -745,6 +821,7 @@ void HeroClass::resetflags(bool all)
     inwallm=false;
     inlikelike=blowcnt=whirlwind=specialcave=hclk=fairyclk=refill_why=didstuff=0;
 	usecounts.clear();
+	item_cooldown.fill(0);
     
 	if(swordclk>0 || all)
 	{
@@ -780,7 +857,8 @@ void HeroClass::resetflags(bool all)
     attackclk=0;
     stomping=false;
     reset_swordcharge();
-    diveclk=drownclk=drownCombo=0;
+    drownclk=drownCombo=0;
+	set_dive(0);
     action=none; FFCore.setHeroAction(none);
     conveyor_flags=0;
     magiccastclk=0;
@@ -845,8 +923,8 @@ void HeroClass::finishedmsg()
     //these are to cancel out any keys that Hero may
     //be pressing so he doesn't attack at the end of
     //a message if he was scrolling through it quickly.
-    rAbtn();
-    rBbtn();
+    getInput(btnA, INPUT_PRESS | INPUT_HERO_ACTION);
+    getInput(btnB, INPUT_PRESS | INPUT_HERO_ACTION);
     unfreeze();
     
     if(action == landhold1 ||
@@ -1019,7 +1097,7 @@ void HeroClass::setZ(int32_t new_z)
         {
         case swimming:
 	{
-            diveclk=0;
+            set_dive(0);
             action=walking; FFCore.setHeroAction(walking);
             break;
 	}
@@ -1061,7 +1139,7 @@ void HeroClass::setFakeZ(int32_t new_z)
         {
         case swimming:
 	{
-            diveclk=0;
+            set_dive(0);
             action=walking; FFCore.setHeroAction(walking);
             break;
 	}
@@ -1164,7 +1242,7 @@ void HeroClass::setZfix(zfix new_z)
         {
         case swimming:
 	{
-            diveclk=0;
+            set_dive(0);
             action=walking; FFCore.setHeroAction(walking);
             break;
 	}
@@ -1206,7 +1284,7 @@ void HeroClass::setFakeZfix(zfix new_z)
         {
         case swimming:
 	{
-            diveclk=0;
+            set_dive(0);
             action=walking; FFCore.setHeroAction(walking);
             break;
 	}
@@ -1239,14 +1317,16 @@ void HeroClass::setFakeZfix(zfix new_z)
 
 void HeroClass::setFall(zfix new_fall)
 {
-    fall=new_fall;
-    justmoved = 2;
-    jumping=-1;
+	fall = new_fall;
+	justmoved = 2;
+	if (!jumping && fall || !get_qr(qr_BETTER_PLAYER_JUMP_ANIM))
+		jumping = -1;
 }
 void HeroClass::setFakeFall(zfix new_fall)
 {
-    fakefall=new_fall;
-    jumping=-1;
+	fakefall = new_fall;
+	if (!jumping && fakefall || !get_qr(qr_BETTER_PLAYER_JUMP_ANIM))
+		jumping = -1;
 }
 void HeroClass::setJump(zfix new_jump)
 {
@@ -1402,7 +1482,7 @@ int32_t  HeroClass::getAction() // Used by ZScript
         return isspinning;
     else if(charging > 0)
         return ischarging;
-    else if(diveclk > 0)
+    else if(diveclk)
         return isdiving;
     //else if (pushing > 0) return ispushing; //Needs a QR? -Z or make it an instruction as Hero->Pushing? Probably better, as that has a clk?? 
         
@@ -1415,7 +1495,7 @@ int32_t  HeroClass::getAction2() // Used by ZScript new FFCore.actions
         return isspinning;
     else if(charging > 0)
         return ischarging;
-    else if(diveclk > 0)
+    else if(diveclk)
         return isdiving;
     //else if (pushing > 0) return ispushing; //Needs a QR? -Z or make it an instruction as Hero->Pushing? Probably better, as that has a clk?? 
         
@@ -1440,7 +1520,7 @@ void HeroClass::setAction(actiontype new_action) // Used by ZScript
 	}
 	
 	
-	if(magicitem>-1 && itemsbuf[magicitem].family==itype_divineescape)
+	if(magicitem>-1 && itemsbuf[magicitem].type==itype_divineescape)
 	{
 		// Using Divine Escape
 		if(magiccastclk<96)
@@ -1531,10 +1611,10 @@ void HeroClass::setAction(actiontype new_action) // Used by ZScript
 		return;
 		
 	case isdiving:
-		if(action==swimming && diveclk==0)
+		if(action==swimming && !diveclk)
 		{
 			int32_t flippers_id = current_item_id(itype_flippers);
-			diveclk = (flippers_id < 0 ? 80 : (itemsbuf[flippers_id].misc1 + itemsbuf[flippers_id].misc2)); // Who cares about qr_NODIVING? It's the questmaker's business.
+			set_dive(flippers_id < 0 ? 50 : itemsbuf[flippers_id].misc1);
 		}
 		return;
 		
@@ -1612,8 +1692,7 @@ int32_t HeroClass::getHeldItem()
 }
 bool HeroClass::isDiving()
 {
-	int32_t flippers_id = current_item_id(itype_flippers);
-    return (diveclk > (flippers_id < 0 ? 30 : itemsbuf[flippers_id].misc2));
+    return diveclk > 0;
 }
 bool HeroClass::isSwimming()
 {
@@ -1665,6 +1744,7 @@ void HeroClass::init()
 {
 	cache_tile_mod_clear();
 	usecounts.clear();
+	item_cooldown.fill(0);
 	scale = 0;
 	rotation = 0;
 	do_animation = true;
@@ -1761,7 +1841,8 @@ void HeroClass::init()
     superman=inwallm=false;
     scriptcoldet=true;
     blowcnt=whirlwind=specialcave=0;
-    hopclk=diveclk=fallclk=0;
+    hopclk=fallclk=0;
+	set_dive(0);
 	fallCombo = 0;
 	pit_pulldir = -1;
     hopdir=-1;
@@ -1783,17 +1864,21 @@ void HeroClass::init()
     magiccastclk=0;
     magicitem = div_prot_item = -1;
 	last_lens_id = 0; //Should be -1 (-Z)
+	last_grav_boots_id = last_rocs_id = current_rocs_jump_id = -1;
+	released_jump_button = false;
 	last_lift_id.reset();
 	last_savepoint_id = 0;
 	misc_internal_hero_flags = 0;
 	last_cane_of_byrna_item_id = -1;
 	on_sideview_ladder = false;
-	switchblock_z = 0;
-	switchblock_offset = false;
+	standing_on_z = 0;
+	standing_z_offset = false;
 	extra_jump_count = 0;
 	hoverflags = 0;
     lbunnyclock = 0;
 	lamp_paid = false;
+	autowalk_combo_id = -1;
+	autowalk_handle = {};
     
     for(int32_t i=0; i<32; i++) miscellaneous[i] = 0;
     
@@ -2420,7 +2505,7 @@ void HeroClass::draw(BITMAP* dest)
 			* - which is used to acquire a wpn ID! Aack!
 			*/
 			int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : attack==wBugNet ? itype_bugnet : itype_sword);
-			int32_t itemid = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+			int32_t itemid = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 			itemid=vbound(itemid, 0, MAXITEMS-1);
 			// if ( itemsbuf[itemid].ScriptGenerated ) return; //t/b/a for script-generated swords.
 			if(attackclk>4||attack==wBugNet||(attack==wSword&&game->get_canslash()))
@@ -2712,7 +2797,7 @@ void HeroClass::draw(BITMAP* dest)
 				
 				if(attackclk==15 && z==0 && fakez==0 && (sideviewhammerpound() || !isSideViewHero()))
 				{
-					sfx(((iswaterex_z3(MAPCOMBO(x+wx+8,y+wy), -1, x+wx+8, y+wy, true) || COMBOTYPE(x+wx+8,y+wy)==cSHALLOWWATER) && get_qr(qr_MORESOUNDS)) ? WAV_ZN1SPLASH : itemsbuf[itemid].usesound,pan(x.getInt()));
+					sfx(((iswaterex_z3(MAPCOMBO(x+wx+8,y+wy), -1, x+wx+8, y+wy, true) || COMBOTYPE(x+wx+8,y+wy)==cSHALLOWWATER) && get_qr(qr_MORESOUNDS)) ? WAV_ZN1SPLASH : itemsbuf[itemid].usesound,pan(x));
 				}
 				
 				goto herodraw_end;
@@ -2738,8 +2823,21 @@ void HeroClass::draw(BITMAP* dest)
 		{
 			// Keep this consistent with checkspecial2, line 7800-ish...
 			bool inwater = iswaterex_z3(MAPCOMBO(x+4,y+9), -1, x+4, y+9, true, false)  && iswaterex_z3(MAPCOMBO(x+4,y+15), -1, x+4, y+15, true, false) && iswaterex_z3(MAPCOMBO(x+11,y+9), -1, x+11, y+9, true, false) && iswaterex_z3(MAPCOMBO(x+11,y+15), -1, x+11, y+15, true, false);
+
+			optional<uint32_t> jumping_frame;
+
+			if (get_qr(qr_BETTER_PLAYER_JUMP_ANIM))
+			{
+				if (jumping && fall)
+					jumping_frame = (jumping / 6) % 3;
+			}
+			else
+			{
+				auto val = int32_t(jumping * (get_grav_fall() / 16.0));
+				if (val > 0 && val < 24)
+					jumping_frame = val / 8;
+			}
 			
-			int32_t jumping2 = int32_t(jumping*((zinit.gravity / 100)/16.0));
 			bool noliftspr = get_qr(qr_NO_LIFT_SPRITE);
 			bool advancetile = script_hero_sprite <= 0;
 			switch(zinit.heroAnimationStyle)
@@ -2821,10 +2919,10 @@ void HeroClass::draw(BITMAP* dest)
 						}
 					}
 				}
-				else if((z>0 || fakez>0 || isSideViewHero()) && jumping2>0 && jumping2<24 && game->get_life()>0 && action!=rafting)
+				else if ((z > 0 || fakez > 0 || isSideViewHero()) && jumping_frame && game->get_life() > 0 && action != rafting)
 				{
 					herotile(&tile, &flip, &extend, ls_jump, dir, zinit.heroAnimationStyle);
-					if(advancetile) tile+=((int32_t)jumping2/8)*(extend==2?2:1);
+					if (advancetile) tile += (*jumping_frame) * (extend == 2 ? 2 : 1);
 				}
 				else if(fallclk>0)
 				{
@@ -2935,10 +3033,10 @@ void HeroClass::draw(BITMAP* dest)
 					herotile(&tile, &flip, &extend, (IsSideSwim())?ls_sideswimcharge:ls_charge, dir, zinit.heroAnimationStyle);
 					if(advancetile) tile += anim_3_4(lstep,7)*(extend==2?2:1);
 				}
-				else if((z>0 || fakez>0 || isSideViewHero()) && jumping2>0 && jumping2<24 && game->get_life()>0)
+				else if ((z > 0 || fakez > 0 || isSideViewHero()) && jumping_frame && game->get_life() > 0)
 				{
 					herotile(&tile, &flip, &extend, ls_jump, dir, zinit.heroAnimationStyle);
-					if(advancetile) tile+=((int32_t)jumping2/8)*(extend==2?2:1);
+					if (advancetile) tile += (*jumping_frame) * (extend == 2 ? 2 : 1);
 				}
 				else if(fallclk>0)
 				{
@@ -3031,10 +3129,10 @@ void HeroClass::draw(BITMAP* dest)
 					l-=((l>3)?1:0)+((l>12)?1:0);
 					if (script_hero_sprite <= 0 ) tile+=(l/2)*(extend==2?2:1);
 				}
-				else if((z>0 || fakez>0 || isSideViewHero()) && jumping2>0 && jumping2<24 && game->get_life()>0)
+				else if ((z > 0 || fakez > 0 || isSideViewHero()) && jumping_frame && game->get_life() > 0)
 				{
 					herotile(&tile, &flip, &extend, ls_jump, dir, zinit.heroAnimationStyle);
-					if (script_hero_sprite <= 0 ) tile+=((int32_t)jumping2/8)*(extend==2?2:1);
+					if (script_hero_sprite <= 0) tile += (*jumping_frame) * (extend == 2 ? 2 : 1);
 				}
 				else if(fallclk>0)
 				{
@@ -3335,7 +3433,7 @@ void passiveitem_script(int32_t id, bool doRun = false)
 		FFCore.reset_script_engine_data(ScriptType::Item, id);
 		
 		if(get_qr(qr_PASSIVE_ITEM_SCRIPT_ONLY_HIGHEST)
-			&& current_item(itemsbuf[id].family) > itemsbuf[id].fam_type)
+			&& current_item(itemsbuf[id].type) > itemsbuf[id].level)
 		{
 			FFCore.doscript(ScriptType::Item, id) = false;
 			return;
@@ -3458,7 +3556,7 @@ bool HeroClass::checkstab()
 	
 	// The return of Spaghetti Code Constants!
 	int32_t itype = (attack==wWand ? itype_wand : attack==wSword ? itype_sword : attack==wCByrna ? itype_cbyrna : attack==wBugNet ? itype_bugnet : itype_hammer);
-	int32_t itemid = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+	int32_t itemid = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 	itemid = vbound(itemid, 0, MAXITEMS-1);
 	
 	// The sword offsets aren't based on anything other than what felt about right
@@ -3565,7 +3663,7 @@ bool HeroClass::checkstab()
 				e->hitby[HIT_BY_LWEAPON] = melee_weapon_index; 
 				e->hitby[HIT_BY_LWEAPON_UID] = w->getUID();
 				e->hitby[HIT_BY_LWEAPON_TYPE] = w->id;
-				if (w->parentitem > -1) e->hitby[HIT_BY_LWEAPON_PARENT_FAMILY] = itemsbuf[w->parentitem].family; 
+				if (w->parentitem > -1) e->hitby[HIT_BY_LWEAPON_PARENT_FAMILY] = itemsbuf[w->parentitem].type; 
 				else e->hitby[HIT_BY_LWEAPON_PARENT_FAMILY] = -1;
 				e->hitby[HIT_BY_LWEAPON_PARENT_ID] = w->parentitem;
 				e->hitby[HIT_BY_LWEAPON_ENGINE_UID] = w->getUID();
@@ -3604,14 +3702,14 @@ bool HeroClass::checkstab()
 		for(int32_t j=0; j<items.Count(); j++)
 		{
 			item* ptr = (item*)items.spr(j);
-			bool dofairy = (attack==wBugNet && itemsbuf[ptr->id].family == itype_fairy)
+			bool dofairy = (attack==wBugNet && itemsbuf[ptr->id].type == itype_fairy)
 				&& (bugnetid > -1 && !(itemsbuf[bugnetid].flags & item_flag1));
 			
-			if((itemsbuf[ptr->id].family == itype_bottlefill || dofairy) && !game->canFillBottle())
+			if((itemsbuf[ptr->id].type == itype_bottlefill || dofairy) && !game->canFillBottle())
 				continue; //No picking these up unless you have a bottle to fill!
 			if((ptr->pickup & ipCANGRAB) || (ptr->pickup & ipTIMER) || dofairy)
 			{
-				if(((ptr->pickup & ipCANGRAB) || ptr->clk2 >= 32 || dofairy) && !ptr->fallclk && !ptr->drownclk)
+				if(((ptr->pickup & ipCANGRAB) || ptr->clk2 >= game->get_item_spawn_flicker() || dofairy) && !ptr->fallclk && !ptr->drownclk)
 				{
 					if(ptr->hit(wx,wy,z,wxsz,wysz,1) || (attack==wWand && ptr->hit(x,y-8-fakez,z,wxsz,wysz,1))
 							|| (attack==wHammer && ptr->hit(x,y-8-fakez,z,wxsz,wysz,1)))
@@ -3964,7 +4062,7 @@ void HeroClass::check_slash_block_layer(int32_t bx, int32_t by, int32_t layer)
     if((get_bit(screengrid_layer[layer-1], i) != 0) || (!isCuttableType(type)))
 		return;
 
-    int32_t sworditem = (directWpn>-1 && itemsbuf[directWpn].family==itype_sword) ? itemsbuf[directWpn].fam_type : current_item(itype_sword);
+    int32_t sworditem = (directWpn>-1 && itemsbuf[directWpn].type==itype_sword) ? itemsbuf[directWpn].level : current_item(itype_sword);
 	
 	if(!isTouchyType(type) && !get_qr(qr_CONT_SWORD_TRIGGERS)) set_bit(screengrid_layer[layer-1],i,1);
 	if(isCuttableNextType(type))
@@ -4019,16 +4117,16 @@ void HeroClass::check_slash_block_layer(int32_t bx, int32_t by, int32_t layer)
 		{
 			if (combobuf[cid].usrflags&cflag3)
 			{
-				sfx(combobuf[cid].attribytes[2],int32_t(bx));
+				sfx(combobuf[cid].attribytes[2],pan(bx));
 			}
 		}
 		else
 		{
 			if (combobuf[cid].usrflags&cflag3)
 			{
-				sfx(combobuf[cid].attribytes[2],int32_t(bx));
+				sfx(combobuf[cid].attribytes[2],pan(bx));
 			}
-			else sfx(QMisc.miscsfx[sfxBUSHGRASS],int32_t(bx));
+			else sfx(QMisc.miscsfx[sfxBUSHGRASS],pan(bx));
 		}
 	}
 	
@@ -4101,7 +4199,7 @@ void HeroClass::check_slash_block(int32_t bx, int32_t by)
 	
 	mapscr *s = cur_screen >= 128 ? special_warp_return_scr : rpos_handle.scr;
 	
-	int32_t sworditem = (directWpn>-1 && itemsbuf[directWpn].family==itype_sword) ? itemsbuf[directWpn].fam_type : current_item(itype_sword);
+	int32_t sworditem = (directWpn>-1 && itemsbuf[directWpn].type==itype_sword) ? itemsbuf[directWpn].level : current_item(itype_sword);
 	byte skipsecrets = 0;
 	
 	if ( isNextType(type) ) //->Next combos should not trigger secrets. Their child combo, may want to do that! -Z 17th December, 2019
@@ -4171,8 +4269,6 @@ void HeroClass::check_slash_block(int32_t bx, int32_t by)
 				s->cset[i] = s->undercset;
 				s->sflag[i] = 0;
 			}
-			
-			//pausenow=true;
 		}
 	}
 	else if(!ignorescreen && skipsecrets)
@@ -4258,16 +4354,16 @@ void HeroClass::check_slash_block(int32_t bx, int32_t by)
 			{
 				if (cmb.usrflags&cflag3)
 				{
-					sfx(cmb.attribytes[2],int32_t(bx));
+					sfx(cmb.attribytes[2],pan(bx));
 				}
 			}
 			else
 			{
 				if (cmb.usrflags&cflag3)
 				{
-					sfx(cmb.attribytes[2],int32_t(bx));
+					sfx(cmb.attribytes[2],pan(bx));
 				}
-				else sfx(QMisc.miscsfx[sfxBUSHGRASS],int32_t(bx));
+				else sfx(QMisc.miscsfx[sfxBUSHGRASS],pan(bx));
 			}
 		}
 		
@@ -4313,7 +4409,7 @@ void HeroClass::check_slash_block(int32_t bx, int32_t by)
 				}
 			}
 			
-			if(it!=-1 && itemsbuf[it].family != itype_misc) // Don't drop non-gameplay items
+			if(it!=-1 && itemsbuf[it].type != itype_misc) // Don't drop non-gameplay items
 			{
 				item* itm = (new item((zfix)fx, (zfix)fy,(zfix)0, it, ipBIGRANGE + ipTIMER, 0));
 				itm->from_dropset = thedropset;
@@ -4327,16 +4423,16 @@ void HeroClass::check_slash_block(int32_t bx, int32_t by)
 			{
 				if (cmb_ff.usrflags&cflag3)
 				{
-					sfx(cmb_ff.attribytes[2],int32_t(bx));
+					sfx(cmb_ff.attribytes[2],pan(bx));
 				}
 			}
 			else
 			{
 				if (cmb_ff.usrflags&cflag3)
 				{
-					sfx(cmb_ff.attribytes[2],int32_t(bx));
+					sfx(cmb_ff.attribytes[2],pan(bx));
 				}
-				else sfx(QMisc.miscsfx[sfxBUSHGRASS],int32_t(bx));
+				else sfx(QMisc.miscsfx[sfxBUSHGRASS],pan(bx));
 			}
 		}
 
@@ -4486,7 +4582,7 @@ void HeroClass::check_slash_block_layer2(int32_t bx, int32_t by, weapon *w, int3
 
 	mapscr* s = rpos_handle.scr;
     
-    int32_t sworditem = (directWpn>-1 && itemsbuf[directWpn].family==itype_sword) ? itemsbuf[directWpn].fam_type : current_item(itype_sword);
+    int32_t sworditem = (directWpn>-1 && itemsbuf[directWpn].type==itype_sword) ? itemsbuf[directWpn].level : current_item(itype_sword);
     
     {
 	    if(!isTouchyType(type) && !get_qr(qr_CONT_SWORD_TRIGGERS)) set_bit(w->wscreengrid_layer[layer-1],i,1);
@@ -4542,16 +4638,16 @@ void HeroClass::check_slash_block_layer2(int32_t bx, int32_t by, weapon *w, int3
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
 			}
 			else
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
-				else sfx(QMisc.miscsfx[sfxBUSHGRASS],int32_t(bx));
+				else sfx(QMisc.miscsfx[sfxBUSHGRASS],pan(bx));
 			}
 		}
 		
@@ -4637,7 +4733,7 @@ void HeroClass::check_slash_block2(int32_t bx, int32_t by, weapon *w)
     
     mapscr *s = cur_screen >= 128 ? special_warp_return_scr : rpos_handle.scr;
     
-    int32_t sworditem = (directWpn>-1 && itemsbuf[directWpn].family==itype_sword) ? itemsbuf[directWpn].fam_type : current_item(itype_sword);
+    int32_t sworditem = (directWpn>-1 && itemsbuf[directWpn].type==itype_sword) ? itemsbuf[directWpn].level : current_item(itype_sword);
     byte skipsecrets = 0;
     if ( isNextType(type) ) //->Next combos should not trigger secrets. Their child combo, may want to do that! -Z 17th December, 2019
     {
@@ -4705,8 +4801,6 @@ void HeroClass::check_slash_block2(int32_t bx, int32_t by, weapon *w)
                 s->cset[i] = s->undercset;
                 s->sflag[i] = 0;
             }
-            
-            //pausenow=true;
         }
     }
     else if(skipsecrets && (!ignorescreen || dontignore))
@@ -4793,16 +4887,16 @@ void HeroClass::check_slash_block2(int32_t bx, int32_t by, weapon *w)
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
 			}
 			else
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
-				else sfx(QMisc.miscsfx[sfxBUSHGRASS],int32_t(bx));
+				else sfx(QMisc.miscsfx[sfxBUSHGRASS],pan(bx));
 			}
 		}
 		
@@ -4856,7 +4950,7 @@ void HeroClass::check_slash_block2(int32_t bx, int32_t by, weapon *w)
 				}
 			}
             
-            if(it!=-1 && itemsbuf[it].family != itype_misc) // Don't drop non-gameplay items
+            if(it!=-1 && itemsbuf[it].type != itype_misc) // Don't drop non-gameplay items
             {
                 item* itm = (new item((zfix)fx, (zfix)fy,(zfix)0, it, ipBIGRANGE + ipTIMER, 0));
 				itm->from_dropset = thedropset;
@@ -4870,16 +4964,16 @@ void HeroClass::check_slash_block2(int32_t bx, int32_t by, weapon *w)
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
 			}
 			else
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
-				else sfx(QMisc.miscsfx[sfxBUSHGRASS],int32_t(bx));
+				else sfx(QMisc.miscsfx[sfxBUSHGRASS],pan(bx));
 			}
 		}
 		
@@ -5024,7 +5118,7 @@ void HeroClass::check_slash_block(weapon *w)
     
     mapscr *s = cur_screen >= 128 ? special_warp_return_scr : rpos_handle.scr;
     
-    int32_t sworditem = (par_item >-1 ? itemsbuf[par_item].fam_type : current_item(itype_sword)); //Get the level of the item, else the highest sword level in inventory.
+    int32_t sworditem = (par_item >-1 ? itemsbuf[par_item].level : current_item(itype_sword)); //Get the level of the item, else the highest sword level in inventory.
     
     if(!ignorescreen)
     {
@@ -5084,8 +5178,6 @@ void HeroClass::check_slash_block(weapon *w)
                 s->cset[i] = s->undercset;
                 s->sflag[i] = 0;
             }
-            
-            //pausenow=true;
         }
     }
     
@@ -5158,16 +5250,16 @@ void HeroClass::check_slash_block(weapon *w)
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
 			}
 			else
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
-				else sfx(QMisc.miscsfx[sfxBUSHGRASS],int32_t(bx));
+				else sfx(QMisc.miscsfx[sfxBUSHGRASS],pan(bx));
 			}
 		}
 		
@@ -5213,7 +5305,7 @@ void HeroClass::check_slash_block(weapon *w)
 				thedropset = 12;
 			}
 			
-            if(it!=-1 && itemsbuf[it].family != itype_misc) // Don't drop non-gameplay items
+            if(it!=-1 && itemsbuf[it].type != itype_misc) // Don't drop non-gameplay items
             {
 				item* itm = (new item((zfix)fx, (zfix)fy,(zfix)0, it, ipBIGRANGE + ipTIMER, 0));
                 itm->from_dropset = thedropset;
@@ -5227,16 +5319,16 @@ void HeroClass::check_slash_block(weapon *w)
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
 			}
 			else
 			{
 				if (combobuf[cid].usrflags&cflag3)
 				{
-					sfx(combobuf[cid].attribytes[2],int32_t(bx));
+					sfx(combobuf[cid].attribytes[2],pan(bx));
 				}
-				else sfx(QMisc.miscsfx[sfxBUSHGRASS],int32_t(bx));
+				else sfx(QMisc.miscsfx[sfxBUSHGRASS],pan(bx));
 			}
 		}
 		
@@ -5426,7 +5518,7 @@ void HeroClass::check_pound_block(int bx, int by, weapon* w)
         }
         
         if(type==cPOUND && get_qr(qr_MORESOUNDS))
-            sfx(QMisc.miscsfx[sfxHAMMERPOUND],int32_t(bx));
+            sfx(QMisc.miscsfx[sfxHAMMERPOUND],pan(bx));
         
         putcombo(scrollbuf, bx - viewport.x, by - viewport.y, s->data[pos], s->cset[pos]);
     }
@@ -5436,7 +5528,7 @@ void HeroClass::check_pound_block(int bx, int by, weapon* w)
 		current_ffc_handle->ffc->recently_hit = true;
 
         if(type2==cPOUND && get_qr(qr_MORESOUNDS))
-            sfx(QMisc.miscsfx[sfxHAMMERPOUND],int32_t(bx));
+            sfx(QMisc.miscsfx[sfxHAMMERPOUND],pan(bx));
     }
     
     return;
@@ -5525,7 +5617,7 @@ void HeroClass::check_pound_block_layer(int bx, int by, int lyr, weapon* w)
 	}
 	
 	if(type==cPOUND && get_qr(qr_MORESOUNDS))
-		sfx(QMisc.miscsfx[sfxHAMMERPOUND],int32_t(bx));
+		sfx(QMisc.miscsfx[sfxHAMMERPOUND],pan(bx));
 	
 
 	putcombo(scrollbuf,bx-viewport.x,by-viewport.y,s->data[i],s->cset[i]);
@@ -5626,7 +5718,7 @@ int32_t HeroClass::defend(weapon *w)
 			}
 			else 
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
+				sfx(WAV_CHINK,pan(x));
 				w->dead = 0;
 				return -1;
 			}
@@ -5647,7 +5739,7 @@ int32_t HeroClass::defend(weapon *w)
 		{
 			if (w->power < 1) 
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
+				sfx(WAV_CHINK,pan(x));
 				w->dead = 0;
 				return -1;
 			}
@@ -5660,7 +5752,7 @@ int32_t HeroClass::defend(weapon *w)
 		{
 			if (w->power < 2) 
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
+				sfx(WAV_CHINK,pan(x));
 				w->dead = 0;
 				return -1;
 			}
@@ -5673,7 +5765,7 @@ int32_t HeroClass::defend(weapon *w)
 		{
 			if (w->power < 4) 
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
+				sfx(WAV_CHINK,pan(x));
 				w->dead = 0;
 				return -1;
 			}
@@ -5686,7 +5778,7 @@ int32_t HeroClass::defend(weapon *w)
 		{
 			if (w->power < 6) 
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
+				sfx(WAV_CHINK,pan(x));
 				w->dead = 0;
 				return -1;
 			}
@@ -5699,7 +5791,7 @@ int32_t HeroClass::defend(weapon *w)
 		{
 			if (w->power < 8) 
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
+				sfx(WAV_CHINK,pan(x));
 				w->dead = 0;
 				return -1;
 			}
@@ -5710,7 +5802,7 @@ int32_t HeroClass::defend(weapon *w)
 		}
 		case edCHINK: // : IMPLEMENTED : Bounces off, plays SFX_CHINK
 		{
-			sfx(WAV_CHINK,pan(int32_t(x)));
+			sfx(WAV_CHINK,pan(x));
 			w->dead = 0;
 			return -1;
 		}
@@ -5735,7 +5827,7 @@ int32_t HeroClass::defend(weapon *w)
 		{
 			if (w->power < 10) 
 			{
-				sfx(WAV_CHINK,pan(int32_t(x)));
+				sfx(WAV_CHINK,pan(x));
 				w->dead = 0;
 				return -1;
 			}
@@ -5761,7 +5853,7 @@ int32_t HeroClass::defend(weapon *w)
 		}
 		case edHEAL: // : IMPLEMENTED : Gain the weapon damage in HP.
 		{
-			//sfx(WAV_HEAL,pan(int32_t(x)));
+			//sfx(WAV_HEAL,pan(x));
 			game->set_life(zc_min(game->get_life()+w->power, game->get_maxlife()));
 			w->dead = 0;
 			return -1;
@@ -5797,7 +5889,7 @@ int32_t HeroClass::defend(weapon *w)
 			w->power = 0;
 			w->dead = 0;
 			int32_t itemid = getCurrentShield();
-			//sfx(WAV_BREAKSHIELD,pan(int32_t(x)));
+			//sfx(WAV_BREAKSHIELD,pan(x));
 			if(itemsbuf[itemid].flags&item_edible)
 				game->set_item(itemid, false);
 			//Remove Hero's shield
@@ -6020,7 +6112,18 @@ static bool sh_check(uint fl_block, uint fl_ref, int wty, bool& reflect, bool bo
 		case wScript9: SCRIPT_SHBLOCK(sh_script9);
 		case wScript10: SCRIPT_SHBLOCK(sh_script10);
 		#undef SCRIPT_SHBLOCK
+		
+		case wWind:
+			if(!(fl_block & sh_lw_wind)) break;
 			
+			reflect = ((fl_ref & sh_lw_wind) != 0);
+			return true;
+		case ewWind:
+			if(!(fl_block & sh_ew_wind)) break;
+			
+			reflect = ((fl_ref & sh_ew_wind) != 0);
+			return true;
+		
 		case ewLitBomb:
 		case ewLitSBomb:
 			return true;
@@ -6046,10 +6149,10 @@ bool HeroClass::check_ewpn_collide(weapon* w)
 	{
 		itemdata const& stomp = itemsbuf[stompid];
 		bool reflect = false; //unused, always false
-		if(!sh_check(stomp.misc2, 0, w->id, reflect, w->type&1, true))
+		if(!sh_check(stomp.misc2, 0, w->id, reflect, w->level&1, true))
 		{
 			w->onhit(false);
-			sfx(WAV_CHINK,pan(x.getInt()));
+			sfx(WAV_CHINK,pan(x));
 			return false;
 		}
 	}
@@ -6093,7 +6196,7 @@ bool HeroClass::check_ewpn_collide(weapon* w)
 	
 	bool reflect = false;
 	
-	if(!sh_check(shield.misc1, shield.misc2, w->id, reflect, w->type&1, true))
+	if(!sh_check(shield.misc1, shield.misc2, w->id, reflect, w->level&1, true))
 		return true;
 	
 	if(reflect && (w->unblockable&WPNUNB_REFL))
@@ -6104,7 +6207,7 @@ bool HeroClass::check_ewpn_collide(weapon* w)
 	int32_t oldid = w->id;
 	w->onhit(false, reflect ? 2 : 1, dir);
 	
-	sfx(shield.usesound,pan(x.getInt()));
+	sfx(shield.usesound,pan(x));
 	return true;
 }
 
@@ -6127,10 +6230,10 @@ int32_t HeroClass::EwpnHit()
 			{
 				itemdata const& stomp = itemsbuf[stompid];
 				bool reflect = false; //unused, always false
-				if(!sh_check(stomp.misc2, 0, ew->id, reflect, ew->type&1, true))
+				if(!sh_check(stomp.misc2, 0, ew->id, reflect, ew->level&1, true))
 				{
 					ew->onhit(false);
-					sfx(WAV_CHINK,pan(x.getInt()));
+					sfx(WAV_CHINK,pan(x));
 					continue;
 				}
 			}
@@ -6174,7 +6277,7 @@ int32_t HeroClass::EwpnHit()
 			
 			bool reflect = false;
 			
-			if(!sh_check(shield.misc1, shield.misc2, ew->id, reflect, ew->type&1, true))
+			if(!sh_check(shield.misc1, shield.misc2, ew->id, reflect, ew->level&1, true))
 				return i;
 			
 			if(reflect && (ew->unblockable&WPNUNB_REFL))
@@ -6185,7 +6288,7 @@ int32_t HeroClass::EwpnHit()
 			int32_t oldid = ew->id;
 			ew->onhit(false, reflect ? 2 : 1, dir);
 			
-			sfx(shield.usesound,pan(x.getInt()));
+			sfx(shield.usesound,pan(x));
 		}
 	}
 	
@@ -6204,13 +6307,11 @@ int32_t HeroClass::LwpnHit()                                    //only here to c
 			
 			switch(lw->id)
 			{
-				case wRefFireball:
-				case wRefMagic:
-				case wRefBeam:
-				case wRefRock:
-				case wRefArrow:
-				case wRefFire:
+				case wRefFireball: case wRefMagic: case wRefBeam:
+				case wRefRock: case wRefArrow: case wRefFire:
 				case wRefFire2:
+				case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+				case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
 					break;
 				default:
 					return -1;
@@ -6230,13 +6331,13 @@ int32_t HeroClass::LwpnHit()                                    //only here to c
 			if(!allow_inactive && ((lift_wpn && (liftflags & LIFTFL_DIS_SHIELD)) || (action==attacking||action==sideswimattacking) || action==swimming || action == sideswimming || action == sideswimattacking || charging > 0 || spins > 0 || hopclk==0xFF))
 				return i;
 			
-			if(!sh_check(shield.misc1, shield.misc2, lw->id, reflect, lw->type&1, true))
+			if(!sh_check(shield.misc1, shield.misc2, lw->id, reflect, lw->level&1, true))
 				return i;
 			
 			paymagiccost(itemid);
 			
 			lw->onhit(false, reflect ? 2 : 1, dir);
-			sfx(shield.usesound,pan(x.getInt()));
+			sfx(shield.usesound,pan(x));
 		}
 		
 	return -1;
@@ -6248,10 +6349,10 @@ bool HeroClass::try_lwpn_hit(weapon* w)
 	int indx = Lwpns.find(w);
 	//if ( itemdbuf[parentitem].flags&item_flags3 ) //can damage Hero
 	//if ( itemsbuf[parentitem].misc1 > 0 ) //damages Hero by this amount. 
-	if((!(itemid==-1&&get_qr(qr_FIREPROOFHERO)||((itemid>-1&&itemsbuf[itemid].family==itype_candle||itemsbuf[itemid].family==itype_book)&&(itemsbuf[itemid].flags & item_flag3)))) && scriptcoldet && !fallclk && (!superman || !get_qr(qr_FIREPROOFHERO2)))
+	if((!(itemid==-1&&get_qr(qr_FIREPROOFHERO)||((itemid>-1&&itemsbuf[itemid].type==itype_candle||itemsbuf[itemid].type==itype_book)&&(itemsbuf[itemid].flags & item_flag3)))) && scriptcoldet && !fallclk && (!superman || !get_qr(qr_FIREPROOFHERO2)))
 	{
 		if(w->id==wFire && (superman ? ((diagonalMovement||NO_GRIDLOCK)?w->hit(x+4,y+4-fakez,z,7,7,1):w->hit(x+7,y+7-fakez,z,2,2,1)) : w->hit(this))&&
-					(itemid < 0 || itemsbuf[itemid].family!=itype_divinefire))
+					(itemid < 0 || itemsbuf[itemid].type!=itype_divinefire))
 		{
 			std::vector<int32_t> &ev = FFCore.eventData;
 			ev.clear();
@@ -6304,7 +6405,7 @@ bool HeroClass::try_lwpn_hit(weapon* w)
 					sethitHeroUID(HIT_BY_LWEAPON_TYPE, w->id);
 					if (w->parentitem > -1) sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, w->parentitem);
 					else sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, -1);
-					sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[w->parentitem].family);
+					sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[w->parentitem].type);
 				}
 			}
 			
@@ -6331,7 +6432,7 @@ bool HeroClass::try_lwpn_hit(weapon* w)
 				{
 					bool reflect = false;
 					// sethitHeroUID(HIT_BY_EWEAPON,j); //set that Hero was hit by a specific eweapon index. 
-					if(sh_check(itemsbuf[itemid].misc3, itemsbuf[itemid].misc4, t->id, reflect, ((weapon*)t)->type&1, false))
+					if(sh_check(itemsbuf[itemid].misc3, itemsbuf[itemid].misc4, t->id, reflect, ((weapon*)t)->level&1, false))
 					{
 						w->dead=1;
 						weapon *ew = ((weapon*)t);
@@ -6403,7 +6504,7 @@ bool HeroClass::try_lwpn_hit(weapon* w)
 						sethitHeroUID(HIT_BY_LWEAPON_TYPE, w->id);
 						if (w->parentitem > -1) sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, w->parentitem);
 						else sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, -1);
-						sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[w->parentitem].family);
+						sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[w->parentitem].type);
 					}
 				}
 				
@@ -6459,7 +6560,7 @@ bool HeroClass::try_lwpn_hit(weapon* w)
 		// warp ring will be used
 		int32_t whistle = w ? w->parentitem : -1;
 		
-		if(whistle>-1 && itemsbuf[whistle].family==itype_whistle)
+		if(whistle>-1 && itemsbuf[whistle].type==itype_whistle)
 			whistleitem=whistle;
 			
 		return true;
@@ -6534,28 +6635,25 @@ bool HeroClass::try_ewpn_hit(weapon* w, bool force)
 
 void HeroClass::checkhit()
 {
-	if(checkhero==true)
+	if(hclk>0)
 	{
-		if(hclk>0)
-		{
-			--hclk;
-		}
+		--hclk;
+	}
+	
+	if(DivineProtectionShieldClk>0)
+	{
+		--DivineProtectionShieldClk;
 		
-		if(DivineProtectionShieldClk>0)
+		if(DivineProtectionShieldClk == 0 && div_prot_item != -1)
 		{
-			--DivineProtectionShieldClk;
-			
-			if(DivineProtectionShieldClk == 0 && div_prot_item != -1)
-			{
-				stop_sfx(itemsbuf[div_prot_item].usesound);
-				stop_sfx(itemsbuf[div_prot_item].usesound+1);
-				div_prot_item = -1;
-			}
-			else if(get_qr(qr_MORESOUNDS) && !(DivineProtectionShieldClk&0xF00) && div_prot_item != -1)
-			{
-				stop_sfx(itemsbuf[div_prot_item].usesound);
-				cont_sfx(itemsbuf[div_prot_item].usesound+1);
-			}
+			stop_sfx(itemsbuf[div_prot_item].usesound);
+			stop_sfx(itemsbuf[div_prot_item].usesound+1);
+			div_prot_item = -1;
+		}
+		else if(get_qr(qr_MORESOUNDS) && !(DivineProtectionShieldClk&0xF00) && div_prot_item != -1)
+		{
+			stop_sfx(itemsbuf[div_prot_item].usesound);
+			cont_sfx(itemsbuf[div_prot_item].usesound+1);
 		}
 	}
 	
@@ -6618,7 +6716,7 @@ void HeroClass::checkhit()
 		}
 	}
 	
-	if(hclk>0 || inlikelike == 1 || action==inwind || action==drowning || action==lavadrowning || action==sidedrowning || inwallm || isDiving() || (action==hopping && hopclk<255))
+	if(hclk>0 || inlikelike == 1 || is_autowalking() || action==inwind || action==drowning || action==lavadrowning || action==sidedrowning || inwallm || isDiving() || (action==hopping && hopclk<255))
 	{
 		return;
 	}
@@ -6629,10 +6727,10 @@ void HeroClass::checkhit()
 		int32_t itemid = ((weapon*)(Lwpns.spr(i)))->parentitem;
 		//if ( itemdbuf[parentitem].flags&item_flags3 ) //can damage Hero
 		//if ( itemsbuf[parentitem].misc1 > 0 ) //damages Hero by this amount. 
-		if((!(itemid==-1&&get_qr(qr_FIREPROOFHERO)||((itemid>-1&&itemsbuf[itemid].family==itype_candle||itemsbuf[itemid].family==itype_book)&&(itemsbuf[itemid].flags & item_flag3)))) && scriptcoldet && !fallclk && (!superman || !get_qr(qr_FIREPROOFHERO2)))
+		if((!(itemid==-1&&get_qr(qr_FIREPROOFHERO)||((itemid>-1&&itemsbuf[itemid].type==itype_candle||itemsbuf[itemid].type==itype_book)&&(itemsbuf[itemid].flags & item_flag3)))) && scriptcoldet && !fallclk && (!superman || !get_qr(qr_FIREPROOFHERO2)))
 		{
 			if(s->id==wFire && (superman ? ((diagonalMovement||NO_GRIDLOCK)?s->hit(x+4,y+4-fakez,z,7,7,1):s->hit(x+7,y+7-fakez,z,2,2,1)) : s->hit(this))&&
-						(itemid < 0 || itemsbuf[itemid].family!=itype_divinefire))
+						(itemid < 0 || itemsbuf[itemid].type!=itype_divinefire))
 			{
 				std::vector<int32_t> &ev = FFCore.eventData;
 				ev.clear();
@@ -6686,7 +6784,7 @@ void HeroClass::checkhit()
 						sethitHeroUID(HIT_BY_LWEAPON_TYPE, w->id);
 						if (w->parentitem > -1) sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, w->parentitem);
 						else sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, -1);
-						sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[w->parentitem].family);
+						sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[w->parentitem].type);
 					}
 				}
 				
@@ -6714,7 +6812,7 @@ void HeroClass::checkhit()
 						bool reflect = false;
 						// sethitHeroUID(HIT_BY_EWEAPON,j); //set that Hero was hit by a specific eweapon index. 
 						
-						if(sh_check(itemsbuf[itemid].misc3, itemsbuf[itemid].misc4, t->id, reflect, ((weapon*)t)->type&1, false))
+						if(sh_check(itemsbuf[itemid].misc3, itemsbuf[itemid].misc4, t->id, reflect, ((weapon*)t)->level&1, false))
 						{
 							((weapon*)s)->dead=1;
 							weapon *ew = ((weapon*)t);
@@ -6787,7 +6885,7 @@ void HeroClass::checkhit()
 							sethitHeroUID(HIT_BY_LWEAPON_TYPE, w->id);
 							if (w->parentitem > -1) sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, w->parentitem);
 							else sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, -1);
-							sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[w->parentitem].family);
+							sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[w->parentitem].type);
 						}
 					}
 					
@@ -6843,7 +6941,7 @@ void HeroClass::checkhit()
 			// warp ring will be used
 			int32_t whistle=s ? ((weapon*)s)->parentitem : -1;
 			
-			if(whistle>-1 && itemsbuf[whistle].family==itype_whistle)
+			if(whistle>-1 && itemsbuf[whistle].type==itype_whistle)
 				whistleitem=whistle;
 				
 			return;
@@ -6918,7 +7016,7 @@ void HeroClass::checkhit()
 				sethitHeroUID(HIT_BY_LWEAPON_TYPE, lwpnspr->id);
 				if (lwpnspr->parentitem > -1) sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, lwpnspr->parentitem);
 				else sethitHeroUID(HIT_BY_LWEAPON_PARENT_ID, -1);
-				sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[lwpnspr->parentitem].family);
+				sethitHeroUID(HIT_BY_LWEAPON_PARENT_FAMILY, itemsbuf[lwpnspr->parentitem].type);
 			}
 		}
 		
@@ -7038,7 +7136,7 @@ void HeroClass::doHit(int32_t hdir, int iframes)
 		tapping = false;
 	}
 	
-	sfx(getHurtSFX(),pan(x.getInt()));
+	sfx(getHurtSFX(),pan(x));
 }
 
 bool HeroClass::checkdamagecombos(int32_t dx1, int32_t dx2, int32_t dy1, int32_t dy2, int32_t layer, bool solid, bool do_health_check) //layer = -1, solid = false, do_health_check = true
@@ -7397,7 +7495,7 @@ int32_t HeroClass::hithero(int32_t hit2, int32_t force_hdir)
 	//!TODO SOLIDPUSH Enemy flag to make them not deal contact damage
 	//!Add a flag check to this if:
 	else if (!(enemyptr->stunclk==0 && enemyptr->frozenclock==0 && (!get_qr(qr_SAFEENEMYFADE) || enemyptr->fading != fade_flicker)
-			&& (enemyptr->d->family != eeGUY || enemyptr->dmisc1)))
+			&& (enemyptr->d->type != eeGUY || enemyptr->dmisc1)))
 	{
 		return -1;
 	}
@@ -7442,7 +7540,7 @@ int32_t HeroClass::hithero(int32_t hit2, int32_t force_hdir)
 		sethitHeroUID(HIT_BY_NPC_UID,enemyptr->getUID());
 		sethitHeroUID(HIT_BY_NPC_ENGINE_UID,enemyptr->getUID());
 		sethitHeroUID(HIT_BY_NPC_ID, enemyptr->id);
-		sethitHeroUID(HIT_BY_NPC_TYPE, enemyptr->family);
+		sethitHeroUID(HIT_BY_NPC_TYPE, enemyptr->type);
 	}
 	
 	hitdir = hdir;
@@ -7461,7 +7559,7 @@ int32_t HeroClass::hithero(int32_t hit2, int32_t force_hdir)
 		
 	hclk=iframes;
 	check_on_hit();
-	sfx(getHurtSFX(),pan(x.getInt()));
+	sfx(getHurtSFX(),pan(x));
 	
 	if(charging > 0 || spins > 0 || attack == wSword || attack == wHammer)
 	{
@@ -7474,7 +7572,7 @@ int32_t HeroClass::hithero(int32_t hit2, int32_t force_hdir)
 	int32_t dm7 = enemyptr->dmisc7;
 	int32_t dm8 = enemyptr->dmisc8;
 	
-	switch(enemyptr->family)
+	switch(enemyptr->type)
 	{
 		case eeWALLM:
 			if(enemyptr->hp>0)
@@ -7568,7 +7666,7 @@ void HeroClass::addsparkle(int32_t wpn)
     if(itemid<0)
         return;
         
-    int32_t itemtype = itemsbuf[itemid].family;
+    int32_t itemtype = itemsbuf[itemid].type;
     
     if(itemtype!=itype_cbyrna && frame%4)
         return;
@@ -7631,7 +7729,7 @@ void HeroClass::addsparkle2(int32_t type1, int32_t type2)
     {
         weapon *w = (weapon*)Lwpns.spr(i);
         
-        if(w->id == wPhantom && w->type == type1)
+        if(w->id == wPhantom && w->level == type1)
         {
             arrow = i;
             break;
@@ -7696,7 +7794,7 @@ static size_t find_bottle_for_slot(size_t slot, bool unowned=false)
 	int32_t found_unowned = -1;
 	for(int q = 0; q < MAXITEMS; ++q)
 	{
-		if(itemsbuf[q].family == itype_bottle && itemsbuf[q].misc1 == slot)
+		if(itemsbuf[q].type == itype_bottle && itemsbuf[q].misc1 == slot)
 		{
 			if(game->get_item(q))
 				return q;
@@ -7791,7 +7889,7 @@ void HeroClass::handle_portal_prox(portal* p)
 // returns true when game over
 bool HeroClass::animate(int32_t)
 {
-	update_heroscr();
+	update_current_screen();
 
 	int32_t lsave=0;
 	if(immortal > 0)
@@ -7973,7 +8071,7 @@ heroanimate_skip_liftwpn:;
 	{
 		if (get_qr(qr_SHALLOW_SENSITIVE))
 		{
-			if (action != swimming && action != isdiving && action != drowning && action!=lavadrowning && action!=sidedrowning && action!=rafting && action != falling && !IsSideSwim() && !(ladderx+laddery) && !pull_hero && !toogam)
+			if (action != swimming && action != isdiving && action != drowning && action!=lavadrowning && action!=sidedrowning && action!=rafting && action != falling && !IsSideSwim() && !(ladderx+laddery) && !pull_hero && !walk_through_walls)
 			{
 				bool b1 = iswaterex_z3(FFORCOMBO(x+11,y+15), -1, x+11, y+15, false, false, true, true);
 				bool b2 = iswaterex_z3(FFORCOMBO(x+4,y+15), -1, x+4, y+15, false, false, true, true);
@@ -8101,33 +8199,28 @@ heroanimate_skip_liftwpn:;
 			}
 		}
 		
-		auto rpos = COMBOPOS_REGION_B(x+8,y+(sideview_mode()?16:12));
-		for(int q = 0; q < 7; ++q)
-		{
-			if (rpos == rpos_t::None)
-				break;
-
-			auto rpos_handle = get_rpos_handle(rpos, q);
-			auto& cmb = rpos_handle.combo();
-			byte csfx = action == walking ? cmb.sfx_walking : cmb.sfx_standing;
-			byte cspr = action == walking ? cmb.spr_walking : cmb.spr_standing;
-			if(csfx)
-				sfx_no_repeat(csfx);
-			auto indx = decorations.idFirst(dCUSTOMWALK);
-			if(cspr)
+		for_each_rpos_stood_on([&](const rpos_handle_t& handle)
 			{
-				if(indx < 0)
+				auto& cmb = handle.combo();
+				byte csfx = action == walking ? cmb.sfx_walking : cmb.sfx_standing;
+				byte cspr = action == walking ? cmb.spr_walking : cmb.spr_standing;
+				if(csfx)
+					sfx_no_repeat(csfx, pan(x));
+				auto indx = decorations.idFirst(dCUSTOMWALK);
+				if(cspr)
 				{
-					if(decorations.add(new customWalkSprite(x, y, dCUSTOMWALK, 0, -1)))
-						indx = decorations.Count()-1;
+					if(indx < 0)
+					{
+						if(decorations.add(new customWalkSprite(x, y, dCUSTOMWALK, 0, -1)))
+							indx = decorations.Count()-1;
+					}
+					if(indx > -1)
+					{
+						if(customWalkSprite* spr = dynamic_cast<customWalkSprite*>(decorations.spr(indx)))
+							spr->run_sprite(cspr);
+					}
 				}
-				if(indx > -1)
-				{
-					if(customWalkSprite* spr = dynamic_cast<customWalkSprite*>(decorations.spr(indx)))
-						spr->run_sprite(cspr);
-				}
-			}
-		}
+			});
 	}
 	
 	if(stomping)
@@ -8145,7 +8238,7 @@ heroanimate_skip_liftwpn:;
 		}
 	}
 	
-	if(action!=inwind && action!=drowning && action!=lavadrowning && action!= sidedrowning)
+	if(action!=inwind && action!=drowning && action!=lavadrowning && action!= sidedrowning && !is_autowalking())
 	{
 		if(!get_qr(qr_OLD_CHEST_COLLISION))
 		{
@@ -8158,9 +8251,9 @@ heroanimate_skip_liftwpn:;
 			checkchest(cLOCKBLOCK);
 			checkchest(cBOSSLOCKBLOCK);
 		}
+		checksigns();
+		checkgenpush();
 	}
-	checksigns();
-	checkgenpush();
 	
 	if(isStanding(true) && fall == 0)
 	{
@@ -8182,30 +8275,57 @@ heroanimate_skip_liftwpn:;
 		}
 	}
 	bool platformfell2 = false;
-	int32_t gravity3 = (zinit.gravity/100);
-	int32_t termv = (zinit.terminalv);
-	int32_t rocs = getRocsPressed();
-	if (rocs != -1)
+	last_rocs_id = getRocsPressed(); // reset the cached roc's feather ID
+	if (current_rocs_jump_id > -1 && current_rocs_jump_id != last_rocs_id)
+		released_jump_button = true;
+	if (current_rocs_jump_id > -1 && released_jump_button)
 	{
-		itemdata const& itm = itemsbuf[rocs];
-		if (itm.flags & item_flag2) 
+		itemdata const& last_rocs = itemsbuf[current_rocs_jump_id];
+		if (fall < 0)
 		{
-			if ((!(itm.flags & item_flag3) || fall < 0) && 
-				(!(itm.flags & item_flag4) || fall > 0)) gravity3 = itm.misc3;
+			if (last_rocs.flags & item_flag6)
+			{
+				int32_t jump_loss = last_rocs.misc6 / 100;
+				fall = zc_min(0_zf, fall + jump_loss);
+			}
+			if (fall >= 0)
+				try_hover();
 		}
-		if (itm.flags & item_flag5) 
+		if (fall >= 0)
 		{
-			termv = itm.misc4;
-			if (fall > termv) fall = termv;
+			current_rocs_jump_id = -1;
+			released_jump_button = false;
 		}
 	}
-	if(sideview_mode())  // Sideview gravity
+	last_grav_boots_id = -1; // clear grav boots, so that they are re-checked in get_gravity()/get_terminalv() if needed
+	int32_t gravity3 = get_grav_fall();
+	int32_t termv = get_terminalv_fall();
+	bool used_grav_or_termv = false;
+
+	if (handle_termv())
+		used_grav_or_termv = true;
+	else if (fall > termv || fakefall > termv)
+	{
+		if ((last_grav_boots_id != -1) ||
+			(last_rocs_id != -1 && (itemsbuf[last_rocs_id].flags & item_flag5)))
+		{
+			if (fall > termv)
+				fall = termv;
+			if (fakefall > termv)
+				fakefall = termv;
+			used_grav_or_termv = true;
+		}
+	}
+	bool nograv = (sideview_mode() && is_autowalking());
+	if(nograv)
+		;
+	else if(sideview_mode())  // Sideview gravity
 	{
 		//Handle falling through a platform
 		bool platformfell = false;
 		if (on_sideview_solid_oldpos(this,true,3) && !on_sideview_solid_oldpos(this,false,3))
 		{
-			if (!(!on_sideview_slope(Hero.x, Hero.y,Hero.old_x,Hero.old_y) && (on_sideview_slope(Hero.x,Hero.y+1,Hero.old_x,Hero.old_y) || on_sideview_slope(Hero.x, Hero.y + 2, Hero.old_x, Hero.old_y)) && Down())) platformfell = true;
+			if (!(!on_sideview_slope(Hero.x, Hero.y, Hero.old_x, Hero.old_y) && (on_sideview_slope(Hero.x, Hero.y + 1, Hero.old_x, Hero.old_y) || on_sideview_slope(Hero.x, Hero.y + 2, Hero.old_x, Hero.old_y)) && getInput(btnDown, INPUT_HERO_ACTION))) platformfell = true;
 			y+=1; //Fall down a pixel instantly, through the platform.
 			if(fall < 0) fall = 0;
 			if(jumping < 0) jumping = 0;
@@ -8214,7 +8334,7 @@ heroanimate_skip_liftwpn:;
 		//Unless using old collision, run this check BEFORE moving Hero, to prevent clipping into the ceiling.
 		if(!get_qr(qr_OLD_SIDEVIEW_CEILING_COLLISON))
 		{
-			if(fall < 0 && (_walkflag(x+4,y+((bigHitbox||!diagonalMovement)?(fall/100):(fall/100)+8),1,SWITCHBLOCK_STATE) || _walkflag(x+12,y+((bigHitbox||!diagonalMovement)?(fall/100):(fall/100)+8),1,SWITCHBLOCK_STATE)
+			if(fall < 0 && (_walkflag(x+4,y+((bigHitbox||!diagonalMovement)?(fall/100):(fall/100)+8),1,get_standing_z_state()) || _walkflag(x+12,y+((bigHitbox||!diagonalMovement)?(fall/100):(fall/100)+8),1,get_standing_z_state())
 				|| ((y+(fall/100)<=0) &&
 				// Extra checks if Smart Screen Scrolling is enabled
 				 (nextcombo_wf(up) || ((get_qr(qr_SMARTSCREENSCROLL)&&(!(hero_scr->flags&fMAZE)) &&
@@ -8231,7 +8351,7 @@ heroanimate_skip_liftwpn:;
 			}
 		}
 		// Fall, unless on a ladder, sideview ladder, rafting, using the hookshot, drowning, sideswimming or cheating.
-		if(!(toogam && Up()) && !drownclk && action!=rafting && !IsSideSwim() && !pull_hero && !((ladderx || laddery) && fall>0) && !getOnSideviewLadder())
+		if (!(walk_through_walls && getInput(btnUp, INPUT_HERO_ACTION)) && !drownclk && action != rafting && !IsSideSwim() && !pull_hero && !((ladderx || laddery) && fall > 0) && !getOnSideviewLadder())
 		{
 			int32_t ydiff = fall/(spins && fall<0 ? 200:100);
 			falling_oldy = y; // Stomp Boots-related variable
@@ -8289,7 +8409,7 @@ heroanimate_skip_liftwpn:;
 			fall = hoverclk = jumping = 0;
 			inair = false;
 			hoverflags = 0;
-			if(!DrunkUp() && !DrunkDown() && !DrunkLeft() && !DrunkRight() && !autostep)
+			if (!getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && !autostep)
 			{
 				WalkflagInfo info;
 				if (game->get_watergrav()<0)
@@ -8339,12 +8459,13 @@ heroanimate_skip_liftwpn:;
 				y = world_h-16;
 		}
 		// Stop hovering if you press down.
-		else if((hoverclk>0 || ladderx || laddery) && DrunkDown())
+		else if ((hoverclk > 0 || ladderx || laddery) && getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			stop_item_sfx(itype_hoverboots);
 			hoverclk = -hoverclk;
 			reset_ladder();
 			fall = gravity3;
+			used_grav_or_termv = true;
 			inair = false;
 		}
 		else if (hoverclk < 1 && !inair && fall == 0 && !IsSideSwim() && justmoved <= 0)
@@ -8404,17 +8525,17 @@ heroanimate_skip_liftwpn:;
 			needFall = true;
 		}
 		// Continue falling.
-
+		
 		if(fall <= termv && needFall)
 		{
 			inair = true;
-			if(fall != 0 || hoverclk>0)
+			if (fall != 0 || hoverclk > 0)
 				jumping++;
 				
 			// Bump head if: hit a solid combo from beneath, or hit a solid combo in the screen above this one.
 			if(get_qr(qr_OLD_SIDEVIEW_CEILING_COLLISON))
 			{
-				if((_walkflag(x+4,y-(bigHitbox?9:1),0,SWITCHBLOCK_STATE)
+				if((_walkflag(x+4,y-(bigHitbox?9:1),0,get_standing_z_state())
 					|| (y<=(bigHitbox?9:1) &&
 					// Extra checks if Smart Screen Scrolling is enabled
 					 (nextcombo_wf(up) || ((get_qr(qr_SMARTSCREENSCROLL)&&(!(hero_scr->flags&fMAZE)) &&
@@ -8432,7 +8553,7 @@ heroanimate_skip_liftwpn:;
 			}
 			else
 			{
-				if((_walkflag(x+4,y+((bigHitbox||!diagonalMovement)?-1:7),1,SWITCHBLOCK_STATE) || _walkflag(x+12,y+((bigHitbox||!diagonalMovement)?-1:7),1,SWITCHBLOCK_STATE)
+				if((_walkflag(x+4,y+((bigHitbox||!diagonalMovement)?-1:7),1,get_standing_z_state()) || _walkflag(x+12,y+((bigHitbox||!diagonalMovement)?-1:7),1,get_standing_z_state())
 					|| ((y<=0) &&
 					// Extra checks if Smart Screen Scrolling is enabled
 					 (nextcombo_wf(up) || ((get_qr(qr_SMARTSCREENSCROLL)&&(!(hero_scr->flags&fMAZE)) &&
@@ -8451,44 +8572,26 @@ heroanimate_skip_liftwpn:;
 			
 			if(hoverclk > 0)
 			{
-				if(hoverclk > 0 && !(hoverflags&HOV_INF))
-				{
-					--hoverclk;
-				}
-				
-				if(!hoverclk && !ladderx && !laddery)
+				if(tick_hover() && !ladderx && !laddery)
 				{
 					fall += gravity3;
-					hoverflags |= HOV_OUT | HOV_PITFALL_OUT;
+					used_grav_or_termv = true;
 				}
 			}
-			else if(fall+gravity3 > 0 && fall<=0 && can_use_item(itype_hoverboots,i_hoverboots) && !ladderx && !laddery && !(hoverflags & HOV_OUT))
-			{
-				int32_t itemid = current_item_id(itype_hoverboots);
-				if(hoverclk < 0)
-					hoverclk = -hoverclk;
-				else
-				{
-					fall = jumping = 0;
-					if(itemsbuf[itemid].misc1)
-						hoverclk = itemsbuf[itemid].misc1;
-					else
-					{
-						hoverclk = 1;
-						hoverflags |= HOV_INF;
-					}
-					
-						
-					sfx(itemsbuf[itemid].usesound,pan(x.getInt()));
-				}
-				if(itemsbuf[itemid].wpn)
-					decorations.add(new dHover(x, y, dHOVER, 0));
-			}
+			else if(fall+gravity3 > 0 && fall<=0
+				&& try_hover())
+				used_grav_or_termv = true;
 			else if(!ladderx && !laddery && !getOnSideviewLadder() && !IsSideSwim())
 			{
 				fall += gravity3;
-				
+				used_grav_or_termv = true;
 			}
+		}
+		else if(needFall)
+		{
+			if (get_qr(qr_BETTER_PLAYER_JUMP_ANIM) && (fall != 0 || hoverclk > 0))
+				jumping++;
+			used_grav_or_termv = true;
 		}
 	}
 	else // Topdown gravity
@@ -8501,7 +8604,7 @@ heroanimate_skip_liftwpn:;
 			{
 				case swimming:
 				{
-					diveclk=0;
+					set_dive(0);
 					action=walking; FFCore.setHeroAction(walking);
 				
 					break;
@@ -8562,13 +8665,7 @@ heroanimate_skip_liftwpn:;
 					hoverclk = 0;
 					hoverflags = 0;
 				}
-				else if(hoverclk > 0 && !(hoverflags&HOV_INF))
-				{
-					if(!--hoverclk)
-					{
-						hoverflags |= HOV_OUT | HOV_PITFALL_OUT;
-					}
-				}
+				else tick_hover();
 			}
 		}
 		else if(fakez<=0&&!(moveflags & move_no_fake_z))
@@ -8592,13 +8689,7 @@ heroanimate_skip_liftwpn:;
 					hoverclk = 0;
 					hoverflags = 0;
 				}
-				else if(hoverclk > 0 && !(hoverflags&HOV_INF))
-				{
-					if(!--hoverclk)
-					{
-						hoverflags |= HOV_OUT | HOV_PITFALL_OUT;
-					}
-				}
+				else tick_hover();
 			}
 		}
 		if(fall <= termv && !(moveflags & move_no_real_z) && z>0 || fakefall <= termv && !(moveflags & move_no_fake_z) && fakez > 0)
@@ -8608,47 +8699,56 @@ heroanimate_skip_liftwpn:;
 				
 			if(hoverclk > 0)
 			{
-				if(hoverclk > 0 && !(hoverflags&HOV_INF))
+				if(tick_hover())
 				{
-					--hoverclk;
-				}
-				
-				if(!hoverclk)
-				{
-					if (fall <= termv && !(moveflags & move_no_real_z) && z > 0) fall += gravity3;
-					if (fakefall <= termv && !(moveflags & move_no_fake_z) && fakez > 0) fakefall += gravity3;
-					hoverflags |= HOV_OUT | HOV_PITFALL_OUT;
-				}
-			}
-			else if(((fall+(int32_t)(zinit.gravity / 100) > 0 && fall<=0 && !(moveflags & move_no_real_z) && z > 0) || (fakefall+gravity3 > 0 && fakefall<=0 && !(moveflags & move_no_fake_z) && fakez > 0)) && can_use_item(itype_hoverboots,i_hoverboots) && !(hoverflags & HOV_OUT))
-			{
-				if(hoverclk < 0)
-					hoverclk = -hoverclk;
-				else
-				{
-					fall = 0;
-					fakefall = 0;
-					int32_t itemid = current_item_id(itype_hoverboots);
-					if(itemsbuf[itemid].misc1)
-						hoverclk = itemsbuf[itemid].misc1;
-					else
+					if (!(moveflags & move_no_real_z) && z > 0)
 					{
-						hoverclk = 1;
-						hoverflags |= HOV_INF;
+						if (fall <= termv) fall += gravity3;
+						used_grav_or_termv = true;
 					}
-					sfx(itemsbuf[current_item_id(itype_hoverboots)].usesound,pan(x.getInt()));
+					if (!(moveflags & move_no_fake_z) && fakez > 0)
+					{
+						if (fakefall <= termv) fakefall += gravity3;
+						used_grav_or_termv = true;
+					}
 				}
-				decorations.add(new dHover(x, y, dHOVER, 0));
 			}
+			else if (((fall + gravity3 > 0 && fall <= 0 && !(moveflags & move_no_real_z) && z > 0) || (fakefall + gravity3 > 0 && fakefall <= 0 && !(moveflags & move_no_fake_z) && fakez > 0))
+				&& try_hover())
+				used_grav_or_termv = true;
 			else 
 			{
-				if (fall <= termv && !(moveflags & move_no_real_z) && z > 0) fall += gravity3;
-				if (fakefall <= termv && !(moveflags & move_no_fake_z) && fakez > 0) fakefall += gravity3;
+				if (!(moveflags & move_no_real_z) && z > 0)
+				{
+					if (fall <= termv) fall += gravity3;
+					used_grav_or_termv = true;
+				}
+				if (!(moveflags & move_no_fake_z) && fakez > 0)
+				{
+					if (fakefall <= termv) fakefall += gravity3;
+					used_grav_or_termv = true;
+				}
 			}
+		}
+		if(fall > termv && !(moveflags & move_no_real_z) && z>0 || fakefall > termv && !(moveflags & move_no_fake_z) && fakez > 0)
+		{
+			if (get_qr(qr_BETTER_PLAYER_JUMP_ANIM) && (fall != 0 || fakefall != 0 || hoverclk > 0))
+				jumping++;
+			used_grav_or_termv = true;
 		}
 		if (fakez<0) fakez = 0;
 		if (z<0) z = 0;
 	}
+
+	if (handle_termv())
+		used_grav_or_termv = true;
+
+	if (used_grav_or_termv && last_grav_boots_id > -1) // if the gravity boots affected the player's falling, charge their cost
+		paymagiccost(last_grav_boots_id);
+	
+	for (int q = 0; q < MAXITEMS; ++q)
+		if (item_cooldown[q] > 0)
+			--item_cooldown[q];
 	
 	if(drunkclk)
 	{
@@ -8703,7 +8803,7 @@ heroanimate_skip_liftwpn:;
 		fall_check = (fall == 0 || z > 0) || (fakefall == 0 || fakez > 0);
 
 	if(!is_on_conveyor && !(diagonalMovement||NO_GRIDLOCK) && fall_check && charging==0 && spins<=5
-			&& action != gothit)
+			&& action != gothit && !is_autowalking())
 	{
 		switch(dir)
 		{
@@ -9075,7 +9175,7 @@ heroanimate_skip_liftwpn:;
 									switching_object->solid_update(false);
 									if(item* it = dynamic_cast<item*>(switching_object))
 									{
-										if(itemsbuf[it->id].family == itype_fairy && itemsbuf[it->id].misc3)
+										if(itemsbuf[it->id].type == itype_fairy && itemsbuf[it->id].misc3)
 										{
 											movefairynew2(it->x, it->y, *it);
 										}
@@ -9228,23 +9328,23 @@ heroanimate_skip_liftwpn:;
 		}
 		
 	}
-	
-	if(!get_qr(qr_NO_L_R_BUTTON_INVENTORY_SWAP))
+
+	if (!get_qr(qr_NO_L_R_BUTTON_INVENTORY_SWAP))
 	{
-		if(DrunkrLbtn())
+		if (getInput(btnL, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 			selectNextBWpn(SEL_LEFT);
-		else if(DrunkrRbtn())
+		else if (getInput(btnR, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 			selectNextBWpn(SEL_RIGHT);
 	}
 	if (get_qr(qr_SELECTAWPN) && get_qr(qr_USE_EX1_EX2_INVENTORYSWAP))
 	{
-		if (rEx3btn())
+		if (getInput(btnEx3, INPUT_PRESS | INPUT_HERO_ACTION))
 			selectNextAWpn(SEL_LEFT);
-		else if (rEx4btn())
+		else if (getInput(btnEx4, INPUT_PRESS | INPUT_HERO_ACTION))
 			selectNextAWpn(SEL_RIGHT);
 	}
-		
-	if(rPbtn())
+
+	if (getInput(btnP, INPUT_PRESS | INPUT_HERO_ACTION))
 	{
 		if( !FFCore.runOnMapScriptEngine() ) //OnMap script replaces the 'onViewMap()' call
 			onViewMap();
@@ -9277,15 +9377,12 @@ heroanimate_skip_liftwpn:;
 		
 		if(!(checkbunny(itemid) && checkmagiccost(itemid)))
 		{
-			for(int32_t i=0; i<Lwpns.Count(); i++)
+			for (int32_t i = 0; i < Lwpns.Count(); i++)
 			{
-				weapon *w = ((weapon*)Lwpns.spr(i));
-				
-				if(w->id==wCByrna)
-				{
-					w->dead=1;
-				}
-		
+				weapon* w = ((weapon*)Lwpns.spr(i));
+
+				if (w->id == wCByrna && !w->weapon_dying_frame)
+					w->dead = 1;
 			}
 			//kill the sound effect for the orbits -Z 14FEB2019
 			stop_sfx(itemsbuf[itemid].usesound);
@@ -9293,15 +9390,19 @@ heroanimate_skip_liftwpn:;
 		else paymagiccost(itemid);
 	}
 	
-	if(z==0&&fakez==0)
+	if(z == 0 && fakez == 0)
 	{
-		switchblock_z = 0;
-		if(switchblock_offset)
+		if (standing_z_offset)
 		{
-			switchblock_offset=false;
+			standing_z_offset = false;
 			yofs += 8;
 		}
+		if (standing_on_z > 0)
+			standing_on_z = 0;
 	}
+	if (!isDiving() && standing_on_z < 0)
+		standing_on_z = 0;
+	
 	if(!isSideViewHero())
 	{
 		int32_t tx = x.getInt()+8,
@@ -9317,44 +9418,47 @@ heroanimate_skip_liftwpn:;
 				if (!rpos_handle.scr->is_valid()) continue;
 
 				auto& cmb = rpos_handle.combo();
-				if(cmb.type != cCSWITCHBLOCK || !(cmb.usrflags&cflag9)) continue;
+				
 				int32_t b = 1;
 				if(tx&8) b <<= 2;
 				if(ty&8) b <<= 1;
 				b |= (b<<4); //check equivalent effect flag too
-				if((cmb.walk&b)==b) //solid and effecting
+				if((cmb.walk & b) != b) //not both solid and effecting
+					continue;
+				
+				bool standing_switchblock = cmb.type == cCSWITCHBLOCK && (cmb.usrflags & cflag9);
+				bool standing_combo = (cmb.genflags & cflag3) && !standing_switchblock;
+				
+				if (cmb.dive_under_level && isDiving())
 				{
-					if(z==0&&fakez==0)
-					{
-						if(cmb.usrflags&cflag10)
-						{
-							if(!switchblock_offset)
-							{
-								switchblock_offset=true;
-								yofs -= 8;
-							}
-						}
-						else
-						{
-							if(switchblock_offset)
-							{
-								switchblock_offset=false;
-								yofs += 8;
-							}
-						}
-					}
-					if(cmb.attributes[2]>0 && switchblock_z>=0)
-					{
-						if(z==0&&fakez==0)
-							switchblock_z = zc_max(switchblock_z,zslongToFix(cmb.attributes[2]));
-						else if(SWITCHBLOCK_STATE < zslongToFix(cmb.attributes[2]))
-						{
-							switchblock_z += zslongToFix(cmb.attributes[2])-SWITCHBLOCK_STATE;
-						}
-					}
-					else switchblock_z = -1;
-					break;
+					// keep you from surfacing
+					// also sets the 'standing_on_z' value, based on flippers
+					set_dive(zc_max(diveclk, 2));
+					if (standing_on_z >= -cmb.dive_under_level) // push you down further if the combo appeared on you or etc
+						standing_on_z = -cmb.dive_under_level;
 				}
+				else if (standing_switchblock || standing_combo)
+				{
+					bool should_z_offs = standing_switchblock ? (cmb.usrflags&cflag10) : (cmb.genflags & cflag4);
+					zfix cmb_z = standing_switchblock ? zslongToFix(cmb.attributes[2]) : cmb.z_height;
+					if (!cmb_z) cmb_z = STANDING_Z_MAX;
+					
+					if (standing_on_z >= 0)
+					{
+						if (z == 0 && fakez == 0)
+							standing_on_z = zc_max(standing_on_z, cmb_z);
+						else if(get_standing_z_state() < cmb_z)
+							standing_on_z += cmb_z - get_standing_z_state();
+					}
+					if(z == 0 && fakez == 0 && should_z_offs && !standing_z_offset)
+					{
+						standing_z_offset = true;
+						yofs -= 8;
+					}
+				}
+				else continue;
+				
+				break;
 			}
 		}
 	}
@@ -9408,7 +9512,7 @@ heroanimate_skip_liftwpn:;
 						int32_t itemid = find_bottle_for_slot(slot,true);
 						stop_sfx(QMisc.miscsfx[sfxLOWHEART]); //stop heart beep!
 						if(itemid > -1)
-							sfx(itemsbuf[itemid].usesound,pan(x.getInt()));
+							sfx(itemsbuf[itemid].usesound,pan(x));
 						for(size_t q = 0; q < 20; ++q)
 							do_death_refill_waitframe();
 						double inc = max/60.0; //1 second
@@ -9548,13 +9652,13 @@ heroanimate_skip_liftwpn:;
 		return false;
 	}
 	
-	if(hopclk)
-	{
-		action=hopping; FFCore.setHeroAction(hopping);
-	}
 	if(fallclk)
 	{
 		action=falling; FFCore.setHeroAction(falling);
+	}
+	else if(hopclk)
+	{
+		action=hopping; FFCore.setHeroAction(hopping);
 	}
 	
 	if(isSwimming() && (liftflags&LIFTFL_DIS_SWIMMING) && !get_qr(qr_BROKEN_LIFTSWIM))
@@ -9577,7 +9681,6 @@ heroanimate_skip_liftwpn:;
 		handle_lift(false);
 	}
 	
-		
 	// get user input or do other animation
 	freeze_guys=false;										// reset this flag, set it again if holding
 	
@@ -9587,6 +9690,8 @@ heroanimate_skip_liftwpn:;
 	}
 	
 	active_shield_id = refreshActiveShield();
+	if (active_shield_id > -1 && !shield_active && on_cooldown(active_shield_id))
+		active_shield_id = -1;
 	bool sh = active_shield_id > -1;
 	itemdata const& shield = itemsbuf[active_shield_id];
 	//Handle direction forcing. This runs every frame so that scripts can interact with dir still.
@@ -9601,6 +9706,7 @@ heroanimate_skip_liftwpn:;
 		if(sh) //Toggle active shield on
 		{
 			sfx(shield.usesound2); //'Activate' sfx
+			start_cooldown(active_shield_id);
 		}
 	}
 	
@@ -9708,7 +9814,7 @@ heroanimate_skip_liftwpn:;
 	case sidewaterhold1:
 	case sidewaterhold2:
 	{
-		diveclk=0;
+		set_dive(0);
 		
 		if(--holdclk <= 0)
 		{
@@ -9730,7 +9836,7 @@ heroanimate_skip_liftwpn:;
 		{
 			action=none; FFCore.setHeroAction(none);
 			hopclk = 0;
-			diveclk = 0;
+			set_dive(0);
 			break;
 		}
 		
@@ -9798,17 +9904,17 @@ heroanimate_skip_liftwpn:;
 		if((frame&1) && !shouldbreak)
 			herostep();
 		
-		if (_walkflag(x+7,y+(bigHitbox?6:11),1,SWITCHBLOCK_STATE)
-                || _walkflag(x+7,y+(bigHitbox?9:12),1,SWITCHBLOCK_STATE)
-		|| _walkflag(x+8,y+(bigHitbox?6:11),1,SWITCHBLOCK_STATE)
-                || _walkflag(x+8,y+(bigHitbox?9:12),1,SWITCHBLOCK_STATE)) isthissolid = true;
+		if (_walkflag(x+7,y+(bigHitbox?6:11),1,get_standing_z_state())
+                || _walkflag(x+7,y+(bigHitbox?9:12),1,get_standing_z_state())
+		|| _walkflag(x+8,y+(bigHitbox?6:11),1,get_standing_z_state())
+                || _walkflag(x+8,y+(bigHitbox?9:12),1,get_standing_z_state())) isthissolid = true;
 		if ((get_qr(qr_NO_HOPPING) || CanSideSwim()) && !isthissolid) //Since hopping won't be set with this on, something needs to kick Hero out of water...
 		{
 			if(!iswaterex_z3(MAPCOMBO(x.getInt()+4,y.getInt()+9), -1, x.getInt()+4,y.getInt()+9, true, false)||!iswaterex_z3(MAPCOMBO(x.getInt()+4,y.getInt()+15), -1, x.getInt()+4,y.getInt()+15, true, false)
 			|| !iswaterex_z3(MAPCOMBO(x.getInt()+11,y.getInt()+9), -1, x.getInt()+11,y.getInt()+9, true, false)||!iswaterex_z3(MAPCOMBO(x.getInt()+11,y.getInt()+15), -1, x.getInt()+11,y.getInt()+15, true, false))
 			{
 				hopclk=0;
-				diveclk=0;
+				set_dive(0);
 				if (action != sideswimattacking && action != attacking) {action=none; FFCore.setHeroAction(none);}
 				else {action=attacking; FFCore.setHeroAction(attacking);}
 				hopdir=-1;
@@ -9866,7 +9972,7 @@ heroanimate_skip_liftwpn:;
 			moveheroOld();
 		}
 	}
-	if (isSideViewHero() && slopeid && hoverclk < 1 && !inair && fall == 0 && !IsSideSwim() && justmoved <= 0)
+	if (isSideViewHero() && slopeid && hoverclk < 1 && !inair && fall == 0 && !IsSideSwim() && justmoved <= 0 && !is_autowalking())
 	{
 		if (!on_sideview_solid_oldpos(this, false, 0))
 		{
@@ -9958,20 +10064,23 @@ heroanimate_skip_liftwpn:;
 	{
 		checkspecial();
 		checkitems();
-		checklocked(); //This has issues if Hero's action is WALKING, in 8-way moveent. 
-		if(get_qr(qr_OLD_LOCKBLOCK_COLLISION))
+		if(!is_autowalking())
 		{
-			oldchecklockblock();
-			oldcheckbosslockblock();
+			checklocked(); //This has issues if Hero's action is WALKING, in 8-way moveent. 
+			if(get_qr(qr_OLD_LOCKBLOCK_COLLISION))
+			{
+				oldchecklockblock();
+				oldcheckbosslockblock();
+			}
+			if(get_qr(qr_OLD_CHEST_COLLISION))
+			{
+				oldcheckchest(cCHEST);
+				oldcheckchest(cLOCKEDCHEST);
+				oldcheckchest(cBOSSCHEST);
+			}
+			checkpushblock();
+			checkswordtap();
 		}
-		if(get_qr(qr_OLD_CHEST_COLLISION))
-		{
-			oldcheckchest(cCHEST);
-			oldcheckchest(cLOCKEDCHEST);
-			oldcheckchest(cBOSSCHEST);
-		}
-		checkpushblock();
-		checkswordtap();
 		
 		if(hookshot_frozen==false)
 		{
@@ -10015,9 +10124,6 @@ heroanimate_skip_liftwpn:;
 	// Global Combo Effects (AUTO STUFF)
 	bool awarp = false;
 	for_some_rpos([&](const rpos_handle_t& rpos_handle) {
-		auto cid = rpos_handle.data();
-		newcombo const& cmb = rpos_handle.combo();
-
 		if (!get_qr(qr_AUTOCOMBO_ANY_LAYER))
 		{
 			if (rpos_handle.layer > 2) return false;
@@ -10027,15 +10133,10 @@ heroanimate_skip_liftwpn:;
 		int32_t ind=0;
 		
 		//AUTOMATIC TRIGGER CODE
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-		{
-			auto& trig = cmb.triggers[idx];
-			if (trig.triggerflags[1]&combotriggerAUTOMATIC)
-			{
-				do_trigger_combo(rpos_handle, idx);
-				if(rpos_handle.data() != cid) break;
-			}
-		}
+		trig_each_combo_trigger(rpos_handle, [&](combo_trigger const& trig){
+			return trig.trigger_flags.get(TRIGFLAG_AUTOMATIC);
+		});
+		newcombo const& cmb = rpos_handle.combo();
 		
 		//AUTO WARP CODE
 		if (!(cmb.only_gentrig))
@@ -10086,17 +10187,10 @@ heroanimate_skip_liftwpn:;
 	for_some_ffcs([&](const ffc_handle_t& ffc_handle) {
 		int32_t ind=0;
 		
-		auto cid = ffc_handle.data();
+		trig_each_combo_trigger(ffc_handle, [&](combo_trigger const& trig){
+			return trig.trigger_flags.get(TRIGFLAG_AUTOMATIC);
+		});
 		auto& cmb = ffc_handle.combo();
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-		{
-			auto& trig = cmb.triggers[idx];
-			if (trig.triggerflags[1]&combotriggerAUTOMATIC)
-			{
-				do_trigger_combo(ffc_handle, idx);
-				if(ffc_handle.data() != cid) break;
-			}
-		}
 		
 		if(!(cmb.only_gentrig))
 		{
@@ -10143,7 +10237,7 @@ heroanimate_skip_liftwpn:;
 	});
 
 	zfix dx, dy;
-	if (sideview_mode() && !on_sideview_solid_oldpos(this, false, 1) && on_sideview_solid_oldpos(this, false, 2) && !toogam)
+	if (sideview_mode() && !on_sideview_solid_oldpos(this, false, 1) && on_sideview_solid_oldpos(this, false, 2) && !walk_through_walls && !is_autowalking())
 	{
 		if (slide_slope(this, dx, dy, slopeid))
 		{
@@ -10153,41 +10247,44 @@ heroanimate_skip_liftwpn:;
 	}
 	if (onplatid <= 0) slopeid = 0;
 	else --onplatid;
-	bool onplatform = (on_sideview_solid_oldpos(this, false, 1) && !Up());
-	for (auto q = 0; (check_slope(this, true) && !toogam) && q < 2; ++q)
+	bool onplatform = (on_sideview_solid_oldpos(this, false, 1) && !getInput(btnUp, INPUT_HERO_ACTION));
+	if(!walk_through_walls && !is_autowalking())
 	{
-		dx = 0;
-		dy = 0;
-		if (check_slope(this, true) && !toogam)
+		for (auto q = 0; check_slope(this, true) && q < 2; ++q)
 		{
-			slope_info const& s = get_slope(this, true).get_info();
-			bool staircheck = false;
-			if (s.slope() != slopeid && slopeid) staircheck = true;
-			if (onplatform) staircheck = true;
-			slope_push_int(s, this, dx, dy, staircheck, platformfell2);
-			
-			if (dx || dy) 
+			dx = 0;
+			dy = 0;
+			if (check_slope(this, true))
 			{
-				reset_hookshot();
-				int32_t pushret = push_move(dx,dy);
-				onplatform = (on_sideview_solid_oldpos(this, false, 1) && !Up());
+				slope_info const& s = get_slope(this, true).get_info();
+				bool staircheck = false;
 				if (s.slope() != slopeid && slopeid) staircheck = true;
 				if (onplatform) staircheck = true;
-				if(sideview_mode() && slopeid)
-					onplatid = 0;
-				if (pushret == 1)
+				slope_push_int(s, this, dx, dy, staircheck, platformfell2);
+				
+				if (dx || dy) 
 				{
-					dx = -1;
-					dy = 0;
-					slope_push_int(s, this, dx, dy, staircheck);
-					push_move(0,dy);
-				}
-				if (pushret == 2)
-				{
-					dx = 0;
-					dy = -1;
-					slope_push_int(s, this, dx, dy, staircheck);
-					push_move(dx,0);
+					reset_hookshot();
+					int32_t pushret = push_move(dx,dy);
+					onplatform = (on_sideview_solid_oldpos(this, false, 1) && !getInput(btnUp, INPUT_HERO_ACTION));
+					if (s.slope() != slopeid && slopeid) staircheck = true;
+					if (onplatform) staircheck = true;
+					if(sideview_mode() && slopeid)
+						onplatid = 0;
+					if (pushret == 1)
+					{
+						dx = -1;
+						dy = 0;
+						slope_push_int(s, this, dx, dy, staircheck);
+						push_move(0,dy);
+					}
+					if (pushret == 2)
+					{
+						dx = 0;
+						dy = -1;
+						slope_push_int(s, this, dx, dy, staircheck);
+						push_move(dx,0);
+					}
 				}
 			}
 		}
@@ -10228,30 +10325,30 @@ heroanimate_skip_liftwpn:;
 		
 		if(pushing>=24) dtype=dWALK;
 		
-		if(isdungeon() && action!=freeze && action != sideswimfreeze && loaded_guys && !inlikelike && !diveclk && action!=rafting && !lstunclock && !is_conveyor_stunned)
+		if(isdungeon() && action!=freeze && action != sideswimfreeze && loaded_guys && !inlikelike && !diveclk && action!=rafting && !lstunclock && !is_conveyor_stunned && !is_autowalking())
 		{
 			int x0 = x.getInt() % 256;
 			int y0 = y.getInt() % 176;
 
-			if(((dtype==dBOMBED)?DrunkUp():dir==up) && ((diagonalMovement||NO_GRIDLOCK)?x0>112&&x0<128:x0==120) && y0<=32 && hero_scr->door[0]==dtype)
+			if (((dtype == dBOMBED) ? getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) : dir == up) && ((diagonalMovement || NO_GRIDLOCK) ? x0 > 112 && x0 < 128:x0 == 120) && y0 <= 32 && hero_scr->door[0] == dtype)
 			{
 				walk=true;
 				dir=up;
 			}
 			
-			if(((dtype==dBOMBED)?DrunkDown():dir==down) && ((diagonalMovement||NO_GRIDLOCK)?x0>112&&x0<128:x0==120) && y0>=128 && hero_scr->door[1]==dtype)
+			if (((dtype == dBOMBED) ? getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) : dir == down) && ((diagonalMovement || NO_GRIDLOCK) ? x0 > 112 && x0 < 128:x0 == 120) && y0 >= 128 && hero_scr->door[1] == dtype)
 			{
 				walk=true;
 				dir=down;
 			}
 			
-			if(((dtype==dBOMBED)?DrunkLeft():dir==left) && x0<=32 && ((diagonalMovement||NO_GRIDLOCK)?y0>72&&y0<88:y0==80) && hero_scr->door[2]==dtype)
+			if (((dtype == dBOMBED) ? getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) : dir == left) && x0 <= 32 && ((diagonalMovement || NO_GRIDLOCK) ? y0 > 72 && y0 < 88:y0 == 80) && hero_scr->door[2] == dtype)
 			{
 				walk=true;
 				dir=left;
 			}
 			
-			if(((dtype==dBOMBED)?DrunkRight():dir==right) && x0>=208 && ((diagonalMovement||NO_GRIDLOCK)?y0>72&&y0<88:y0==80) && hero_scr->door[3]==dtype)
+			if (((dtype == dBOMBED) ? getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) : dir == right) && x0 >= 208 && ((diagonalMovement || NO_GRIDLOCK) ? y0 > 72 && y0 < 88:y0 == 80) && hero_scr->door[3] == dtype)
 			{
 				walk=true;
 				dir=right;
@@ -10267,7 +10364,7 @@ heroanimate_skip_liftwpn:;
 			{
 				sfx(hero_scr->secretsfx);
 				if(!get_qr(qr_WALKTHROUGHWALL_NO_DOORSTATE))
-					set_doorstate(hero_screen, dir);
+					set_doorstate(current_screen, dir);
 			}
 			
 			action=none; FFCore.setHeroAction(none);
@@ -10310,8 +10407,8 @@ heroanimate_skip_liftwpn:;
 		stop_sfx(QMisc.miscsfx[sfxLOWHEART]);
 	}
 	}
-	
-	if(rSbtn())
+
+	if (getInput(btnS, INPUT_PRESS | INPUT_HERO_ACTION))
 	{
 		int32_t tmp_subscr_clk = frame;
 		
@@ -10480,7 +10577,7 @@ int32_t HeroClass::push_move(zfix dx, zfix dy)
 
 bool HeroClass::setSolid(bool set)
 {
-	bool actual = set && !toogam; //not solid when noclipping
+	bool actual = set && !walk_through_walls; //not solid when noclipping
 	bool ret = solid_object::setSolid(actual);
 	solid = set;
 	return ret;
@@ -10538,7 +10635,7 @@ static void deselectbombsWPN(word& wpos, int32_t& BTNwpn, int32_t& directItemBTN
 // to switch Hero's weapon if his current weapon (bombs) was depleted.
 void HeroClass::deselectbombs(int32_t super)
 {
-    if ( get_qr(qr_NEVERDISABLEAMMOONSUBSCREEN) || itemsbuf[game->forced_awpn].family == itype_bomb || itemsbuf[game->forced_bwpn].family == itype_bomb || itemsbuf[game->forced_xwpn].family == itype_bomb || itemsbuf[game->forced_ywpn].family == itype_bomb) return;
+    if ( get_qr(qr_NEVERDISABLEAMMOONSUBSCREEN) || itemsbuf[game->forced_awpn].type == itype_bomb || itemsbuf[game->forced_bwpn].type == itype_bomb || itemsbuf[game->forced_xwpn].type == itype_bomb || itemsbuf[game->forced_ywpn].type == itype_bomb) return;
     if(getItemFamily(itemsbuf,Bwpn)==(super? itype_sbomb : itype_bomb) && (directWpn<0 || Bwpn==directWpn))
     {
 		if(!new_subscreen_active)
@@ -10568,7 +10665,7 @@ void HeroClass::deselectbombs(int32_t super)
 int32_t potion_life=0;
 int32_t potion_magic=0;
 
-bool HeroClass::onWater(bool drownonly)
+int HeroClass::onWater(bool drownonly)
 {
 	int32_t water = 0;
 	int32_t types[4] = {0};
@@ -10583,43 +10680,50 @@ bool HeroClass::onWater(bool drownonly)
 	}
 	else
 	{
-		types[0] = COMBOTYPE(x1,y1);
+		rpos_handle_t rpos_handles[4];
+		rpos_handles[0] = get_rpos_handle_for_world_xy(x1, y1, 0);
+		rpos_handles[1] = get_rpos_handle_for_world_xy(x1, y2, 0);
+		rpos_handles[2] = get_rpos_handle_for_world_xy(x2, y1, 0);
+		rpos_handles[3] = get_rpos_handle_for_world_xy(x2, y2, 0);
 		
-		if(MAPFFCOMBO(x1,y1))
-			types[0] = FFCOMBOTYPE(x1,y1);
-			
-		types[1] = COMBOTYPE(x1,y2);
+		types[0] = rpos_handles[0].ctype();
+		if (auto ffc_handle = getFFCAt(x1, y1))
+			types[0] = ffc_handle->ctype();
 		
-		if(MAPFFCOMBO(x1,y2))
-			types[1] = FFCOMBOTYPE(x1,y2);
-			
-		types[2] = COMBOTYPE(x2,y1);
+		types[1] = rpos_handles[1].ctype();
+		if (auto ffc_handle = getFFCAt(x1, y2))
+			types[1] = ffc_handle->ctype();
+
+		types[2] = rpos_handles[2].ctype();
+		if (auto ffc_handle = getFFCAt(x2, y1))
+			types[2] = ffc_handle->ctype();
+
+		types[3] = rpos_handles[3].ctype();
+		if (auto ffc_handle = getFFCAt(x2, y2))
+			types[3] = ffc_handle->ctype();
 		
-		if(MAPFFCOMBO(x2,y1))
-			types[2] = FFCOMBOTYPE(x2,y1);
-			
-		types[3] = COMBOTYPE(x2,y2);
+		auto rpos_handle = get_rpos_handle_for_world_xy((x2+x1)/2, (y2+y1)/2, 0);
+		auto typec = rpos_handle.ctype();
+		auto cid = rpos_handle.data();
+		if (auto ffc_handle = getFFCAt((x2+x1)/2, (y2+y1)/2))
+		{
+			typec = ffc_handle->ctype();
+			cid = ffc_handle->data();
+		}
 		
-		if(MAPFFCOMBO(x2,y2))
-			types[3] = FFCOMBOTYPE(x2,y2);
-			
-		int32_t typec = COMBOTYPE((x2+x1)/2,(y2+y1)/2);
-		if(MAPFFCOMBO((x2+x1)/2,(y2+y1)/2))
-			typec = FFCOMBOTYPE((x2+x1)/2,(y2+y1)/2);
-			
 		if(combo_class_buf[types[0]].water && combo_class_buf[types[1]].water &&
 				combo_class_buf[types[2]].water && combo_class_buf[types[3]].water && combo_class_buf[typec].water)
-			water = typec;
+			water = cid;
 	}
 	if(water > 0)
 	{
-		if(!drownonly) return true;
+		if(!drownonly) return water;
 		if(current_item(itype_flippers) <= 0 || current_item(itype_flippers) < combobuf[water].attribytes[0] || ((combobuf[water].usrflags&cflag1) && !(itemsbuf[current_item_id(itype_flippers)].flags & item_flag3))) 
 		{
-			return true;
+			return water;
 		}
 	}
-	return false;
+	return 0;
 }
 
 bool HeroClass::mirrorBonk()
@@ -10648,6 +10752,7 @@ void HeroClass::doMirror(int32_t mirrorid)
 	if(mirrorid < 0)
 		mirrorid = current_item_id(itype_mirror);
 	if(mirrorid < 0) return;
+	if (on_cooldown(mirrorid)) return;
 	
 	if((hero_scr->flags9&fDISABLE_MIRROR) || !(checkbunny(mirrorid) && checkmagiccost(mirrorid)))
 	{
@@ -10673,6 +10778,7 @@ void HeroClass::doMirror(int32_t mirrorid)
 	if(DMaps[cur_dmap].flags & dmfMIRRORCONTINUE)
 	{
 		paymagiccost(mirrorid);
+		start_cooldown(mirrorid);
 		if(mirror.usesound2) sfx(mirror.usesound2);
 		
 		doWarpEffect(mirror.misc2, true);
@@ -10701,6 +10807,7 @@ void HeroClass::doMirror(int32_t mirrorid)
 		if((offscr%16 != destscr%16) || unsigned(destscr) >= 0x80)
 			return;
 		paymagiccost(mirrorid);
+		start_cooldown(mirrorid);
 		
 		//Store some values to restore if 'warp fails'
 		int32_t tLastEntrance = lastentrance,
@@ -10755,8 +10862,33 @@ void HeroClass::doMirror(int32_t mirrorid)
 
 void HeroClass::handle_passive_buttons()
 {
+	if(no_control()) return;
 	do_liftglove(-1,true);
 	do_jump(-1,true);
+}
+
+void HeroClass::for_each_rpos_stood_on(std::function<void(const rpos_handle_t&)> proc)
+{
+	auto rpos = COMBOPOS_REGION_B(x+8, y+(sideview_mode()?16:12));
+	auto rpos2 = sideview_mode() ? COMBOPOS_REGION_B(x+8, y+12) : rpos_t::None;
+	if (rpos != rpos_t::None || rpos2 != rpos_t::None)
+	{
+		for (int layer = 0; layer < 7; ++layer)
+		{
+			if (rpos != rpos_t::None)
+			{
+				auto handle = get_rpos_handle(rpos, layer);
+				if (!sideview_mode() || !(handle.combo().genflags & cflag5))
+					proc(handle);
+			}
+			if (rpos2 != rpos_t::None)
+			{
+				auto handle = get_rpos_handle(rpos2, layer);
+				if (handle.combo().genflags & cflag5) // sideview_mode() already checked above
+					proc(handle);
+			}
+		}
+	}
 }
 
 void HeroClass::land_on_ground()
@@ -10768,66 +10900,39 @@ void HeroClass::land_on_ground()
 	if(get_qr(qr_OLD_LANDING_SFX))
 	{
 		if(!sideview_mode() && ((iswaterex_z3(MAPCOMBO(x,y+8), -1, x, y+8, true, false) && ladderx<=0 && laddery<=0) || COMBOTYPE(x,y+8)==cSHALLOWWATER))
-			sfx(WAV_ZN1SPLASH,x.getInt());
+			sfx(WAV_ZN1SPLASH,pan(x));
 		played_land_sfx = true;
 	}
 
-	auto rpos = COMBOPOS_REGION_B(x+8, y+(sideview_mode()?16:12));
-	for (int q = 0; q < 7; ++q)
-	{
-		if (rpos == rpos_t::None) break;
-
-		auto rpos_handle = get_rpos_handle(rpos, q);
-		auto& cmb = rpos_handle.combo();
-		auto cid = rpos_handle.data();
-		byte csfx = cmb.sfx_landing;
-		if (csfx && !get_qr(qr_OLD_LANDING_SFX))
+	for_each_rpos_stood_on([&](const rpos_handle_t& handle)
 		{
-			sfx(csfx, x.getInt());
-			played_land_sfx = true;
-		}
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-		{
-			auto& trig = cmb.triggers[idx];
-			if (trig.triggerflags[4]&combotriggerPLAYERLANDHERE)
+			auto& cmb = handle.combo();
+			byte csfx = cmb.sfx_landing;
+			if (csfx && !get_qr(qr_OLD_LANDING_SFX))
 			{
-				do_trigger_combo(rpos_handle, idx);
-				if(rpos_handle.data() != cid) break;
+				sfx(csfx, pan(x));
+				played_land_sfx = true;
 			}
-		}
-	}
-
+			trig_each_combo_trigger(handle, [&](combo_trigger const& trig){
+				return trig.trigger_flags.get(TRIGFLAG_PLAYERLANDHERE);
+			});
+		});
+	
 	if(!played_land_sfx && QMisc.miscsfx[sfxHERO_LANDS])
-		sfx(QMisc.miscsfx[sfxHERO_LANDS], x.getInt());
+		sfx(QMisc.miscsfx[sfxHERO_LANDS], pan(x));
 	
 	
 	for_some_rpos([&](const rpos_handle_t& rpos_handle) {
-		auto cid = rpos_handle.data();
-		newcombo const& cmb = rpos_handle.combo();
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-		{
-			auto& trig = cmb.triggers[idx];
-			if (trig.triggerflags[4]&combotriggerPLAYERLANDANYWHERE)
-			{
-				do_trigger_combo(rpos_handle, idx);
-				if(rpos_handle.data() != cid) break;
-			}
-		}
+		trig_each_combo_trigger(rpos_handle, [&](combo_trigger const& trig){
+			return trig.trigger_flags.get(TRIGFLAG_PLAYERLANDANYWHERE);
+		});
 		
 		return true;
 	});
 	for_some_ffcs([&](const ffc_handle_t& ffc_handle) {
-		auto cid = ffc_handle.data();
-		auto& cmb = ffc_handle.combo();
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-		{
-			auto& trig = cmb.triggers[idx];
-			if (trig.triggerflags[4]&combotriggerPLAYERLANDANYWHERE)
-			{
-				do_trigger_combo(ffc_handle, idx);
-				if(ffc_handle.data() != cid) break;
-			}
-		}
+		trig_each_combo_trigger(ffc_handle, [&](combo_trigger const& trig){
+			return trig.trigger_flags.get(TRIGFLAG_PLAYERLANDANYWHERE);
+		});
 		
 		return true;
 	});
@@ -10839,6 +10944,7 @@ bool HeroClass::do_jump(int32_t jumpid, bool passive)
 	if(passive) did_passive_jump = false;
 	else if(did_passive_jump) return false; //don't jump twice in the same frame
 	
+	if (on_cooldown(jumpid)) return false;
 	if(nomove_action(action)) return false; //can't jump while ex. drowning
 	if(onWater(true)) return false; //Don't allow jumping off of water frame-perfectly...
 	
@@ -10863,11 +10969,18 @@ bool HeroClass::do_jump(int32_t jumpid, bool passive)
 	byte intbtn = byte(itm.misc2&0xFF);
 	if(passive)
 	{
-		if(!getIntBtnInput(intbtn, true, true, false, false, true))
+		if(!getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK | INPUT_PEEK))
 			return false; //not pressed
 	}
 	
 	paymagiccost(jumpid);
+	start_cooldown(jumpid);
+	
+	if (itm.flags & item_flag6) // delayed effect on release, store the jump id
+	{
+		current_rocs_jump_id = jumpid;
+		released_jump_button = false;
+	}
 	
 	if(!standing)
 	{
@@ -10884,16 +10997,16 @@ bool HeroClass::do_jump(int32_t jumpid, bool passive)
 	setOnSideviewLadder(false);
 	
 	// Reset the ladder, unless on an unwalkable combo
-	if((ladderx || laddery) && !(_walkflag(ladderx,laddery,0,SWITCHBLOCK_STATE)))
+	if((ladderx || laddery) && !(_walkflag(ladderx,laddery,0,get_standing_z_state())))
 		reset_ladder();
 	
 	if(itm.usesound)
-		sfx(itm.usesound,pan(x.getInt()));
+		sfx(itm.usesound,pan(x));
 	
 	if(passive)
 	{
 		did_passive_jump = true;
-		getIntBtnInput(intbtn, true, true, false, false, false); //eat buttons
+		getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK); //eat buttons
 	}
 	return true;
 }
@@ -10941,11 +11054,12 @@ void HeroClass::do_liftglove(int32_t liftid, bool passive)
 		else liftid = current_item_id(itype_liftglove,true,true);
 	}
 	if(!can_lift(liftid)) return;
+	if (on_cooldown(liftid)) return;
 	itemdata const& glove = itemsbuf[liftid];
 	byte intbtn = byte(glove.misc1&0xFF);
 	if(passive)
 	{
-		if(!getIntBtnInput(intbtn, true, true, false, false, true))
+		if(!getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK | INPUT_PEEK))
 			return; //not pressed
 	}
 	
@@ -10979,7 +11093,7 @@ void HeroClass::do_liftglove(int32_t liftid, bool passive)
 		{
 			if(passive)
 			{
-				getIntBtnInput(intbtn, true, true, false, false, false); //eat buttons
+				getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK); //eat buttons
 			}
 			return;
 		}
@@ -11019,7 +11133,7 @@ void HeroClass::do_liftglove(int32_t liftid, bool passive)
 						lift_wpn->step = 0;
 						break;
 					case down: //step converts into straight down fall
-						lift_wpn->fall = zc_min(basestep,zinit.terminalv);
+						lift_wpn->fall = zc_min(basestep,lift_wpn->get_terminalv_fall());
 						lift_wpn->step = 0;
 						break;
 				}
@@ -11046,14 +11160,15 @@ void HeroClass::do_liftglove(int32_t liftid, bool passive)
 			lift_wpn = nullptr;
 			last_lift_id.reset();
 			if(glove.usesound2)
-				sfx(glove.usesound2,pan(int32_t(x)));
+				sfx(glove.usesound2,pan(x));
 		}
 		else last_lift_id = liftid;
 		
 		if(passive)
 		{
-			getIntBtnInput(intbtn, true, true, false, false, false); //eat buttons
+			getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK); //eat buttons
 		}
+		start_cooldown(liftid);
 		return;
 	}
 	
@@ -11092,7 +11207,7 @@ void HeroClass::do_liftglove(int32_t liftid, bool passive)
 		for(int32_t q = 0; q < Lwpns.Count(); ++q)
 		{
 			weapon* w = (weapon*)Lwpns.spr(q);
-			if((w->lift_level && w->lift_level <= glove.fam_type))
+			if((w->lift_level && w->lift_level <= glove.level))
 			{
 				auto tmpflags = w->misc_wflags;
 				w->misc_wflags &= ~WFLAG_NO_COLL_WHEN_STILL;
@@ -11186,9 +11301,10 @@ void HeroClass::do_liftglove(int32_t liftid, bool passive)
 		paidmagic = true;
 		paymagiccost(liftid);
 	}
+	start_cooldown(liftid);
 	set_liftflags(liftid);
 	if(passive)
-		getIntBtnInput(intbtn, true, true, false, false, false); //eat buttons
+		getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK); //eat buttons
 	return;
 }
 void HeroClass::handle_lift(bool dec)
@@ -11379,7 +11495,7 @@ void HeroClass::doSwitchHook(byte style)
 				{
 					if((cmb.usrflags&cflag1) && player_scr->data[player_pos])
 						continue; //don't swap with non-zero combo
-					if(zc_max(1,itemsbuf[(w && w->parentitem>-1) ? w->parentitem : current_item_id(itype_switchhook)].fam_type) < cmb.attribytes[0])
+					if(zc_max(1,itemsbuf[(w && w->parentitem>-1) ? w->parentitem : current_item_id(itype_switchhook)].level) < cmb.attribytes[0])
 						continue; //too low a switchhook level
 					hooked_layerbits |= 1<<q; //Swapping
 					if(cmb.usrflags&cflag3)
@@ -11524,6 +11640,7 @@ void HeroClass::doSwitchHook(byte style)
 bool HeroClass::startwpn(int32_t itemid)
 {
 	if(itemid < 0) return false;
+	if (on_cooldown(itemid)) return false;
 	itemdata const& itm = itemsbuf[itemid];
 	if(((dir==up && y<24) || (dir==down && y>world_h-48) ||
 			(dir==left && x<32) || (dir==right && x>world_w-48)) && !(get_qr(qr_ITEMSONEDGES) || inlikelike))
@@ -11533,7 +11650,7 @@ bool HeroClass::startwpn(int32_t itemid)
 	if(liftonly)
 	{
 		dowpn = -1;
-		switch(itm.family)
+		switch(itm.type)
 		{
 			case itype_bomb:
 			case itype_sbomb:
@@ -11572,7 +11689,7 @@ bool HeroClass::startwpn(int32_t itemid)
 	}
 	if (IsSideSwim() && (itm.flags & item_sideswim_disabled)) return false;
 	
-	switch(itm.family)
+	switch(itm.type)
 	{
 		case itype_liftglove:
 		{
@@ -11589,6 +11706,7 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 				
 			paymagiccost(itemid);
+			start_cooldown(itemid);
 			
 			if(itm.misc1 || itm.misc2)
 			{
@@ -11628,6 +11746,7 @@ bool HeroClass::startwpn(int32_t itemid)
 			{
 				paidmagic = true;
 				paymagiccost(itemid);
+				start_cooldown(itemid);
 
 				int i = itemid;
 				FFCore.reset_script_engine_data(ScriptType::Item, i);
@@ -11695,9 +11814,12 @@ bool HeroClass::startwpn(int32_t itemid)
 					if(bt->flags & BTFLAG_CURESHJINX)
 						shieldjinxclk = 0;
 					if(!paidmagic)
+					{
 						paymagiccost(itemid);
+						start_cooldown(itemid);
+					}
 					stop_sfx(QMisc.miscsfx[sfxLOWHEART]); //stop heart beep!
-					sfx(itm.usesound,pan(x.getInt()));
+					sfx(itm.usesound,pan(x));
 					for(size_t q = 0; q < 20; ++q)
 						do_refill_waitframe();
 					double inc = max/60.0; //1 second
@@ -11751,10 +11873,11 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 			if(!msg_active)
 			{
-				if(play_combo_string(itm.misc1, hero_screen))
+				if(play_combo_string(itm.misc1, current_screen))
 				{
 					sfx(itm.usesound);
 					paymagiccost(itemid);
+					start_cooldown(itemid);
 				}
 			}
 			dowpn = -1;
@@ -11794,6 +11917,7 @@ bool HeroClass::startwpn(int32_t itemid)
 				sfx((cur_screen >= 128 ? special_warp_return_scr : hero_scr)->secretsfx);
 				setupscreen();
 				action=none; FFCore.setHeroAction(none);
+				start_cooldown(itemid);
 			}
 			
 			ret = false;
@@ -11810,6 +11934,7 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 				
 			paymagiccost(itemid);
+			start_cooldown(itemid);
 			sfx(itm.usesound);
 			
 			if(dir==up || dir==right)
@@ -11895,7 +12020,7 @@ bool HeroClass::startwpn(int32_t itemid)
 		
 		case itype_bomb: case itype_sbomb:
 		{
-			bool sbomb = (itm.family == itype_sbomb);
+			bool sbomb = (itm.type == itype_sbomb);
 			auto lit_ty = sbomb ? wLitSBomb : wLitBomb;
 			auto boom_ty = sbomb ? wSBomb : wBomb;
 			//Remote detonation
@@ -11924,6 +12049,7 @@ bool HeroClass::startwpn(int32_t itemid)
 			if((itm.flags & item_flag4) && lift_wpn)
 			{
 				do_liftglove(-1,false); //Throw the already-held weapon
+				start_cooldown(itemid);
 				return false;
 			}
 			if(!(checkbunny(itemid) && checkmagiccost(itemid)))
@@ -11932,6 +12058,7 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 				
 			paymagiccost(itemid);
+			start_cooldown(itemid);
 				
 			if(itm.misc1>0) // If not remote bombs
 				deselectbombs(sbomb);
@@ -11941,13 +12068,13 @@ bool HeroClass::startwpn(int32_t itemid)
 				wy=zc_max(wy,16);
 			}
 			
-			weapon* wpn = new weapon((zfix)wx,(zfix)wy,(zfix)wz,lit_ty,itm.fam_type,
+			weapon* wpn = new weapon((zfix)wx,(zfix)wy,(zfix)wz,lit_ty,itm.level,
 				itm.power*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true);
 			bool lifted = false;
 			if(itm.flags & item_flag4)
 			{
 				auto liftid = current_item_id(itype_liftglove);
-				if(liftid > -1 && (itm.weap_data.lift_level <= itemsbuf[liftid].fam_type))
+				if(liftid > -1 && (itm.weap_data.lift_level <= itemsbuf[liftid].level))
 				{
 					lift(wpn, itm.weap_data.lift_time, itm.weap_data.lift_height);
 					set_liftflags(liftid);
@@ -11971,6 +12098,8 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 				
 			int32_t bookid = current_item_id(itype_book);
+			if (bookid > -1 && on_cooldown(bookid))
+				bookid = -1;
 			bool paybook = (bookid>-1 && checkbunny(bookid) && checkmagiccost(bookid));
 			
 			if(!(itm.flags&item_flag1) && !paybook)  //Can the wand shoot without the book?
@@ -11990,12 +12119,12 @@ bool HeroClass::startwpn(int32_t itemid)
 			int32_t type, pow;
 			if ( get_qr(qr_BROKENBOOKCOST) )
 			{
-				type = bookid != -1 ? current_item(itype_book) : itm.fam_type;
+				type = bookid != -1 ? current_item(itype_book) : itm.level;
 				pow = (bookid != -1 ? current_item_power(itype_book) : itm.power)*game->get_hero_dmgmult();
 			}
 			else
 			{
-				type = (bookid != -1 && paybook) ? current_item(itype_book) : itm.fam_type;
+				type = (bookid != -1 && paybook) ? current_item(itype_book) : itm.level;
 				pow = ((bookid != -1 && paybook) ? current_item_power(itype_book) : itm.power)*game->get_hero_dmgmult();
 			}
 			for(int32_t i=(spins==1?up:dir); i<=(spins==1 ? right:dir); i++)
@@ -12012,7 +12141,12 @@ bool HeroClass::startwpn(int32_t itemid)
 			else misc_internal_hero_flags &= ~LF_PAID_WAND_COST;
 			
 			if(paybook)
-				paymagiccost(current_item_id(itype_book));
+			{
+				paymagiccost(bookid);
+				start_cooldown(bookid);
+			}
+			
+			start_cooldown(itemid);
 				
 			if(bookid != -1)
 			{
@@ -12072,6 +12206,8 @@ bool HeroClass::startwpn(int32_t itemid)
 			if(!(misc_internal_hero_flags & LF_PAID_SWORD_COST))//If already paid to use sword melee, don't charge again
 				paymagiccost(itemid);
 			else misc_internal_hero_flags &= ~LF_PAID_SWORD_COST;
+			
+			start_cooldown(itemid);
 
 			int temppower;
 			if(itm.flags & item_flag2)
@@ -12085,7 +12221,7 @@ bool HeroClass::startwpn(int32_t itemid)
 				temppower = game->get_hero_dmgmult()*itm.misc2;
 			}
 
-			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wBeam,itm.fam_type,temppower,dir,itemid,getUID(),false,false,true));
+			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wBeam,itm.level,temppower,dir,itemid,getUID(),false,false,true));
 			sfx(itm.usesound2, pan(wx));
 		}
 		break;
@@ -12111,12 +12247,13 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 			
 			paymagiccost(itemid);
+			start_cooldown(itemid);
 			
 			if(itm.flags&item_flag1) ++usecounts[countid];
 			
 			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wFire,
 								 //(itm.fam_type > 1), //To do with combo flags ... Needs to be changed to fix ->Level for wFire
-								 (itm.fam_type), //To do with combo flags ... Needs to be changed to fix ->Level for wFire
+								 (itm.level), //To do with combo flags ... Needs to be changed to fix ->Level for wFire
 								 itm.power*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
 			sfx(itm.usesound,pan(wx));
 			attack=wFire;
@@ -12126,7 +12263,7 @@ bool HeroClass::startwpn(int32_t itemid)
 		case itype_script1: case itype_script2: case itype_script3: case itype_script4: case itype_script5:
 		case itype_script6: case itype_script7: case itype_script8: case itype_script9: case itype_script10:
 		{
-			int32_t wtype = wScript1 + (itm.family-itype_script1);
+			int32_t wtype = wScript1 + (itm.type-itype_script1);
 			if(Lwpns.idCount(wtype))
 				return false;
 				
@@ -12137,13 +12274,15 @@ bool HeroClass::startwpn(int32_t itemid)
 			
 			if(!get_qr(qr_CUSTOMWEAPON_IGNORE_COST))
 				paymagiccost(itemid);
+			start_cooldown(itemid);
 			
 			zfix wpnstep = zfix(itm.misc1)/100;
 			if(replay_version_check(0,30))
 				wpnstep = itm.misc1/100;
 			
-			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wtype,itm.fam_type,game->get_hero_dmgmult()*itm.power,dir,itemid,getUID(),false,false,true));
-			((weapon*)Lwpns.spr(Lwpns.Count()-1))->step = wpnstep;
+			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wtype,itm.level,game->get_hero_dmgmult()*itm.power,dir,itemid,getUID(),false,false,true));
+			if(!(itm.weap_data.flags & wdata_set_step))
+				((weapon*)Lwpns.spr(Lwpns.Count()-1))->step = wpnstep;
 			sfx(itm.usesound,pan(wx));
 		}
 		break;
@@ -12160,13 +12299,15 @@ bool HeroClass::startwpn(int32_t itemid)
 			
 			if(!get_qr(qr_CUSTOMWEAPON_IGNORE_COST))
 				paymagiccost(itemid);
+			start_cooldown(itemid);
 			
 			zfix wpnstep = zfix(itm.misc1)/100;
 			if(replay_version_check(0,30))
 				wpnstep = itm.misc1/100;
 		
-			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wIce,itm.fam_type,game->get_hero_dmgmult()*itm.power,dir,itemid,getUID(),false,false,true));
-			((weapon*)Lwpns.spr(Lwpns.Count()-1))->step = wpnstep;
+			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wIce,itm.level,game->get_hero_dmgmult()*itm.power,dir,itemid,getUID(),false,false,true));
+			if(!(itm.weap_data.flags & wdata_set_step))
+				((weapon*)Lwpns.spr(Lwpns.Count()-1))->step = wpnstep;
 			sfx(itm.usesound,pan(wx));
 		}
 		break;
@@ -12182,8 +12323,9 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 			
 			paymagiccost(itemid);
+			start_cooldown(itemid);
 			
-			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wArrow,itm.fam_type,game->get_hero_dmgmult()*itm.power,dir,itemid,getUID(),false,false,true));
+			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wArrow,itm.level,game->get_hero_dmgmult()*itm.power,dir,itemid,getUID(),false,false,true));
 			((weapon*)Lwpns.spr(Lwpns.Count()-1))->step*=(current_item_power(itype_bow)+1)/2;
 			sfx(itm.usesound,pan(wx));
 		}
@@ -12209,6 +12351,7 @@ bool HeroClass::startwpn(int32_t itemid)
 				
 			if(paycost)
 				paymagiccost(itemid);
+			start_cooldown(itemid);
 			sfx(itm.usesound,pan(wx));
 			
 			if(grumble)
@@ -12243,8 +12386,10 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 				
 			paymagiccost(itemid);
+			start_cooldown(itemid);
+			
 			current_item_power(itype_brang);
-			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wBrang,itm.fam_type,(itm.power*game->get_hero_dmgmult()),dir,itemid,getUID(),false,false,true));
+			Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wBrang,itm.level,(itm.power*game->get_hero_dmgmult()),dir,itemid,getUID(),false,false,true));
 		}
 		break;
 		
@@ -12258,11 +12403,13 @@ bool HeroClass::startwpn(int32_t itemid)
 			{
 				return item_error();
 			}
-			bool sw = itm.family == itype_switchhook;
+			bool sw = itm.type == itype_switchhook;
 			
 			if(sw && (itm.flags&item_flag8))
 				switchhook_cost_item = itemid;
 			else paymagiccost(itemid);
+			
+			start_cooldown(itemid);
 			
 			bool use_hookshot=true;
 			bool hit_hs = false, hit_solid = false, insta_switch = false;
@@ -12313,7 +12460,7 @@ bool HeroClass::startwpn(int32_t itemid)
 						hit_hs = true;
 				}
 			}
-			if(dir==up && _walkflag(x+2,y+4,1,SWITCHBLOCK_STATE) && !ishookshottable(x.getInt(),int32_t(y+4)))
+			if(dir==up && _walkflag(x+2,y+4,1,get_standing_z_state()) && !ishookshottable(x.getInt(),int32_t(y+4)))
 				hit_solid = true;
 			if(hit_hs)
 			{
@@ -12325,7 +12472,7 @@ bool HeroClass::startwpn(int32_t itemid)
 				use_hookshot = false;
 			if(use_hookshot)
 			{
-				int32_t hookitem = itm.fam_type;
+				int32_t hookitem = itm.level;
 				int32_t hookpower = itm.power;
 				byte allow_diagonal = (itm.flags & item_flag2) ? 1 : 0; 
 			
@@ -12347,10 +12494,10 @@ bool HeroClass::startwpn(int32_t itemid)
 						hs_switcher = sw;
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wHSHandle,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy-4,(zfix)wz,wHookshot,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						hs_startx=wx;
 						hs_starty=wy-4;
 					}
@@ -12363,10 +12510,10 @@ bool HeroClass::startwpn(int32_t itemid)
 						hs_switcher = sw;
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy+offset,(zfix)wz,wHSHandle,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy+offset,(zfix)wz,wHookshot,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						hs_startx=wx;
 						hs_starty=wy;
 					}
@@ -12378,10 +12525,10 @@ bool HeroClass::startwpn(int32_t itemid)
 						hs_switcher = sw;
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wHSHandle,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						Lwpns.add(new weapon((zfix)(wx-4),(zfix)wy,(zfix)wz,wHookshot,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						hs_startx=wx-4;
 						hs_starty=wy;
 					}
@@ -12394,10 +12541,10 @@ bool HeroClass::startwpn(int32_t itemid)
 						// TODO(crash): check that .add succeeds.
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wHSHandle,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						Lwpns.add(new weapon((zfix)(wx+4),(zfix)wy,(zfix)wz,wHookshot,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						hs_startx=wx+4;
 						hs_starty=wy;
 					}
@@ -12410,10 +12557,10 @@ bool HeroClass::startwpn(int32_t itemid)
 						int32_t offset=get_qr(qr_HOOKSHOTDOWNBUG)?4:0;
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy+offset,(zfix)wz,wHSHandle,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						Lwpns.add(new weapon((zfix)(wx+4),(zfix)wy+offset,(zfix)wz,wHookshot,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						hs_startx=wx+4;
 						hs_starty=wy;
 					}
@@ -12425,10 +12572,10 @@ bool HeroClass::startwpn(int32_t itemid)
 						hs_switcher = sw;
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wHSHandle,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						Lwpns.add(new weapon((zfix)(wx+4),(zfix)wy,(zfix)wz,wHookshot,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						hs_startx=wx+4;
 						hs_starty=wy;
 					}
@@ -12441,10 +12588,10 @@ bool HeroClass::startwpn(int32_t itemid)
 						int32_t offset=get_qr(qr_HOOKSHOTDOWNBUG)?4:0;
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy+offset,(zfix)wz,wHSHandle,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						Lwpns.add(new weapon((zfix)(wx-4),(zfix)wy+offset,(zfix)wz,wHookshot,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						hs_startx=wx+4;
 						hs_starty=wy;
 					}
@@ -12456,10 +12603,10 @@ bool HeroClass::startwpn(int32_t itemid)
 						hs_switcher = sw;
 						Lwpns.add(new weapon((zfix)wx,(zfix)wy,(zfix)wz,wHSHandle,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						Lwpns.add(new weapon((zfix)(wx-4),(zfix)wy,(zfix)wz,wHookshot,hookitem,
 											 hookpower*game->get_hero_dmgmult(),dir,itemid,getUID(),false,false,true));
-						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.family;
+						((weapon*)Lwpns.spr(Lwpns.Count()-1))->family_class = itm.type;
 						hs_startx=wx+4;
 						hs_starty=wy;
 					}
@@ -12480,9 +12627,9 @@ bool HeroClass::startwpn(int32_t itemid)
 				w->step=0;
 				doSwitchHook(itm.misc5);
 				if(itm.usesound2)
-					sfx(itm.usesound2,pan(int32_t(x)));
+					sfx(itm.usesound2,pan(x));
 				else if(QMisc.miscsfx[sfxSWITCHED])
-					sfx(QMisc.miscsfx[sfxSWITCHED],int32_t(x));
+					sfx(QMisc.miscsfx[sfxSWITCHED],pan(x));
 				stop_sfx(itm.usesound);
 			}
 		}
@@ -12498,6 +12645,8 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 				
 			paymagiccost(itemid);
+			start_cooldown(itemid);
+			
 			if (IsSideSwim()) {action=sideswimcasting; FFCore.setHeroAction(sideswimcasting);}
 			else {action=casting; FFCore.setHeroAction(casting);}
 			magicitem=itemid;
@@ -12513,6 +12662,8 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 				
 			paymagiccost(itemid);
+			start_cooldown(itemid);
+			
 			if (IsSideSwim()) {action=sideswimcasting; FFCore.setHeroAction(sideswimcasting);}
 			else {action=casting; FFCore.setHeroAction(casting);}
 			magicitem=itemid;
@@ -12528,6 +12679,8 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 				
 			paymagiccost(itemid);
+			start_cooldown(itemid);
+			
 			if (IsSideSwim()) {action=sideswimcasting; FFCore.setHeroAction(sideswimcasting);}
 			else {action=casting; FFCore.setHeroAction(casting);}
 			magicitem=itemid;
@@ -12550,6 +12703,8 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 				
 			paymagiccost(itemid);
+			start_cooldown(itemid);
+			
 			last_cane_of_byrna_item_id = itemid; 
 			for(int32_t i=0; i<itm.misc3; i++)
 			{
@@ -12577,6 +12732,7 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 			
 			paymagiccost(itemid);
+			start_cooldown(itemid);
 			
 			setClock(watch=true);
 			
@@ -12599,6 +12755,7 @@ bool HeroClass::startwpn(int32_t itemid)
 			}
 			
 			paymagiccost(itemid);
+			start_cooldown(itemid);
 			
 			kill_em_all();
 			sfx(itm.usesound);
@@ -12669,13 +12826,25 @@ bool HeroClass::startwpn(int32_t itemid)
 				return item_error();
 			}
 			paymagiccost(itemid);
+			start_cooldown(itemid);
 			sfx(itm.usesound);
 			ret = false;
 			break;
 		}
 		
-		default:
+		case itype_lens:
+			// don't start cooldown here, it's activated elsewhere
 			ret = false;
+			break;
+		case itype_shield:
+			if (!(itm.flags & item_flag9)) // don't start cooldown here for active shields
+				start_cooldown(itemid);
+			ret = false;
+			break;
+		default:
+			start_cooldown(itemid);
+			ret = false;
+			break;
 	}
 	
 	if(itm.flags & item_downgrade)
@@ -12714,7 +12883,25 @@ bool HeroClass::startwpn(int32_t itemid)
 
 	return ret;
 }
-
+bool HeroClass::on_cooldown(int32_t itemid)
+{
+	if (itemid < 0 || itemid >= MAXITEMS) return false;
+	return item_cooldown[itemid];
+}
+void HeroClass::start_cooldown(int32_t itemid)
+{
+	if (itemid < 0 || itemid >= MAXITEMS) return;
+	if (item_cooldown[itemid] < 0) return; // set to perma-cooldown (via script, presumably)
+	auto cd_data = calc_item_cooldown(itemid);
+	if(cd_data.max_cooldown <= 0) return;
+	if(cd_data.max_cooldown > item_cooldown[itemid])
+	{
+		item_cooldown[itemid] = cd_data.max_cooldown;
+		paymagiccost(cd_data.cooldown_ring_id);
+	}
+	else if(cd_data.base_cooldown > item_cooldown[itemid]) // cd ring still *did something*, so still pay
+		paymagiccost(cd_data.cooldown_ring_id);
+}
 
 bool HeroClass::doattack()
 {
@@ -12723,7 +12910,7 @@ bool HeroClass::doattack()
 	//int32_t s = BSZ ? 0 : 11;
 	int32_t s = (zinit.heroAnimationStyle==las_bszelda) ? 0 : 11;
 	
-	int32_t bugnetid = (directWpn>-1 && itemsbuf[directWpn].family==itype_bugnet) ? directWpn : current_item_id(itype_bugnet);
+	int32_t bugnetid = (directWpn>-1 && itemsbuf[directWpn].type==itype_bugnet) ? directWpn : current_item_id(itype_bugnet);
 	if(attack==wBugNet && bugnetid!=-1)
 	{
 		if(++attackclk >= NET_CLK_TOTAL)
@@ -12749,8 +12936,8 @@ bool HeroClass::doattack()
 		return false;
 	}
 	
-	int32_t candleid = (directWpn>-1 && itemsbuf[directWpn].family==itype_candle) ? directWpn : current_item_id(itype_candle);
-	int32_t byrnaid = (directWpn>-1 && itemsbuf[directWpn].family==itype_cbyrna) ? directWpn : current_item_id(itype_cbyrna);
+	int32_t candleid = (directWpn>-1 && itemsbuf[directWpn].type==itype_candle) ? directWpn : current_item_id(itype_candle);
+	int32_t byrnaid = (directWpn>-1 && itemsbuf[directWpn].type==itype_cbyrna) ? directWpn : current_item_id(itype_cbyrna);
 	// An attack can be "walked out-of" after 8 frames, unless it's:
 	// * a sword stab
 	// * a hammer pound
@@ -12763,7 +12950,7 @@ bool HeroClass::doattack()
 											&& (attack!=wCByrna || (byrnaid!=-1 && !(itemsbuf[byrnaid].wpn)))
 											&& (attack != wBugNet) && attackclk>7))
 	{
-		if(DrunkUp()||DrunkDown()||DrunkLeft()||DrunkRight())
+		if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			lstep = s;
 			return false;
@@ -12826,7 +13013,7 @@ bool HeroClass::doattack()
 		{
 			if(!(itemsbuf[scrollid].flags&item_flag1))
 				paymagiccost(scrollid);
-			sfx(itemsbuf[scrollid].usesound2,pan(x.getInt()));
+			sfx(itemsbuf[scrollid].usesound2,pan(x));
 		}
 		else if(charging==magiccharge)
 		{
@@ -12835,7 +13022,7 @@ bool HeroClass::doattack()
 				if(!(itemsbuf[scroll2id].flags&item_flag1))
 					paymagiccost(scroll2id);
 				charging++; // charging>magiccharge signifies a successful supercharge.
-				sfx(itemsbuf[scroll2id].usesound2,pan(x.getInt()));
+				sfx(itemsbuf[scroll2id].usesound2,pan(x));
 			}
 		}
 	}
@@ -12909,7 +13096,7 @@ bool HeroClass::doattack()
 					if(!get_qr(qr_BROKEN_SWORD_SPIN_TRIGGERS))
 						if(weapon* w = find_first_wtype(wSword))
 							w->reset_wgrids();
-					sfx(spinscroll.usesound,pan(x.getInt()));
+					sfx(spinscroll.usesound,pan(x));
 					if(spinscroll.flags&item_flag1)
 						paymagiccost(id);
 				}
@@ -12929,7 +13116,7 @@ bool HeroClass::doattack()
 				{
 					currentscroll = id;
 					spins = super ? 2 : 1;
-					sfx(quakescroll.usesound,pan(x.getInt()));
+					sfx(quakescroll.usesound,pan(x));
 					quakeclk=quakescroll.misc1;
 					
 					// general area stun
@@ -12941,8 +13128,8 @@ bool HeroClass::doattack()
 						}
 					}
 					
-					int hmrid = (directWpn>-1 && itemsbuf[directWpn].family==itype_hammer) ? directWpn : current_item_id(itype_hammer);
-					int hmrlvl = hmrid < 0 ? 1 : itemsbuf[hmrid].fam_type;
+					int hmrid = (directWpn>-1 && itemsbuf[directWpn].type==itype_hammer) ? directWpn : current_item_id(itype_hammer);
+					int hmrlvl = hmrid < 0 ? 1 : itemsbuf[hmrid].level;
 					if(hmrlvl < 1) hmrlvl = 1;
 					int rad = quakescroll.misc2;
 					for_every_combo([&](const auto& handle) {
@@ -12950,22 +13137,13 @@ bool HeroClass::doattack()
 						if (distance(x, y, cx, cy) > rad)
 							return;
 
-						auto cid = handle.data();
-						auto& cmb = handle.combo();
-						for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-						{
-							auto& trig = cmb.triggers[idx];
-							if (trig.triggerflags[2] & ((super?combotriggerSQUAKESTUN:0)|combotriggerQUAKESTUN))
-							{
-								if ((trig.triggerflags[0]&combotriggerINVERTMINMAX)
-									? hmrlvl <= trig.triggerlevel
-									: hmrlvl >= trig.triggerlevel)
-								{
-									do_trigger_combo(handle, idx);
-									if(handle.data() != cid) break;
-								}
-							}
-						}
+						vector<int> trigflags = {TRIGFLAG_QUAKESTUN};
+						if(super) trigflags.push_back(TRIGFLAG_SQUAKESTUN);
+						trig_each_combo_trigger(handle, [&](combo_trigger const& trig){
+							if(!trig.trigger_flags.any(trigflags)) return false;
+							return (trig.trigger_flags.get(TRIGFLAG_INVERTMINMAX)
+								? hmrlvl <= trig.triggerlevel : hmrlvl >= trig.triggerlevel);
+						});
 					});
 				}
 			}
@@ -12990,7 +13168,7 @@ bool HeroClass::doattack()
 	if(attackclk==13 || (attackclk==7 && spins>1 && attack != wHammer && crossid >=0 && checkbunny(crossid) && checkmagiccost(crossid)))
 	{
 	
-		int32_t wpnid = (directWpn>-1 && itemsbuf[directWpn].family==itype_sword) ? directWpn : current_item_id(itype_sword);
+		int32_t wpnid = (directWpn>-1 && itemsbuf[directWpn].type==itype_sword) ? directWpn : current_item_id(itype_sword);
 		int64_t templife = wpnid>=0? itemsbuf[wpnid].misc1 : 0;
 		
 		if(wpnid>=0 && itemsbuf[wpnid].flags & item_flag1)
@@ -13049,7 +13227,7 @@ bool HeroClass::can_attack()
 {
 	if(lift_wpn && (liftflags & LIFTFL_DIS_ITEMS))
 		return false;
-	int32_t currentSwordOrWand = (itemsbuf[dowpn].family == itype_wand || itemsbuf[dowpn].family == itype_sword)?dowpn:-1;
+	int32_t currentSwordOrWand = (itemsbuf[dowpn].type == itype_wand || itemsbuf[dowpn].type == itype_sword)?dowpn:-1;
     if(action==hopping || action==swimming || action==freeze || action==sideswimfreeze
 		|| lstunclock > 0 || is_conveyor_stunned || spins>0 || usingActiveShield()
 		|| ((action==attacking||action==sideswimattacking)
@@ -13090,16 +13268,9 @@ void handle_lens_triggers(int32_t l_id)
 		auto& mini_cmb = combo_cache.minis[cid];
 		if (!(enabled ? mini_cmb.on : mini_cmb.off))
 			return;
-		auto& cmb = handle.combo();
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-		{
-			auto& trig = cmb.triggers[idx];
-			if(trig.triggerflags[1] & (enabled ? combotriggerLENSON : combotriggerLENSOFF))
-			{
-				do_trigger_combo(handle, idx);
-				if(handle.data() != cid) break;
-			}
-		}
+		trig_each_combo_trigger(handle, [&](combo_trigger const& trig){
+			return trig.trigger_flags.get(enabled ? TRIGFLAG_LENSON : TRIGFLAG_LENSOFF);
+		});
 	});
 }
 
@@ -13113,15 +13284,17 @@ void do_lens()
 	
 	int32_t wpnPressed = getWpnPressed(itype_lens);
 	int32_t itemid = lensid >= 0 ? lensid : wpnPressed>0 ? wpnPressed : Hero.getLastLensID()>0 ? Hero.getLastLensID() : current_item_id(itype_lens);
+	if (lensid < 0 && Hero.on_cooldown(itemid))
+		itemid = -1;
 	if(itemid >= 0)
 	{
 		if(isWpnPressed(itype_lens) && checkitem_jinx(itemid) && !lensclk && checkbunny(itemid) && checkmagiccost(itemid))
 		{
 			if(lensid<0)
 			{
-				lensid=itemid;
-				if(itemsbuf[itemid].family == itype_lens)
-				Hero.setLastLensID(itemid);
+				lensid = itemid;
+				if(itemsbuf[itemid].type == itype_lens)
+					Hero.setLastLensID(itemid);
 				if(get_qr(qr_MORESOUNDS)) sfx(itemsbuf[itemid].usesound);
 			}
 			
@@ -13145,9 +13318,10 @@ void do_lens()
 			if(!lensclk)
 			{
 				
-				if(lensid>-1)
+				if(lensid > -1)
 				{
-					lensid=-1;
+					Hero.start_cooldown(lensid);
+					lensid = -1;
 					lensclk = 0;
 					
 					if(get_qr(qr_MORESOUNDS)) sfx(WAV_ZN1LENSOFF);
@@ -13202,6 +13376,46 @@ void do_210_lens()
 	}
 }
 
+void HeroClass::tick_diving()
+{
+	if (diveclk && isSideViewHero() && get_qr(qr_SIDESWIM))
+		set_dive(0);
+	int32_t flippers_id = current_item_id(itype_flippers);
+	itemdata const& itm = itemsbuf[flippers_id];
+	byte intbtn = byte(itm.misc3&0xFF);
+	bool dive_pressed = getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK | INPUT_PEEK);
+	bool eatdive = false;
+	if (diveclk > 0)
+	{
+		set_dive(diveclk - 1);
+		bool cool_down = (diveclk == 0);
+		if (!cool_down && (flippers_id > -1 && (itm.flags & item_flag2) && dive_pressed)) // cancel dive
+		{
+			cool_down = true;
+			eatdive = true;
+		}
+		if (cool_down)
+			set_dive(flippers_id < 0 ? -30 : -itemsbuf[flippers_id].misc2); // start cooldown
+	}
+	else if (diveclk < 0)
+	{
+		set_dive(diveclk + 1);
+	}
+	else if ((action == swimming || action == hopping) && dive_pressed)
+	{
+		bool global_diving = (flippers_id > -1 && (itm.flags & item_flag1));
+		bool screen_diving = (hero_scr->flags5 & fTOGGLEDIVING) != 0;
+		
+		if (global_diving == screen_diving)
+		{
+			diveclk = (flippers_id < 0 ? 50 : itm.misc1);
+			eatdive = true;
+		}
+	}
+	if(eatdive)
+		getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK);
+}
+
 void HeroClass::do_hopping()
 {
     do_lens();
@@ -13209,23 +13423,7 @@ void HeroClass::do_hopping()
     if(hopclk==0xFF) //|| (diagonalMovement && hopclk >= 0xFF) ))                                         // swimming
 			//Possible fix for exiting water in diagonal movement. -Z
     {
-		int32_t flippers_id = current_item_id(itype_flippers);
-        if(diveclk>0)
-		{
-            --diveclk;
-			if(flippers_id > -1 && itemsbuf[flippers_id].flags & item_flag2 && DrunkrAbtn()) //Cancellable Diving -V
-			{
-				diveclk = itemsbuf[flippers_id].misc2;
-			}
-		}
-        else if(DrunkrAbtn())
-        {
-            bool global_diving=(flippers_id > -1 && itemsbuf[flippers_id].flags & item_flag1);
-            bool screen_diving=(hero_scr->flags5&fTOGGLEDIVING) != 0;
-            
-            if(global_diving==screen_diving)
-                diveclk = (flippers_id < 0 ? 80 : (itemsbuf[flippers_id].misc1 + itemsbuf[flippers_id].misc2));
-        }
+		tick_diving();
         
         if((!(x.getInt()&7) && !(y.getInt()&7)) || (diagonalMovement||NO_GRIDLOCK))
         {
@@ -13294,7 +13492,7 @@ void HeroClass::do_hopping()
                     if(!iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+(bigHitbox?0:8)), -1, x.getInt(),y.getInt()+(bigHitbox?0:8), true, false)&&!iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+15), -1, x.getInt(),y.getInt()+15, true, false))
                     {
                         hopclk=0;
-                        diveclk=0;
+                        set_dive(0);
                         action=none; FFCore.setHeroAction(none);
                         hopdir=-1;
                     }
@@ -13318,7 +13516,7 @@ void HeroClass::do_hopping()
                     if(!iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+(bigHitbox?0:8)), -1, x.getInt(),y.getInt()+(bigHitbox?0:8), true, false)&&!iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+15), -1, x.getInt(),y.getInt()+15, true, false))
                     {
                         hopclk=0;
-                        diveclk=0;
+                        set_dive(0);
                         action=none; FFCore.setHeroAction(none);
                         hopdir=-1;
                     }
@@ -13342,7 +13540,7 @@ void HeroClass::do_hopping()
                     if(!iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+(bigHitbox?0:8)), -1, x.getInt(),y.getInt()+(bigHitbox?0:8), true, false)&&!iswaterex_z3(MAPCOMBO(x.getInt()+15,y.getInt()+8), -1, x.getInt()+15,y.getInt()+8, true, false))
                     {
                         hopclk=0;
-                        diveclk=0;
+                        set_dive(0);
                         action=none; FFCore.setHeroAction(none);
                         hopdir=-1;
                     }
@@ -13366,7 +13564,7 @@ void HeroClass::do_hopping()
                     if(!iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+(bigHitbox?0:8)), -1, x.getInt(),y.getInt()+(bigHitbox?0:8), true, false)&&!iswaterex_z3(MAPCOMBO(x.getInt()+15,y.getInt()+8), -1, x.getInt()+15,y.getInt()+8, true, false))
                     {
                         hopclk=0;
-                        diveclk=0;
+                        set_dive(0);
                         action=none; FFCore.setHeroAction(none);
                         hopdir=-1;
                     }
@@ -13395,7 +13593,7 @@ void HeroClass::do_hopping()
 		    if(iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+(bigHitbox?0:8)), -1, x.getInt(),y.getInt()+(bigHitbox?0:8), true, false)&&iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+15), -1, x.getInt(),y.getInt()+15, true, false))
                     {
                         hopclk=0xFF;
-                        diveclk=0;
+                        set_dive(0);
                         SetSwim();
                     }
                 }
@@ -13418,7 +13616,7 @@ void HeroClass::do_hopping()
 		    if(iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+(bigHitbox?0:8)), -1, x.getInt(),y.getInt()+(bigHitbox?0:8), true, false)&&iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+15), -1, x.getInt(),y.getInt()+15, true, false))
                     {
                         hopclk=0xFF;
-                        diveclk=0;
+                        set_dive(0);
                         SetSwim();
                         if (!IsSideSwim()) reset_swordcharge();
                     }
@@ -13442,7 +13640,7 @@ void HeroClass::do_hopping()
 		    if(iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+(bigHitbox?0:8)), -1, x.getInt(),y.getInt()+(bigHitbox?0:8), true, false)&&iswaterex_z3(MAPCOMBO(x.getInt()+15,y.getInt()+8), -1, x.getInt()+15,y.getInt()+8, true, false))
                     {
                         hopclk=0xFF;
-                        diveclk=0;
+                        set_dive(0);
                         SetSwim();
                     }
                 }
@@ -13466,7 +13664,7 @@ void HeroClass::do_hopping()
 		    if(iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+(bigHitbox?0:8)), -1, x.getInt(),y.getInt()+(bigHitbox?0:8), true, false)&&iswaterex_z3(MAPCOMBO(x.getInt()+15,y.getInt()+8), -1, x.getInt()+15,y.getInt()+8, true, false))
                     {
                         hopclk=0xFF;
-                        diveclk=0;
+                        set_dive(0);
                         SetSwim();
                     }
                 }
@@ -13479,7 +13677,7 @@ void HeroClass::do_hopping()
             {
                 action=none; FFCore.setHeroAction(none);
                 hopclk = 0;
-                diveclk = 0;
+                set_dive(0);
                 
                 if(iswaterex_z3(MAPCOMBO(x.getInt(),y.getInt()+8), -1, x.getInt(),y.getInt()+8, true, false))
                 {
@@ -13534,7 +13732,7 @@ void HeroClass::do_hopping()
 void HeroClass::do_rafting()
 {
 
-	if(toogam)
+	if(walk_through_walls)
 	{
 		action=none; FFCore.setHeroAction(none);
 		return;
@@ -13574,25 +13772,25 @@ void HeroClass::do_rafting()
 		// this sections handles switching to raft branches
 		if((MAPFLAG(x,y)==mfRAFT_BRANCH||MAPCOMBOFLAG(x,y)==mfRAFT_BRANCH))
 		{
-			if(dir!=down && DrunkUp() && (isRaftFlag(nextflag(x,y,up,false))||isRaftFlag(nextflag(x,y,up,true))))
+			if (dir != down && getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && (isRaftFlag(nextflag(x, y, up, false)) || isRaftFlag(nextflag(x, y, up, true))))
 			{
 				dir = up;
 				goto skip;
 			}
-			
-			if(dir!=up && DrunkDown() && (isRaftFlag(nextflag(x,y,down,false))||isRaftFlag(nextflag(x,y,down,true))))
+
+			if (dir != up && getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && (isRaftFlag(nextflag(x, y, down, false)) || isRaftFlag(nextflag(x, y, down, true))))
 			{
 				dir = down;
 				goto skip;
 			}
-			
-			if(dir!=right && DrunkLeft() && (isRaftFlag(nextflag(x,y,left,false))||isRaftFlag(nextflag(x,y,left,true))))
+
+			if (dir != right && getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && (isRaftFlag(nextflag(x, y, left, false)) || isRaftFlag(nextflag(x, y, left, true))))
 			{
 				dir = left;
 				goto skip;
 			}
-			
-			if(dir!=left && DrunkRight() && (isRaftFlag(nextflag(x,y,right,false))||isRaftFlag(nextflag(x,y,right,true))))
+
+			if (dir != left && getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && (isRaftFlag(nextflag(x, y, right, false)) || isRaftFlag(nextflag(x, y, right, true))))
 			{
 				dir = right;
 				goto skip;
@@ -13703,32 +13901,49 @@ skip:
 	}
 }
 
-bool HeroClass::try_hover()
+bool HeroClass::tick_hover()
 {
-	if(hoverclk <= 0 && can_use_item(itype_hoverboots,i_hoverboots) && !ladderx && !laddery && !(hoverflags & HOV_OUT))
+	if(hoverclk > 0)
 	{
-		int32_t itemid = current_item_id(itype_hoverboots);
-		if(hoverclk < 0)
-			hoverclk = -hoverclk;
-		else
+		if(hoverflags&HOV_INF) return false;
+		if(is_autowalking()) return false;
+		if(!--hoverclk)
 		{
-			fall = fakefall = jumping = 0;
-			if(itemsbuf[itemid].misc1)
-				hoverclk = itemsbuf[itemid].misc1;
-			else
-			{
-				hoverclk = 1;
-				hoverflags |= HOV_INF;
-			}
-			
-				
-			sfx(itemsbuf[itemid].usesound,pan(x.getInt()));
+			hoverflags |= HOV_OUT | HOV_PITFALL_OUT;
+			return true;
 		}
-		if(itemsbuf[itemid].wpn)
-			decorations.add(new dHover(x, y, dHOVER, 0));
-		return true;
 	}
 	return false;
+}
+
+bool HeroClass::try_hover()
+{
+	if(hoverclk > 0) return false;
+	if(!(is_autowalking() && check_pitslide() != -1))
+	{
+		if(!can_use_item(itype_hoverboots,i_hoverboots)) return false;
+		if(ladderx || laddery) return false;
+		if(hoverflags & HOV_OUT) return false;
+	}
+	int32_t itemid = current_item_id(itype_hoverboots);
+	if(hoverclk < 0)
+		hoverclk = -hoverclk;
+	else
+	{
+		fall = fakefall = jumping = 0;
+		if(itemsbuf[itemid].misc1)
+			hoverclk = itemsbuf[itemid].misc1;
+		else
+		{
+			hoverclk = 1;
+			hoverflags |= HOV_INF;
+		}
+		
+		sfx(itemsbuf[itemid].usesound,pan(x));
+	}
+	if(itemsbuf[itemid].wpn)
+		decorations.add(new dHover(x, y, dHOVER, 0));
+	return true;
 }
 
 //Returns bitwise; lower 8 are dir pulled in, next 16 are combo ID, 25th bit is bool for if can be resisted
@@ -13772,7 +13987,7 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 				{
 					if(ispitul_50)
 					{
-						if(!ispitul_75 && (DrunkDown() || DrunkRight())) return -1;
+						if (!ispitul_75 && (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))) return -1;
 						return (can_diag ? l_up : left) | (ispitul_75 ? flag_pit_irresistable : 0) | (ispitul << 8);
 					}
 				}
@@ -13780,7 +13995,7 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 				{
 					if(ispitur_50)
 					{
-						if(!ispitur_75 && (DrunkDown() || DrunkLeft())) return -1;
+						if (!ispitur_75 && (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION))) return -1;
 						return (can_diag ? r_up : right) | (ispitur_75 ? flag_pit_irresistable : 0) | (ispitur << 8);
 					}
 				}
@@ -13788,7 +14003,7 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 				{
 					if(ispitbl_50)
 					{
-						if(!ispitbl_75 && (DrunkUp() || DrunkRight())) return -1;
+						if (!ispitbl_75 && (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))) return -1;
 						return (can_diag ? l_down : left) | (ispitbl_75 ? flag_pit_irresistable : 0) | (ispitbl << 8);
 					}
 				}
@@ -13796,7 +14011,7 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 				{
 					if(ispitbr_50)
 					{
-						if(!ispitbr_75 && (DrunkUp() || DrunkLeft())) return -1;
+						if (!ispitbr_75 && (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION))) return -1;
 						return (can_diag ? r_down : right) | (ispitbr_75 ? flag_pit_irresistable : 0) | (ispitbr << 8);
 					}
 				}
@@ -13806,7 +14021,7 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 			{
 				if(ispitul && ispitur) //Up
 				{
-					if(DrunkDown())
+					if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
 					{
 						if(ispitul_75 && ispitur_75) //Straight up
 						{
@@ -13830,19 +14045,19 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 						}
 						else if(ispitul_50)
 						{
-							if(DrunkRight() && !ispitul_75) return -1;
+							if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && !ispitul_75) return -1;
 							return (can_diag ? l_up : left) | (ispitul_75 ? flag_pit_irresistable : 0) | (ispitul << 8);
 						}
 						else if(ispitur_50)
 						{
-							if(DrunkLeft() && !ispitur_75) return -1;
+							if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !ispitur_75) return -1;
 							return (can_diag ? r_up : right) | (ispitur_75 ? flag_pit_irresistable : 0) | (ispitur << 8);
 						}
 					}
 				}
 				else if(ispitbl && ispitbr) //Down
 				{
-					if(DrunkUp())
+					if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION))
 					{
 						if(ispitbl_75 && ispitbr_75) //Straight down
 						{
@@ -13866,19 +14081,19 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 						}
 						else if(ispitbl_50)
 						{
-							if(DrunkRight() && !ispitbl_75) return -1;
+							if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && !ispitbl_75) return -1;
 							return (can_diag ? l_down : left) | (ispitbl_75 ? flag_pit_irresistable : 0) | (ispitbl << 8);
 						}
 						else if(ispitbr_50)
 						{
-							if(DrunkLeft() && !ispitbr_75) return -1;
+							if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !ispitbr_75) return -1;
 							return (can_diag ? r_down : right) | (ispitbr_75 ? flag_pit_irresistable : 0) | (ispitbr << 8);
 						}
 					}
 				}
 				else if(ispitbl && ispitul) //Left
 				{
-					if(DrunkRight())
+					if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))
 					{
 						if(ispitul_75 && ispitbl_75) //Straight left
 						{
@@ -13902,19 +14117,19 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 						}
 						else if(ispitul_50)
 						{
-							if(DrunkDown() && !ispitul_75) return -1;
+							if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && !ispitul_75) return -1;
 							return (can_diag ? l_up : up) | (ispitul_75 ? flag_pit_irresistable : 0) | (ispitul << 8);
 						}
 						else if(ispitbl_50)
 						{
-							if(DrunkUp() && !ispitbl_75) return -1;
+							if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && !ispitbl_75) return -1;
 							return (can_diag ? l_down : down) | (ispitbl_75 ? flag_pit_irresistable : 0) | (ispitbl << 8);
 						}
 					}
 				}
 				else if(ispitbr && ispitur) //Right
 				{
-					if(DrunkLeft())
+					if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION))
 					{
 						if(ispitur_75 && ispitbr_75) //Straight right
 						{
@@ -13938,12 +14153,12 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 						}
 						else if(ispitur_50)
 						{
-							if(DrunkDown() && !ispitur_75) return -1;
+							if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && !ispitur_75) return -1;
 							return (can_diag ? r_up : up) | (ispitur_75 ? flag_pit_irresistable : 0) | (ispitur << 8);
 						}
 						else if(ispitbr_50)
 						{
-							if(DrunkUp() && !ispitbr_75) return -1;
+							if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && !ispitbr_75) return -1;
 							return (can_diag ? r_down : down) | (ispitbr_75 ? flag_pit_irresistable : 0) | (ispitbr << 8);
 						}
 					}
@@ -13954,22 +14169,22 @@ int32_t HeroClass::check_pitslide(bool ignore_hover)
 			{
 				if(ispitul && ispitul_50) //UL_1
 				{
-					if(!ispitul_75 && (DrunkDown() || DrunkRight())) return -1;
+					if (!ispitul_75 && (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))) return -1;
 					return (can_diag ? l_up : left) | (ispitul_75 ? flag_pit_irresistable : 0) | (ispitul << 8);
 				}
 				if(ispitur && ispitur_50) //UR_1
 				{
-					if(!ispitur_75 && (DrunkDown() || DrunkLeft())) return -1;
+					if (!ispitur_75 && (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION))) return -1;
 					return (can_diag ? r_up : right) | (ispitur_75 ? flag_pit_irresistable : 0) | (ispitur << 8);
 				}
 				if(ispitbl && ispitbl_50) //BL_1
 				{
-					if(!ispitbl_75 && (DrunkUp() || DrunkRight())) return -1;
+					if (!ispitbl_75 && (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))) return -1;
 					return (can_diag ? l_down : left) | (ispitbl_75 ? flag_pit_irresistable : 0) | (ispitbl << 8);
 				}
 				if(ispitbr && ispitbr_50) //BR_1
 				{
-					if(!ispitbr_75 && (DrunkUp() || DrunkLeft())) return -1;
+					if (!ispitbr_75 && (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION))) return -1;
 					return (can_diag ? r_down : right) | (ispitbr_75 ? flag_pit_irresistable : 0) | (ispitbr << 8);
 				}
 				break;
@@ -14041,7 +14256,7 @@ void HeroClass::pitfall()
 	if(fallclk)
 	{
 		drop_liftwpn();
-		if(fallclk == PITFALL_FALL_FRAMES && fallCombo) sfx(combobuf[fallCombo].attribytes[0], pan(x.getInt()));
+		if(fallclk == PITFALL_FALL_FRAMES && fallCombo) sfx(combobuf[fallCombo].attribytes[0], pan(x));
 		//Handle falling
 		if(!--fallclk)
 		{
@@ -14269,7 +14484,7 @@ void HeroClass::mod_steps(std::vector<zfix*>& v)
 			 //!DIMITODO: add QR for slow combos under hero
 	if(slowcombo) for (int32_t i = 1; i <= 2; ++i)
 	{
-		if (get_scr_layer_valid(hero_screen, i))
+		if (get_scr_layer_valid(current_screen, i))
 		{
 			if (get_qr(qr_OLD_BRIDGE_COMBOS))
 			{
@@ -14386,34 +14601,7 @@ void HeroClass::moveheroOld()
 	zfix temp_x(x);
 	zfix temp_y(y);
 	
-	int32_t flippers_id = current_item_id(itype_flippers);
-	itemdata const& itm = itemsbuf[flippers_id];
-	byte intbtn = byte(itm.misc3&0xFF);
-	bool dive_pressed = getIntBtnInput(intbtn, true, true, false, false, true);
-	bool eatdive = false;
-	if(diveclk>0)
-	{
-		if (isSideViewHero() && get_qr(qr_SIDESWIM)) diveclk = 0;
-		--diveclk;
-		if(isDiving() && flippers_id > -1 && itemsbuf[flippers_id].flags & item_flag2 && dive_pressed) //Cancellable Diving -V
-		{
-			diveclk = itemsbuf[flippers_id].misc2;
-			eatdive = true;
-		}
-	}
-	else if(action == swimming && dive_pressed)
-	{
-		bool global_diving=(flippers_id > -1 && itemsbuf[flippers_id].flags & item_flag1);
-		bool screen_diving=(hero_scr->flags5&fTOGGLEDIVING) != 0;
-		
-		if(global_diving==screen_diving)
-		{
-			diveclk = (flippers_id < 0 ? 80 : (itemsbuf[flippers_id].misc1 + itemsbuf[flippers_id].misc2));
-			eatdive = true;
-		}
-	}
-	if(eatdive)
-		getIntBtnInput(intbtn, true, true, false, false, false);
+	tick_diving();
 	
 	if(action==rafting)
 	{
@@ -14434,43 +14622,54 @@ void HeroClass::moveheroOld()
 	
 	//&0xFFF removes the "bow & arrows" bitmask
 	//The Quick Sword is allowed to interrupt attacks.
-	int32_t currentSwordOrWand = (itemsbuf[dowpn].family == itype_wand || itemsbuf[dowpn].family == itype_sword)?dowpn:-1;
+	int32_t currentSwordOrWand = (itemsbuf[dowpn].type == itype_wand || itemsbuf[dowpn].type == itype_sword)?dowpn:-1;
 	if((!attackclk && action!=attacking && action != sideswimattacking) || ((attack==wSword || attack==wWand) && (itemsbuf[currentSwordOrWand].flags & item_flag5)))
 	{
-		if(DrunkrBbtn())
+		if (getInput(btnB, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			btnwpn=getItemFamily(itemsbuf,Bwpn);
 			dowpn = NEG_OR_MASK(Bwpn,0xFFF);
 			directWpn = directItemB;
 		}
-		else if(DrunkrAbtn())
+		else if (getInput(btnA, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			btnwpn=getItemFamily(itemsbuf,Awpn);
 			dowpn = NEG_OR_MASK(Awpn,0xFFF);
 			directWpn = directItemA;
 		}
-		else if(get_qr(qr_SET_XBUTTON_ITEMS) && DrunkrEx1btn())
+		else if (get_qr(qr_SET_XBUTTON_ITEMS) && getInput(btnEx1, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			btnwpn=getItemFamily(itemsbuf,Xwpn);
 			dowpn = NEG_OR_MASK(Xwpn,0xFFF);
 			directWpn = directItemX;
 		}
-		else if(get_qr(qr_SET_YBUTTON_ITEMS) && DrunkrEx2btn())
+		else if (get_qr(qr_SET_YBUTTON_ITEMS) && getInput(btnEx2, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			btnwpn=getItemFamily(itemsbuf,Ywpn);
 			dowpn = NEG_OR_MASK(Ywpn,0xFFF);
 			directWpn = directItemY;
 		}
 		
-		if(directWpn >= MAXITEMS) directWpn = -1;
-		
-		// The Quick Sword only allows repeated sword or wand swings.
-		if((action==attacking||action==sideswimattacking) && ((attack==wSword && btnwpn!=itype_sword) || (attack==wWand && btnwpn!=itype_wand)))
-			btnwpn=-1;
+		auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
+		if (on_cooldown(itmid))
+		{
+			directWpn = olddirectwpn;
+			btnwpn = -1;
+			dowpn = -1;
+			did_scriptb = false;
+		}
+		else
+		{
+			if(directWpn >= MAXITEMS) directWpn = -1;
+			
+			// The Quick Sword only allows repeated sword or wand swings.
+			if((action==attacking||action==sideswimattacking) && ((attack==wSword && btnwpn!=itype_sword) || (attack==wWand && btnwpn!=itype_wand)))
+				btnwpn=-1;
+		}
 	}
 	
 	auto swordid = (directWpn>-1 ? directWpn : current_item_id(itype_sword));
-	if(can_attack() && (swordid > -1 && itemsbuf[swordid].family==itype_sword) && checkitem_jinx(swordid) && btnwpn==itype_sword && charging==0)
+	if(can_attack() && (swordid > -1 && itemsbuf[swordid].type==itype_sword) && checkitem_jinx(swordid) && btnwpn==itype_sword && charging==0)
 	{
 		attackid=directWpn>-1 ? directWpn : current_item_id(itype_sword);
 		if(checkbunny(attackid) && (checkmagiccost(attackid) || !(itemsbuf[attackid].flags & item_flag6)))
@@ -14484,7 +14683,7 @@ void HeroClass::moveheroOld()
 			attack=wSword;
 			
 			attackclk=0;
-			sfx(itemsbuf[directWpn>-1 ? directWpn : current_item_id(itype_sword)].usesound, pan(x.getInt()));
+			sfx(itemsbuf[directWpn>-1 ? directWpn : current_item_id(itype_sword)].usesound, pan(x));
 			
 			if(dowpn>-1 && itemsbuf[dowpn].script!=0 && !did_scripta && !(FFCore.doscript(ScriptType::Item, dowpn) && get_qr(qr_ITEMSCRIPTSKEEPRUNNING)))
 			{
@@ -14514,11 +14713,11 @@ void HeroClass::moveheroOld()
 	
 	if(action!=swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && !getOnSideviewLadder())
 	{
-		if(DrunkUp() && canSideviewLadder())
+		if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && canSideviewLadder())
 		{
 			setOnSideviewLadder(true);
 		}
-		else if(DrunkDown() && canSideviewLadder(true))
+		else if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && canSideviewLadder(true))
 		{
 			y+=1;
 			old_y += 1;
@@ -14532,14 +14731,14 @@ void HeroClass::moveheroOld()
 	{
 		if((xoff==0)||diagonalMovement)
 		{
-			if(DrunkUp()) dir=up;
-			if(DrunkDown()) dir=down;
+			if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = up;
+			if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = down;
 		}
 		
 		if((yoff==0)||diagonalMovement)
 		{
-			if(DrunkLeft()) dir=left;
-			if(DrunkRight()) dir=right;
+			if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = left;
+			if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = right;
 		}
 	}
 	
@@ -14568,11 +14767,11 @@ void HeroClass::moveheroOld()
 	
 	bool no_jinx = true;
 	bool liftonly = lift_wpn && (liftflags & LIFTFL_DIS_ITEMS);
+	auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
 	if(liftonly)
 	{
 		if(replay_version_check(38) && btnwpn > -1)
 		{
-			auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
 			no_jinx = checkitem_jinx(itmid);
 			if(no_jinx)
 				startwpn(itmid);
@@ -14582,7 +14781,7 @@ void HeroClass::moveheroOld()
 	else if(can_attack() && btnwpn>itype_sword && charging==0 && btnwpn!=itype_rupee) // This depends on item 0 being a rupee...
 	{
 		bool paidmagic = false;
-		if(btnwpn==itype_wand && (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].family==itype_wand : false) : current_item(itype_wand)))
+		if(btnwpn==itype_wand && (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].type==itype_wand : false) : current_item(itype_wand)))
 		{
 			attackid=directWpn>-1 ? directWpn : current_item_id(itype_wand);
 			no_jinx = checkitem_jinx(attackid);
@@ -14602,7 +14801,7 @@ void HeroClass::moveheroOld()
 			}
 		}
 		else if((btnwpn==itype_hammer)&&!((action==attacking||action==sideswimattacking) && attack==wHammer)
-				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].family==itype_hammer : false) : current_item(itype_hammer)))
+				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].type==itype_hammer : false) : current_item(itype_hammer)))
 		{
 			no_jinx = checkitem_jinx(dowpn);
 			if(!(no_jinx && checkmagiccost(dowpn) && checkbunny(dowpn)))
@@ -14620,7 +14819,7 @@ void HeroClass::moveheroOld()
 			}
 		}
 		else if((btnwpn==itype_candle)&&!((action==attacking||action==sideswimattacking) && attack==wFire)
-				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].family==itype_candle : false) : current_item(itype_candle)))
+				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].type==itype_candle : false) : current_item(itype_candle)))
 		{
 			//checkbunny handled where magic cost is paid
 			attackid=directWpn>-1 ? directWpn : current_item_id(itype_candle);
@@ -14633,7 +14832,7 @@ void HeroClass::moveheroOld()
 			}
 		}
 		else if((btnwpn==itype_cbyrna)&&!((action==attacking||action==sideswimattacking) && attack==wCByrna)
-				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].family==itype_cbyrna : false) : current_item(itype_cbyrna)))
+				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].type==itype_cbyrna : false) : current_item(itype_cbyrna)))
 		{
 			attackid=directWpn>-1 ? directWpn : current_item_id(itype_cbyrna);
 			no_jinx = checkitem_jinx(attackid);
@@ -14653,7 +14852,7 @@ void HeroClass::moveheroOld()
 			}
 		}
 		else if((btnwpn==itype_bugnet)&&!((action==attacking||action==sideswimattacking) && attack==wBugNet)
-				&& (directWpn>-1 ? (!item_disabled(directWpn) && itemsbuf[directWpn].family==itype_bugnet) : current_item(itype_bugnet)))
+				&& (directWpn>-1 ? (!item_disabled(directWpn) && itemsbuf[directWpn].type==itype_bugnet) : current_item(itype_bugnet)))
 		{
 			attackid = directWpn>-1 ? directWpn : current_item_id(itype_bugnet);
 			no_jinx = checkitem_jinx(attackid);
@@ -14672,7 +14871,6 @@ void HeroClass::moveheroOld()
 		}
 		else
 		{
-			auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
 			no_jinx = checkitem_jinx(itmid);
 			if(no_jinx)
 			{
@@ -14743,14 +14941,14 @@ void HeroClass::moveheroOld()
 		{
 			if((xoff==0)||diagonalMovement)
 			{
-				if(DrunkUp()) dir=up;
-				if(DrunkDown()) dir=down;
+				if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = up;
+				if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = down;
 			}
 			
 			if((yoff==0)||diagonalMovement)
 			{
-				if(DrunkLeft()) dir=left;
-				if(DrunkRight()) dir=right;
+				if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = left;
+				if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = right;
 			}
 		}
 		
@@ -14761,16 +14959,16 @@ void HeroClass::moveheroOld()
 		{
 			if((xoff==0)||diagonalMovement)
 			{
-				if(DrunkUp()) dir=up;
-				
-				if(DrunkDown()) dir=down;
+				if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = up;
+
+				if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = down;
 			}
 			
 			if((yoff==0)||diagonalMovement)
 			{
-				if(DrunkLeft()) dir=left;
-				
-				if(DrunkRight()) dir=right;
+				if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = left;
+
+				if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = right;
 			}
 		}
 		
@@ -14788,7 +14986,7 @@ void HeroClass::moveheroOld()
 				if(spins%5==0)
 				{
 					int id = currentscroll > -1 ? currentscroll : (current_item_id(spins>5 ? itype_spinscroll2 : itype_spinscroll));
-					sfx(itemsbuf[id].usesound,pan(x.getInt()));
+					sfx(itemsbuf[id].usesound,pan(x));
 				}
 				attackclk=1;
 				
@@ -14830,7 +15028,7 @@ void HeroClass::moveheroOld()
 	
 	if(action==walking) //still walking
 	{
-		if(!DrunkUp() && !DrunkDown() && !DrunkLeft() && !DrunkRight() && !autostep)
+		if (!getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && !autostep)
 		{
 			if(attackclk>0) SetAttack();
 			else {action = none; FFCore.setHeroAction(none);}
@@ -15076,7 +15274,7 @@ void HeroClass::moveheroOld()
 		switch(holddir)
 		{
 		case up:
-			if(!Up())
+			if (!getInput(btnUp, INPUT_HERO_ACTION))
 			{
 				holddir=-1;
 			}
@@ -15084,7 +15282,7 @@ void HeroClass::moveheroOld()
 			break;
 			
 		case down:
-			if(!Down())
+			if (!getInput(btnDown, INPUT_HERO_ACTION))
 			{
 				holddir=-1;
 			}
@@ -15092,7 +15290,7 @@ void HeroClass::moveheroOld()
 			break;
 			
 		case left:
-			if(!Left())
+			if (!getInput(btnLeft, INPUT_HERO_ACTION))
 			{
 				holddir=-1;
 			}
@@ -15100,7 +15298,7 @@ void HeroClass::moveheroOld()
 			break;
 			
 		case right:
-			if(!Right())
+			if (!getInput(btnRight, INPUT_HERO_ACTION))
 			{
 				holddir=-1;
 			}
@@ -15114,9 +15312,9 @@ void HeroClass::moveheroOld()
 		if(get_qr(qr_NEW_HERO_MOVEMENT) || IsSideSwim()) //!DIRECTION SET
 		{
 			walkable = false;
-			if(DrunkUp()&&(holddir==-1||holddir==up))
+			if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == up))
 			{
-				if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !toogam)
+				if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 				{
 				}
 				else
@@ -15127,14 +15325,14 @@ void HeroClass::moveheroOld()
 					}
 					
 					holddir=up;
-					
-					if(DrunkRight()&&shiftdir!=left)
+
+					if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != left)
 					{
 						shiftdir=right;
 						if (IsSideSwim() && get_qr(qr_SIDESWIMDIR) && (charging==0 && spins==0)) dir = right;
 						if (!IsSideSwim() || (charging==0 && spins==0)) sideswimdir = right;
 					}
-					else if(DrunkLeft()&&shiftdir!=right)
+					else if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != right)
 					{
 						shiftdir=left;
 						if (IsSideSwim() && get_qr(qr_SIDESWIMDIR) && (charging==0 && spins==0)) dir = left;
@@ -15146,7 +15344,7 @@ void HeroClass::moveheroOld()
 					}
 					
 					//walkable if Ladder can be placed or is already placed vertically
-					if(isSideViewHero() && !toogam && !((can_deploy_ladder() && get_qr(qr_OLD_LADDER_ITEM_SIDEVIEW)) || (ladderx && laddery && ladderdir==up)) && !getOnSideviewLadder() && action != sideswimming && action != sideswimhit && action != sideswimattacking)
+					if(isSideViewHero() && !walk_through_walls && !((can_deploy_ladder() && get_qr(qr_OLD_LADDER_ITEM_SIDEVIEW)) || (ladderx && laddery && ladderdir==up)) && !getOnSideviewLadder() && action != sideswimming && action != sideswimhit && action != sideswimattacking)
 					{
 						walkable=false;
 					}
@@ -15313,18 +15511,18 @@ void HeroClass::moveheroOld()
 						{
 							x = x.getInt();
 							y = y.getInt();
-							if(!_walkflag(x,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-									!_walkflag(x+8, y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-									_walkflag(x+15,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE))
+							if(!_walkflag(x,y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+									!_walkflag(x+8, y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+									_walkflag(x+15,y+(bigHitbox?0:8)-1,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11),y+(bigHitbox?0:8)-1))
 									sprite::move((zfix)-1,(zfix)0);
 							}
 							else
 							{
-								if(_walkflag(x,   y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-										!_walkflag(x+7, y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-										!_walkflag(x+15,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE))
+								if(_walkflag(x,   y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+										!_walkflag(x+7, y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+										!_walkflag(x+15,y+(bigHitbox?0:8)-1,1,get_standing_z_state()))
 								{
 									if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4),y+(bigHitbox?0:8)-1))
 										sprite::move((zfix)1,(zfix)0);
@@ -15344,10 +15542,10 @@ void HeroClass::moveheroOld()
 					return;
 				}
 			}
-			
-			if(DrunkDown()&&(holddir==-1||holddir==down))
+
+			if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == down))
 			{
-				if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !toogam)
+				if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 				{
 				}
 				else
@@ -15358,14 +15556,14 @@ void HeroClass::moveheroOld()
 					}
 					
 					holddir=down;
-					
-					if(DrunkRight()&&shiftdir!=left)
+
+					if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != left)
 					{
 						shiftdir=right;
 						if (IsSideSwim() && get_qr(qr_SIDESWIMDIR) && (charging==0 && spins==0)) dir = right;
 						if (!IsSideSwim() || (charging==0 && spins==0)) sideswimdir = right;
 					}
-					else if(DrunkLeft()&&shiftdir!=right)
+					else if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != right)
 					{
 						shiftdir=left;
 						if (IsSideSwim() && get_qr(qr_SIDESWIMDIR) && (charging==0 && spins==0)) dir = left;
@@ -15377,7 +15575,7 @@ void HeroClass::moveheroOld()
 					}
 					
 					//bool walkable;
-					if(isSideViewHero() && !toogam && !getOnSideviewLadder() && action != sideswimming && action != sideswimhit && action != sideswimattacking)
+					if(isSideViewHero() && !walk_through_walls && !getOnSideviewLadder() && action != sideswimming && action != sideswimhit && action != sideswimattacking)
 					{
 						walkable=false;
 					}
@@ -15539,16 +15737,16 @@ void HeroClass::moveheroOld()
 						{
 							x = x.getInt();
 							y = y.getInt();
-							if(!_walkflag(x,   y+15+1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x+8, y+15+1,1,SWITCHBLOCK_STATE)&&
-									_walkflag(x+15,y+15+1,1,SWITCHBLOCK_STATE))
+							if(!_walkflag(x,   y+15+1,1,get_standing_z_state())&&
+									!_walkflag(x+8, y+15+1,1,get_standing_z_state())&&
+									_walkflag(x+15,y+15+1,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11),y+15+1))
 									sprite::move((zfix)-1,(zfix)0);
 							}
-							else if(_walkflag(x,   y+15+1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x+7, y+15+1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x+15,y+15+1,1,SWITCHBLOCK_STATE))
+							else if(_walkflag(x,   y+15+1,1,get_standing_z_state())&&
+									!_walkflag(x+7, y+15+1,1,get_standing_z_state())&&
+									!_walkflag(x+15,y+15+1,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4),y+15+1))
 									sprite::move((zfix)1,(zfix)0);
@@ -15567,10 +15765,10 @@ void HeroClass::moveheroOld()
 					return;
 				}
 			}
-			
-			if(DrunkLeft()&&(holddir==-1||holddir==left))
+
+			if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == left))
 			{
-				if(isdungeon() && (y<=26 || y>=world_h - 42) && !get_qr(qr_FREEFORM) && !toogam)
+				if(isdungeon() && (y<=26 || y>=world_h - 42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 				{
 				}
 				else
@@ -15582,12 +15780,12 @@ void HeroClass::moveheroOld()
 					sideswimdir = left;
 					
 					holddir=left;
-					
-					if(DrunkUp()&&shiftdir!=down)
+
+					if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != down)
 					{
 						shiftdir=up;
 					}
-					else if(DrunkDown()&&shiftdir!=up)
+					else if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != up)
 					{
 						shiftdir=down;
 					}
@@ -15769,16 +15967,16 @@ void HeroClass::moveheroOld()
 							int32_t v1=bigHitbox?0:8;
 							int32_t v2=bigHitbox?8:12;
 							
-							if(!_walkflag(x-1,y+v1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x-1,y+v2,1,SWITCHBLOCK_STATE)&&
-									_walkflag(x-1,y+15,1,SWITCHBLOCK_STATE))
+							if(!_walkflag(x-1,y+v1,1,get_standing_z_state())&&
+									!_walkflag(x-1,y+v2,1,get_standing_z_state())&&
+									_walkflag(x-1,y+15,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x-1,y+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11)))
 									sprite::move((zfix)0,(zfix)-1);
 							}
-							else if(_walkflag(x-1,y+v1,  1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x-1,y+v2-1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x-1,y+15,  1,SWITCHBLOCK_STATE))
+							else if(_walkflag(x-1,y+v1,  1,get_standing_z_state())&&
+									!_walkflag(x-1,y+v2-1,1,get_standing_z_state())&&
+									!_walkflag(x-1,y+15,  1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x-1,y+v1+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4)))
 									sprite::move((zfix)0,(zfix)1);
@@ -15801,10 +15999,10 @@ void HeroClass::moveheroOld()
 					return;
 				}
 			}
-			
-			if(DrunkRight()&&(holddir==-1||holddir==right))
+
+			if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == right))
 			{
-				if(isdungeon() && (y<=26 || y>=world_h - 42) && !get_qr(qr_FREEFORM) && !toogam)
+				if(isdungeon() && (y<=26 || y>=world_h - 42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 				{
 				}
 				else
@@ -15816,12 +16014,12 @@ void HeroClass::moveheroOld()
 					sideswimdir = right;
 					
 					holddir=right;
-					
-					if(DrunkUp()&&shiftdir!=down)
+
+					if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != down)
 					{
 						shiftdir=up;
 					}
-					else if(DrunkDown()&&shiftdir!=up)
+					else if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != up)
 					{
 						shiftdir=down;
 					}
@@ -16002,16 +16200,16 @@ void HeroClass::moveheroOld()
 							int32_t v1=bigHitbox?0:8;
 							int32_t v2=bigHitbox?8:12;
 								   
-							if(!_walkflag(x+16,y+v1,1,SWITCHBLOCK_STATE)&&
-								   !_walkflag(x+16,y+v2,1,SWITCHBLOCK_STATE)&&
-								   _walkflag(x+16,y+15,1,SWITCHBLOCK_STATE))
+							if(!_walkflag(x+16,y+v1,1,get_standing_z_state())&&
+								   !_walkflag(x+16,y+v2,1,get_standing_z_state())&&
+								   _walkflag(x+16,y+15,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+16,y+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11)))
 									sprite::move((zfix)0,(zfix)-1);
 							}
-							else if(_walkflag(x+16,y+v1,1,SWITCHBLOCK_STATE)&&
-									   !_walkflag(x+16,y+v2-1,1,SWITCHBLOCK_STATE)&&
-									   !_walkflag(x+16,y+15,1,SWITCHBLOCK_STATE))
+							else if(_walkflag(x+16,y+v1,1,get_standing_z_state())&&
+									   !_walkflag(x+16,y+v2-1,1,get_standing_z_state())&&
+									   !_walkflag(x+16,y+15,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+16,y+v1+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4)))
 									sprite::move((zfix)0,(zfix)1);
@@ -16038,9 +16236,9 @@ void HeroClass::moveheroOld()
 		}
 		else
 		{
-			if(DrunkUp()&&(holddir==-1||holddir==up))
+			if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == up))
 			{
-				if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !toogam)
+				if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 				{
 				}
 				else
@@ -16051,12 +16249,12 @@ void HeroClass::moveheroOld()
 					}
 					
 					holddir=up;
-					
-					if(DrunkRight()&&shiftdir!=left)
+
+					if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != left)
 					{
 						shiftdir=right;
 					}
-					else if(DrunkLeft()&&shiftdir!=right)
+					else if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != right)
 					{
 						shiftdir=left;
 					}
@@ -16066,7 +16264,7 @@ void HeroClass::moveheroOld()
 					}
 					
 					//walkable if Ladder can be placed or is already placed vertically
-					if(isSideViewHero() && !toogam && !(((replay_version_check(0, 23) || get_qr(qr_OLD_LADDER_ITEM_SIDEVIEW)) && can_deploy_ladder()) || (ladderx && laddery && ladderdir==up)) && !getOnSideviewLadder() && action != sideswimming && action != sideswimhit && action != sideswimattacking)
+					if(isSideViewHero() && !walk_through_walls && !(((replay_version_check(0, 23) || get_qr(qr_OLD_LADDER_ITEM_SIDEVIEW)) && can_deploy_ladder()) || (ladderx && laddery && ladderdir==up)) && !getOnSideviewLadder() && action != sideswimming && action != sideswimhit && action != sideswimattacking)
 					{
 						walkable=false;
 					}
@@ -16172,18 +16370,18 @@ void HeroClass::moveheroOld()
 					{
 						if(shiftdir==-1) //Corner-shove; prevent being stuck on corners -V
 						{
-							if(!_walkflag(x,   y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-									!_walkflag(x+8, y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-									_walkflag(x+15,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE))
+							if(!_walkflag(x,   y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+									!_walkflag(x+8, y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+									_walkflag(x+15,y+(bigHitbox?0:8)-1,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11),y+(bigHitbox?0:8)-1))
 									sprite::move((zfix)-1,(zfix)0);
 							}
 							else
 							{
-								if(_walkflag(x,   y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-										!_walkflag(x+7, y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-										!_walkflag(x+15,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE))
+								if(_walkflag(x,   y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+										!_walkflag(x+7, y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+										!_walkflag(x+15,y+(bigHitbox?0:8)-1,1,get_standing_z_state()))
 								{
 									if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4),y+(bigHitbox?0:8)-1))
 										sprite::move((zfix)1,(zfix)0);
@@ -16206,10 +16404,10 @@ void HeroClass::moveheroOld()
 					return;
 				}
 			}
-			
-			if(DrunkDown()&&(holddir==-1||holddir==down))
+
+			if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == down))
 			{
-				if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !toogam)
+				if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 				{
 				}
 				else
@@ -16220,12 +16418,12 @@ void HeroClass::moveheroOld()
 					}
 					
 					holddir=down;
-					
-					if(DrunkRight()&&shiftdir!=left)
+
+					if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != left)
 					{
 						shiftdir=right;
 					}
-					else if(DrunkLeft()&&shiftdir!=right)
+					else if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != right)
 					{
 						shiftdir=left;
 					}
@@ -16235,7 +16433,7 @@ void HeroClass::moveheroOld()
 					}
 					
 					//bool walkable;
-					if(isSideViewHero() && !toogam && !getOnSideviewLadder() && action != sideswimming && action != sideswimhit && action != sideswimattacking)
+					if(isSideViewHero() && !walk_through_walls && !getOnSideviewLadder() && action != sideswimming && action != sideswimhit && action != sideswimattacking)
 					{
 						walkable=false;
 					}
@@ -16341,16 +16539,16 @@ void HeroClass::moveheroOld()
 					{
 						if(shiftdir==-1) //Corner-shove; prevent being stuck on corners -V
 						{
-							if(!_walkflag(x,   y+15+1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x+8, y+15+1,1,SWITCHBLOCK_STATE)&&
-									_walkflag(x+15,y+15+1,1,SWITCHBLOCK_STATE))
+							if(!_walkflag(x,   y+15+1,1,get_standing_z_state())&&
+									!_walkflag(x+8, y+15+1,1,get_standing_z_state())&&
+									_walkflag(x+15,y+15+1,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11),y+15+1))
 									sprite::move((zfix)-1,(zfix)0);
 							}
-							else if(_walkflag(x,   y+15+1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x+7, y+15+1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x+15,y+15+1,1,SWITCHBLOCK_STATE))
+							else if(_walkflag(x,   y+15+1,1,get_standing_z_state())&&
+									!_walkflag(x+7, y+15+1,1,get_standing_z_state())&&
+									!_walkflag(x+15,y+15+1,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4),y+15+1))
 									sprite::move((zfix)1,(zfix)0);
@@ -16381,10 +16579,10 @@ void HeroClass::moveheroOld()
 					return;
 				}
 			}
-			
-			if(DrunkLeft()&&(holddir==-1||holddir==left))
+
+			if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == left))
 			{
-				if(isdungeon() && (y<=26 || y>=world_h-42) && !get_qr(qr_FREEFORM) && !toogam)
+				if(isdungeon() && (y<=26 || y>=world_h-42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 				{
 				}
 				else
@@ -16395,12 +16593,12 @@ void HeroClass::moveheroOld()
 					}
 					
 					holddir=left;
-					
-					if(DrunkUp()&&shiftdir!=down)
+
+					if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != down)
 					{
 						shiftdir=up;
 					}
-					else if(DrunkDown()&&shiftdir!=up)
+					else if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != up)
 					{
 						shiftdir=down;
 					}
@@ -16508,16 +16706,16 @@ void HeroClass::moveheroOld()
 							int32_t v1=bigHitbox?0:8;
 							int32_t v2=bigHitbox?8:12;
 							
-							if(!_walkflag(x-1,y+v1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x-1,y+v2,1,SWITCHBLOCK_STATE)&&
-									_walkflag(x-1,y+15,1,SWITCHBLOCK_STATE))
+							if(!_walkflag(x-1,y+v1,1,get_standing_z_state())&&
+									!_walkflag(x-1,y+v2,1,get_standing_z_state())&&
+									_walkflag(x-1,y+15,1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x-1,y+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11)))
 									sprite::move((zfix)0,(zfix)-1);
 							}
-							else if(_walkflag(x-1,y+v1,  1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x-1,y+v2-1,1,SWITCHBLOCK_STATE)&&
-									!_walkflag(x-1,y+15,  1,SWITCHBLOCK_STATE))
+							else if(_walkflag(x-1,y+v1,  1,get_standing_z_state())&&
+									!_walkflag(x-1,y+v2-1,1,get_standing_z_state())&&
+									!_walkflag(x-1,y+15,  1,get_standing_z_state()))
 							{
 								if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x-1,y+v1+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4)))
 									sprite::move((zfix)0,(zfix)1);
@@ -16548,10 +16746,10 @@ void HeroClass::moveheroOld()
 					return;
 				}
 			}
-			
-			if(DrunkRight()&&(holddir==-1||holddir==right))
+
+			if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == right))
 			{
-				if(isdungeon() && (y<=26 || y>=world_h-42) && !get_qr(qr_FREEFORM) && !toogam)
+				if(isdungeon() && (y<=26 || y>=world_h-42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 				{
 				}
 				else
@@ -16562,12 +16760,12 @@ void HeroClass::moveheroOld()
 					}
 					
 					holddir=right;
-					
-					if(DrunkUp()&&shiftdir!=down)
+
+					if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != down)
 					{
 						shiftdir=up;
 					}
-					else if(DrunkDown()&&shiftdir!=up)
+					else if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != up)
 					{
 						shiftdir=down;
 					}
@@ -16751,7 +16949,7 @@ void HeroClass::moveheroOld()
 	temp_x = x;
 	temp_y = y;
 	
-	if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !toogam)
+	if(isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 	{
 		if(get_qr(qr_NEW_HERO_MOVEMENT) || IsSideSwim())
 			goto LEFTRIGHT_NEWMOVE;
@@ -16765,7 +16963,7 @@ void HeroClass::moveheroOld()
 	oldladdery = laddery;
 	if(get_qr(qr_NEW_HERO_MOVEMENT) || IsSideSwim())
 	{
-		if(isdungeon() && DrunkLeft() && (temp_x==32 && temp_y==80))
+		if (isdungeon() && getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && (temp_x == 32 && temp_y == 80))
 		{
 			do
 			{
@@ -16805,8 +17003,8 @@ void HeroClass::moveheroOld()
 			temp_y = y;
 			temp_step = hero_newstep;
 		}
-		
-		if(isdungeon() && DrunkRight() && temp_x==208 && temp_y==80)
+
+		if (isdungeon() && getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && temp_x == 208 && temp_y == 80)
 		{
 			do
 			{
@@ -16847,8 +17045,8 @@ void HeroClass::moveheroOld()
 		
 		ladderx = oldladderx;
 		laddery = oldladdery;
-		
-		if(DrunkUp())
+
+		if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			if(xoff && !is_on_conveyor && action != swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && jumping<1)
 			{
@@ -16887,7 +17085,7 @@ void HeroClass::moveheroOld()
 					{
 						info = walkflag(temp_x,temp_y+(bigHitbox?0:8)-temp_step,2,up);
 						
-						if(_walkflag(temp_x+15, temp_y+(bigHitbox?0:8)-temp_step, 1,SWITCHBLOCK_STATE) &&
+						if(_walkflag(temp_x+15, temp_y+(bigHitbox?0:8)-temp_step, 1,get_standing_z_state()) &&
 								!(iswaterex_z3(MAPCOMBO(temp_x, temp_y+(bigHitbox?0:8)-temp_step), -1, temp_x, temp_y+(bigHitbox?0:8)-temp_step, true, false) &&
 								  iswaterex_z3(MAPCOMBO(temp_x+15, temp_y+(bigHitbox?0:8)-temp_step), -1, temp_x+15, temp_y+(bigHitbox?0:8)-temp_step, true, false)))
 							info.setUnwalkable(true);
@@ -16929,23 +17127,23 @@ void HeroClass::moveheroOld()
 					moveOld2(up);
 					return;
 				}
-				
-				if(!DrunkLeft() && !DrunkRight())
+
+				if (!getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))
 				{
 					if(NO_GRIDLOCK)
 					{
 						x = x.getInt();
 						y = y.getInt();
-						if(!_walkflag(x,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-								!_walkflag(x+8, y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-								_walkflag(x+15,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE))
+						if(!_walkflag(x,y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+								!_walkflag(x+8, y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+								_walkflag(x+15,y+(bigHitbox?0:8)-1,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11),y+(bigHitbox?0:8)-1))
 								sprite::move((zfix)-1,(zfix)0);
 						}
-						else if(_walkflag(x,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-								!_walkflag(x+7, y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-								!_walkflag(x+15,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE))
+						else if(_walkflag(x,y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+								!_walkflag(x+7, y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+								!_walkflag(x+15,y+(bigHitbox?0:8)-1,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4),y+(bigHitbox?0:8)-1))
 								sprite::move((zfix)1,(zfix)0);
@@ -16977,8 +17175,8 @@ void HeroClass::moveheroOld()
 			
 			return;
 		}
-		
-		if(DrunkDown())
+
+		if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			if(xoff && !is_on_conveyor && action != swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && jumping<1)
 			{
@@ -17017,7 +17215,7 @@ void HeroClass::moveheroOld()
 					{
 						info=walkflag(temp_x,temp_y+15+temp_step,2,down);
 						
-						if(_walkflag(temp_x+15, temp_y+15+temp_step, 1,SWITCHBLOCK_STATE) &&
+						if(_walkflag(temp_x+15, temp_y+15+temp_step, 1,get_standing_z_state()) &&
 								!(iswaterex_z3(MAPCOMBO(temp_x, temp_y+15+temp_step), -1, temp_x, temp_y+15+temp_step, true, false) &&
 								  iswaterex_z3(MAPCOMBO(temp_x+15, temp_y+15+temp_step), -1, temp_x+15, temp_y+15+temp_step, true, false)))
 							info.setUnwalkable(true);
@@ -17059,23 +17257,23 @@ void HeroClass::moveheroOld()
 					moveOld2(down);
 					return;
 				}
-				
-				if(!DrunkLeft() && !DrunkRight())
+
+				if (!getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))
 				{
 					if(NO_GRIDLOCK)
 					{
 						x = x.getInt();
 						y = y.getInt();
-						if(!_walkflag(x,   y+15+1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x+8, y+15+1,1,SWITCHBLOCK_STATE)&&
-								_walkflag(x+15,y+15+1,1,SWITCHBLOCK_STATE))
+						if(!_walkflag(x,   y+15+1,1,get_standing_z_state())&&
+								!_walkflag(x+8, y+15+1,1,get_standing_z_state())&&
+								_walkflag(x+15,y+15+1,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11),y+15+1))
 								sprite::move((zfix)-1,(zfix)0);
 						}
-						else if(_walkflag(x,   y+15+1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x+7, y+15+1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x+15,y+15+1,1,SWITCHBLOCK_STATE))
+						else if(_walkflag(x,   y+15+1,1,get_standing_z_state())&&
+								!_walkflag(x+7, y+15+1,1,get_standing_z_state())&&
+								!_walkflag(x+15,y+15+1,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4),y+15+1))
 								sprite::move((zfix)1,(zfix)0);
@@ -17109,12 +17307,12 @@ LEFTRIGHT_NEWMOVE:
 		temp_x = x;
 		temp_y = y;
 		temp_step = hero_newstep;
-		if(isdungeon() && (temp_y<=26 || temp_y>=134) && !get_qr(qr_FREEFORM) && !toogam)
+		if(isdungeon() && (temp_y<=26 || temp_y>=134) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 		{
 			return;
 		}
-		
-		if(DrunkLeft())
+
+		if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			if(yoff && !is_on_conveyor && action != swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && jumping<1)
 			{
@@ -17183,8 +17381,8 @@ LEFTRIGHT_NEWMOVE:
 					moveOld2(left);
 					return;
 				}
-				
-				if(!DrunkUp() && !DrunkDown())
+
+				if (!getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
 				{
 					if(NO_GRIDLOCK)
 					{
@@ -17193,16 +17391,16 @@ LEFTRIGHT_NEWMOVE:
 						int32_t v1=bigHitbox?0:8;
 						int32_t v2=bigHitbox?8:12;
 						
-						if(!_walkflag(x-1,y+v1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x-1,y+v2,1,SWITCHBLOCK_STATE)&&
-								_walkflag(x-1,y+15,1,SWITCHBLOCK_STATE))
+						if(!_walkflag(x-1,y+v1,1,get_standing_z_state())&&
+								!_walkflag(x-1,y+v2,1,get_standing_z_state())&&
+								_walkflag(x-1,y+15,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x-1,y+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11)))
 								sprite::move((zfix)0,(zfix)-1);
 						}
-						else if(_walkflag(x-1,y+v1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x-1,y+v2-1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x-1,y+15,  1,SWITCHBLOCK_STATE))
+						else if(_walkflag(x-1,y+v1,1,get_standing_z_state())&&
+								!_walkflag(x-1,y+v2-1,1,get_standing_z_state())&&
+								!_walkflag(x-1,y+15,  1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x-1,y+v1+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4)))
 								sprite::move((zfix)0,(zfix)1);
@@ -17230,8 +17428,8 @@ LEFTRIGHT_NEWMOVE:
 			
 			return;
 		}
-		
-		if(DrunkRight())
+
+		if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			if(yoff && !is_on_conveyor && action != swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && jumping<1)
 			{
@@ -17300,8 +17498,8 @@ LEFTRIGHT_NEWMOVE:
 					moveOld2(right);
 					return;
 				}
-				
-				if(!DrunkUp() && !DrunkDown())
+
+				if (!getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
 				{
 					if(NO_GRIDLOCK)
 					{
@@ -17310,16 +17508,16 @@ LEFTRIGHT_NEWMOVE:
 						int32_t v1=bigHitbox?0:8;
 						int32_t v2=bigHitbox?8:12;
 							   
-						if(!_walkflag(x+16,y+v1,1,SWITCHBLOCK_STATE)&&
-							   !_walkflag(x+16,y+v2,1,SWITCHBLOCK_STATE)&&
-							   _walkflag(x+16,y+15,1,SWITCHBLOCK_STATE))
+						if(!_walkflag(x+16,y+v1,1,get_standing_z_state())&&
+							   !_walkflag(x+16,y+v2,1,get_standing_z_state())&&
+							   _walkflag(x+16,y+15,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+16,y+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11)))
 								sprite::move((zfix)0,(zfix)-1);
 						}
-						else if(_walkflag(x+16,y+v1,1,SWITCHBLOCK_STATE)&&
-								   !_walkflag(x+16,y+v2-1,1,SWITCHBLOCK_STATE)&&
-								   !_walkflag(x+16,y+15,1,SWITCHBLOCK_STATE))
+						else if(_walkflag(x+16,y+v1,1,get_standing_z_state())&&
+								   !_walkflag(x+16,y+v2-1,1,get_standing_z_state())&&
+								   !_walkflag(x+16,y+15,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+16,y+v1+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4)))
 								sprite::move((zfix)0,(zfix)1);
@@ -17350,8 +17548,8 @@ LEFTRIGHT_NEWMOVE:
 	{
 		info = walkflag(x-int32_t(lsteps[x.getInt()&7]),y+(bigHitbox?0:8),1,left) ||
 			   walkflag(x-int32_t(lsteps[x.getInt()&7]),y+8,1,left);
-		
-		if(isdungeon() && DrunkLeft() && !info.isUnwalkable() && (x==32 && y==80))
+
+		if (isdungeon() && getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !info.isUnwalkable() && (x == 32 && y == 80))
 		{
 			//ONLY process the side-effects of the above walkflag if Hero will actually move
 			//sigh sigh sigh... walkflag is a horrible mess :-/ -DD
@@ -17362,8 +17560,8 @@ LEFTRIGHT_NEWMOVE:
 		
 		info = walkflag(x+15+int32_t(lsteps[x.getInt()&7]),y+(bigHitbox?0:8),1,right) ||
 			   walkflag(x+15+int32_t(lsteps[x.getInt()&7]),y+8,1,right);
-		
-		if(isdungeon() && DrunkRight() && !info.isUnwalkable() && x==208 && y==80)
+
+		if (isdungeon() && getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && !info.isUnwalkable() && x == 208 && y == 80)
 		{
 			execute(info);
 			moveOld2(right);
@@ -17372,8 +17570,8 @@ LEFTRIGHT_NEWMOVE:
 		
 		ladderx = oldladderx;
 		laddery = oldladdery;
-		
-		if(DrunkUp())
+
+		if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			if(xoff && !is_on_conveyor && action != swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && jumping<1)
 			{
@@ -17410,7 +17608,7 @@ LEFTRIGHT_NEWMOVE:
 				{
 					info = walkflag(x,y+(bigHitbox?0:8)-int32_t(lsteps[y.getInt()&7]),2,up);
 					
-					if(_walkflag(x+15, y+(bigHitbox?0:8)-int32_t(lsteps[y.getInt()&7]), 1,SWITCHBLOCK_STATE) &&
+					if(_walkflag(x+15, y+(bigHitbox?0:8)-int32_t(lsteps[y.getInt()&7]), 1,get_standing_z_state()) &&
 							!(iswaterex_z3(MAPCOMBO(x, y+(bigHitbox?0:8)-int32_t(lsteps[y.getInt()&7])), -1, x, y+(bigHitbox?0:8)-int32_t(lsteps[y.getInt()&7])) &&
 							  iswaterex_z3(MAPCOMBO(x+15, y+(bigHitbox?0:8)-int32_t(lsteps[y.getInt()&7])), -1, x+15, y+(bigHitbox?0:8)-int32_t(lsteps[y.getInt()&7]))))
 						info.setUnwalkable(true);
@@ -17431,21 +17629,21 @@ LEFTRIGHT_NEWMOVE:
 					moveOld2(up);
 					return;
 				}
-				
-				if(!DrunkLeft() && !DrunkRight())
+
+				if (!getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))
 				{
 					if(NO_GRIDLOCK)
 					{
-						if(!_walkflag(x,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-								!_walkflag(x+8, y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-								_walkflag(x+15,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE))
+						if(!_walkflag(x,y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+								!_walkflag(x+8, y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+								_walkflag(x+15,y+(bigHitbox?0:8)-1,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11),y+(bigHitbox?0:8)-1))
 								sprite::move((zfix)-1,(zfix)0);
 						}
-						else if(_walkflag(x,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-								!_walkflag(x+7, y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-								!_walkflag(x+15,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE))
+						else if(_walkflag(x,y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+								!_walkflag(x+7, y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+								!_walkflag(x+15,y+(bigHitbox?0:8)-1,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4),y+(bigHitbox?0:8)-1))
 								sprite::move((zfix)1,(zfix)0);
@@ -17477,8 +17675,8 @@ LEFTRIGHT_NEWMOVE:
 			
 			return;
 		}
-		
-		if(DrunkDown())
+
+		if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			if(xoff && !is_on_conveyor && action != swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && jumping<1)
 			{
@@ -17515,7 +17713,7 @@ LEFTRIGHT_NEWMOVE:
 				{
 					info=walkflag(x,y+15+int32_t(lsteps[y.getInt()&7]),2,down);
 					
-					if(_walkflag(x+15, y+15+int32_t(lsteps[y.getInt()&7]), 1,SWITCHBLOCK_STATE) &&
+					if(_walkflag(x+15, y+15+int32_t(lsteps[y.getInt()&7]), 1,get_standing_z_state()) &&
 							!(iswaterex_z3(MAPCOMBO(x, y+15+int32_t(lsteps[y.getInt()&7])), -1, x, y+15+int32_t(lsteps[y.getInt()&7])) &&
 							  iswaterex_z3(MAPCOMBO(x+15, y+15+int32_t(lsteps[y.getInt()&7])), -1, x+15, y+15+int32_t(lsteps[y.getInt()&7]))))
 						info.setUnwalkable(true);
@@ -17536,21 +17734,21 @@ LEFTRIGHT_NEWMOVE:
 					moveOld2(down);
 					return;
 				}
-				
-				if(!DrunkLeft() && !DrunkRight())
+
+				if (!getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))
 				{
 					if(NO_GRIDLOCK)
 					{
-						if(!_walkflag(x,   y+15+1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x+8, y+15+1,1,SWITCHBLOCK_STATE)&&
-								_walkflag(x+15,y+15+1,1,SWITCHBLOCK_STATE))
+						if(!_walkflag(x,   y+15+1,1,get_standing_z_state())&&
+								!_walkflag(x+8, y+15+1,1,get_standing_z_state())&&
+								_walkflag(x+15,y+15+1,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11),y+15+1))
 								sprite::move((zfix)-1,(zfix)0);
 						}
-						else if(_walkflag(x,   y+15+1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x+7, y+15+1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x+15,y+15+1,1,SWITCHBLOCK_STATE))
+						else if(_walkflag(x,   y+15+1,1,get_standing_z_state())&&
+								!_walkflag(x+7, y+15+1,1,get_standing_z_state())&&
+								!_walkflag(x+15,y+15+1,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4),y+15+1))
 								sprite::move((zfix)1,(zfix)0);
@@ -17582,12 +17780,12 @@ LEFTRIGHT_NEWMOVE:
 		
 LEFTRIGHT_OLDMOVE:
 
-		if(isdungeon() && (y<=26 || y>=world_h-42) && !get_qr(qr_FREEFORM) && !toogam)
+		if(isdungeon() && (y<=26 || y>=world_h-42) && !get_qr(qr_FREEFORM) && !walk_through_walls)
 		{
 			return;
 		}
-		
-		if(DrunkLeft())
+
+		if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			if(yoff && !is_on_conveyor && action != swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && jumping<1)
 			{
@@ -17630,24 +17828,24 @@ LEFTRIGHT_OLDMOVE:
 					moveOld2(left);
 					return;
 				}
-				
-				if(!DrunkUp() && !DrunkDown())
+
+				if (!getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
 				{
 					if(NO_GRIDLOCK)
 					{
 						int32_t v1=bigHitbox?0:8;
 						int32_t v2=bigHitbox?8:12;
 						
-						if(!_walkflag(x-1,y+v1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x-1,y+v2,1,SWITCHBLOCK_STATE)&&
-								_walkflag(x-1,y+15,1,SWITCHBLOCK_STATE))
+						if(!_walkflag(x-1,y+v1,1,get_standing_z_state())&&
+								!_walkflag(x-1,y+v2,1,get_standing_z_state())&&
+								_walkflag(x-1,y+15,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x-1,y+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11)))
 								sprite::move((zfix)0,(zfix)-1);
 						}
-						else if(_walkflag(x-1,y+v1,  1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x-1,y+v2-1,1,SWITCHBLOCK_STATE)&&
-								!_walkflag(x-1,y+15,  1,SWITCHBLOCK_STATE))
+						else if(_walkflag(x-1,y+v1,  1,get_standing_z_state())&&
+								!_walkflag(x-1,y+v2-1,1,get_standing_z_state())&&
+								!_walkflag(x-1,y+15,  1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x-1,y+v1+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4)))
 								sprite::move((zfix)0,(zfix)1);
@@ -17675,8 +17873,8 @@ LEFTRIGHT_OLDMOVE:
 			
 			return;
 		}
-		
-		if(DrunkRight())
+
+		if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			if(yoff && !is_on_conveyor && action != swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && jumping<1)
 			{
@@ -17719,24 +17917,24 @@ LEFTRIGHT_OLDMOVE:
 					moveOld2(right);
 					return;
 				}
-				
-				if(!DrunkUp() && !DrunkDown())
+
+				if (!getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
 				{
 					if(NO_GRIDLOCK)
 					{
 						int32_t v1=bigHitbox?0:8;
 						int32_t v2=bigHitbox?8:12;
 							   
-						if(!_walkflag(x+16,y+v1,1,SWITCHBLOCK_STATE)&&
-							   !_walkflag(x+16,y+v2,1,SWITCHBLOCK_STATE)&&
-							   _walkflag(x+16,y+15,1,SWITCHBLOCK_STATE))
+						if(!_walkflag(x+16,y+v1,1,get_standing_z_state())&&
+							   !_walkflag(x+16,y+v2,1,get_standing_z_state())&&
+							   _walkflag(x+16,y+15,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+16,y+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?15:11)))
 								sprite::move((zfix)0,(zfix)-1);
 						}
-						else if(_walkflag(x+16,y+v1,1,SWITCHBLOCK_STATE)&&
-								   !_walkflag(x+16,y+v2-1,1,SWITCHBLOCK_STATE)&&
-								   !_walkflag(x+16,y+15,1,SWITCHBLOCK_STATE))
+						else if(_walkflag(x+16,y+v1,1,get_standing_z_state())&&
+								   !_walkflag(x+16,y+v2-1,1,get_standing_z_state())&&
+								   !_walkflag(x+16,y+15,1,get_standing_z_state()))
 						{
 							if(hclk || get_qr(qr_LENIENT_SOLID_DAMAGE) || get_qr(qr_NOSOLIDDAMAGECOMBOS) || ((z>0||fakez>0) && !(hero_scr->flags2&fAIRCOMBOS)) || !checkdamagecombos(x+16,y+v1+(get_qr(qr_SENSITIVE_SOLID_DAMAGE)?0:4)))
 								sprite::move((zfix)0,(zfix)1);
@@ -17767,30 +17965,35 @@ LEFTRIGHT_OLDMOVE:
 
 bool HeroClass::scr_walkflag(zfix_round zdx,zfix_round zdy,int d2,bool kb, int* canladder)
 {
-	if(toogam) return false;
+	if(walk_through_walls) return false;
 	int dx = zdx.getRound(), dy = zdy.getRound();
 	
-	if(blockpath && dy<80) //Blocked top parts of rooms
-		return true;
+	bool solid = false;
 	
-	if(mblock2.active() && mblock2.hit(dx,dy,0,1,1,1))
-		return true;
-	//collide_object handled in scr_canmove
-	
-	if(isdungeon() && cur_screen<128 && dy<40
-		&& ((x<=112||x>=128) || _walkflag(120,24,2,SWITCHBLOCK_STATE))
-		&& !get_qr(qr_FREEFORM))
-		return true; //Old NES dungeon stuff
-	
-	bool solid = _walkflag(zdx,zdy,1,SWITCHBLOCK_STATE);
-	
-	if(isdungeon() && cur_screen<128 && !get_qr(qr_FREEFORM))
+	if(!is_autowalking())
 	{
-		if(dx>=112&&dx<120&&dy<40&&dy>=32)
-			solid=true;
+		if(blockpath && dy<80) //Blocked top parts of rooms
+			return true;
 		
-		if(dx>=136&&dx<144&&dy<40&&dy>=32)
-			solid=true;
+		if(mblock2.active() && mblock2.hit(dx,dy,0,1,1,1))
+			return true;
+		//collide_object handled in scr_canmove
+		
+		if(isdungeon() && cur_screen<128 && dy<40
+			&& ((x<=112||x>=128) || _walkflag(120,24,2,get_standing_z_state()))
+			&& !get_qr(qr_FREEFORM))
+			return true; //Old NES dungeon stuff
+		
+		solid = _walkflag(zdx,zdy,1,get_standing_z_state());
+		
+		if(isdungeon() && cur_screen<128 && !get_qr(qr_FREEFORM))
+		{
+			if(dx>=112&&dx<120&&dy<40&&dy>=32)
+				solid=true;
+			
+			if(dx>=136&&dx<144&&dy<40&&dy>=32)
+				solid=true;
+		}
 	}
 	
 	if(action==swimming || IsSideSwim())
@@ -17870,7 +18073,7 @@ bool HeroClass::scr_walkflag(zfix_round zdx,zfix_round zdy,int d2,bool kb, int* 
 	else if(solid || isSideViewHero() || get_qr(qr_DROWN))
 	{
 		// see if it's a good spot for the ladder or for swimming
-		bool unwalkablex  = _walkflag(zdx,zdy,1,SWITCHBLOCK_STATE); //will be used later for the ladder -DD
+		bool unwalkablex  = _walkflag(zdx,zdy,1,get_standing_z_state()); //will be used later for the ladder -DD
 		
 		if(get_qr(qr_DROWN))
 		{
@@ -17920,7 +18123,7 @@ bool HeroClass::scr_walkflag(zfix_round zdx,zfix_round zdy,int d2,bool kb, int* 
 			{
 				if(isSideViewHero())
 				{
-					wtrx  = !_walkflag(zdx, zdy+8, 1,SWITCHBLOCK_STATE) && !_walkflag(dx, dy, 1,SWITCHBLOCK_STATE) && dir!=down;
+					wtrx  = !_walkflag(zdx, zdy+8, 1,get_standing_z_state()) && !_walkflag(dx, dy, 1,get_standing_z_state()) && dir!=down;
 				}
 				// * walk on half-water using the ladder instead of using flippers.
 				// * otherwise, walk on ladder(+hookshot) combos.
@@ -17953,7 +18156,7 @@ bool HeroClass::scr_walkflag(zfix_round zdx,zfix_round zdy,int d2,bool kb, int* 
 			
 			for (int32_t i = 1; i <= 2; ++i)
 			{
-				if (get_scr_layer_valid(hero_screen, i))
+				if (get_scr_layer_valid(current_screen, i))
 				{
 					if (get_qr(qr_OLD_BRIDGE_COMBOS))
 					{
@@ -18058,12 +18261,12 @@ bool HeroClass::scr_walkflag(zfix_round zdx,zfix_round zdy,int d2,bool kb, int* 
 		}
 	}
 	
-	return solid;
+	return solid && !is_autowalking();
 }
 
 bool HeroClass::scr_canmove(zfix dx, zfix dy, bool kb, bool ign_sv, int* canladder)
 {
-	if(toogam) return true;
+	if(walk_through_walls) return true;
 	if(!(dx || dy)) return true;
 	zfix bx = x, by = y+(bigHitbox?0:8); //left/top
 	zfix rx = x+15.9999_zf, ry = y+15.9999_zf; //right/bottom
@@ -18782,6 +18985,7 @@ bool HeroClass::can_moveDir(int dir, zfix px, bool kb, bool ign_sv, bool shove)
 
 bool HeroClass::premove()
 {
+	if(is_autowalking()) return true;
 	if(lstunclock) return false;
 	if(is_conveyor_stunned) return (convey_forcex || convey_forcey);
 	int32_t xoff=x.getInt()&7;
@@ -18793,34 +18997,8 @@ bool HeroClass::premove()
 	}
 	int32_t push=pushing;
 	int32_t oldladderx=-1000, oldladdery=-1000; // moved here because linux complains "init crosses goto ~Koopa
-	int32_t flippers_id = current_item_id(itype_flippers);
-	itemdata const& itm = itemsbuf[flippers_id];
-	byte intbtn = byte(itm.misc3&0xFF);
-	bool dive_pressed = getIntBtnInput(intbtn, true, true, false, false, true);
-	bool eatdive = false;
-	if(diveclk>0)
-	{
-		if (isSideViewHero() && get_qr(qr_SIDESWIM)) diveclk = 0;
-		--diveclk;
-		if(isDiving() && flippers_id > -1 && itemsbuf[flippers_id].flags & item_flag2 && dive_pressed) //Cancellable Diving -V
-		{
-			diveclk = itemsbuf[flippers_id].misc2;
-			eatdive = true;
-		}
-	}
-	else if(action == swimming && dive_pressed)
-	{
-		bool global_diving=(flippers_id > -1 && itemsbuf[flippers_id].flags & item_flag1);
-		bool screen_diving=(hero_scr->flags5&fTOGGLEDIVING) != 0;
-		
-		if(global_diving==screen_diving)
-		{
-			diveclk = (flippers_id < 0 ? 80 : (itemsbuf[flippers_id].misc1 + itemsbuf[flippers_id].misc2));
-			eatdive = true;
-		}
-	}
-	if(eatdive)
-		getIntBtnInput(intbtn, true, true, false, false, false);
+	
+	tick_diving();
 	
 	if(action==rafting)
 	{
@@ -18841,43 +19019,54 @@ bool HeroClass::premove()
 	
 	//&0xFFF removes the "bow & arrows" bitmask
 	//The Quick Sword is allowed to interrupt attacks.
-	int32_t currentSwordOrWand = (itemsbuf[dowpn].family == itype_wand || itemsbuf[dowpn].family == itype_sword)?dowpn:-1;
+	int32_t currentSwordOrWand = (itemsbuf[dowpn].type == itype_wand || itemsbuf[dowpn].type == itype_sword)?dowpn:-1;
 	if((!attackclk && action!=attacking && action != sideswimattacking) || ((attack==wSword || attack==wWand) && (itemsbuf[currentSwordOrWand].flags & item_flag5)))
 	{
-		if(DrunkrBbtn())
+		if (getInput(btnB, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			btnwpn=getItemFamily(itemsbuf,Bwpn);
 			dowpn = NEG_OR_MASK(Bwpn,0xFFF);
 			directWpn = directItemB;
 		}
-		else if(DrunkrAbtn())
+		else if (getInput(btnA, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			btnwpn=getItemFamily(itemsbuf,Awpn);
 			dowpn = NEG_OR_MASK(Awpn,0xFFF);
 			directWpn = directItemA;
 		}
-		else if(get_qr(qr_SET_XBUTTON_ITEMS) && DrunkrEx1btn())
+		else if (get_qr(qr_SET_XBUTTON_ITEMS) && getInput(btnEx1, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			btnwpn=getItemFamily(itemsbuf,Xwpn);
 			dowpn = NEG_OR_MASK(Xwpn,0xFFF);
 			directWpn = directItemX;
 		}
-		else if(get_qr(qr_SET_YBUTTON_ITEMS) && DrunkrEx2btn())
+		else if (get_qr(qr_SET_YBUTTON_ITEMS) && getInput(btnEx2, INPUT_PRESS | INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			btnwpn=getItemFamily(itemsbuf,Ywpn);
 			dowpn = NEG_OR_MASK(Ywpn,0xFFF);
 			directWpn = directItemY;
 		}
 		
-		if(directWpn >= MAXITEMS) directWpn = -1;
-		
-		// The Quick Sword only allows repeated sword or wand swings.
-		if((action==attacking||action==sideswimattacking) && ((attack==wSword && btnwpn!=itype_sword) || (attack==wWand && btnwpn!=itype_wand)))
-			btnwpn=-1;
+		auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
+		if (on_cooldown(itmid))
+		{
+			directWpn = olddirectwpn;
+			btnwpn = -1;
+			dowpn = -1;
+			did_scriptb = false;
+		}
+		else
+		{
+			if(directWpn >= MAXITEMS) directWpn = -1;
+			
+			// The Quick Sword only allows repeated sword or wand swings.
+			if((action==attacking||action==sideswimattacking) && ((attack==wSword && btnwpn!=itype_sword) || (attack==wWand && btnwpn!=itype_wand)))
+				btnwpn=-1;
+		}
 	}
 	
 	auto swordid = (directWpn>-1 ? directWpn : current_item_id(itype_sword));
-	if(can_attack() && (swordid > -1 && itemsbuf[swordid].family==itype_sword) && checkitem_jinx(swordid) && btnwpn==itype_sword && charging==0)
+	if(can_attack() && (swordid > -1 && itemsbuf[swordid].type==itype_sword) && checkitem_jinx(swordid) && btnwpn==itype_sword && charging==0)
 	{
 		attackid=directWpn>-1 ? directWpn : current_item_id(itype_sword);
 		if(checkbunny(attackid) && (checkmagiccost(attackid) || !(itemsbuf[attackid].flags & item_flag6)))
@@ -18891,7 +19080,7 @@ bool HeroClass::premove()
 			attack=wSword;
 			
 			attackclk=0;
-			sfx(itemsbuf[directWpn>-1 ? directWpn : current_item_id(itype_sword)].usesound, pan(x.getInt()));
+			sfx(itemsbuf[directWpn>-1 ? directWpn : current_item_id(itype_sword)].usesound, pan(x));
 			
 			if(dowpn>-1 && itemsbuf[dowpn].script!=0 && !did_scripta && !(FFCore.doscript(ScriptType::Item, dowpn) && get_qr(qr_ITEMSCRIPTSKEEPRUNNING)))
 			{
@@ -18921,11 +19110,11 @@ bool HeroClass::premove()
 	
 	if(action!=swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking && !getOnSideviewLadder())
 	{
-		if(DrunkUp() && canSideviewLadder())
+		if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && canSideviewLadder())
 		{
 			setOnSideviewLadder(true);
 		}
-		else if(DrunkDown() && canSideviewLadder(true))
+		else if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && canSideviewLadder(true))
 		{
 			y+=1;
 			setOnSideviewLadder(true);
@@ -18939,14 +19128,14 @@ bool HeroClass::premove()
 	{
 		if((xoff==0)||diagonalMovement)
 		{
-			if(DrunkUp()) dir=up;
-			if(DrunkDown()) dir=down;
+			if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = up;
+			if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = down;
 		}
 		
 		if((yoff==0)||diagonalMovement)
 		{
-			if(DrunkLeft()) dir=left;
-			if(DrunkRight()) dir=right;
+			if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = left;
+			if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = right;
 		}
 	}
 	
@@ -18973,11 +19162,11 @@ bool HeroClass::premove()
 	
 	bool no_jinx = true;
 	bool liftonly = lift_wpn && (liftflags & LIFTFL_DIS_ITEMS);
+	auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
 	if(liftonly)
 	{
 		if(replay_version_check(38) && btnwpn > -1)
 		{
-			auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
 			no_jinx = checkitem_jinx(itmid);
 			if(no_jinx)
 				startwpn(itmid);
@@ -18987,7 +19176,7 @@ bool HeroClass::premove()
 	else if(can_attack() && btnwpn>itype_sword && charging==0 && btnwpn!=itype_rupee) // This depends on item 0 being a rupee...
 	{
 		bool paidmagic = false;
-		if(btnwpn==itype_wand && (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].family==itype_wand : false) : current_item(itype_wand)))
+		if(btnwpn==itype_wand && (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].type==itype_wand : false) : current_item(itype_wand)))
 		{
 			attackid=directWpn>-1 ? directWpn : current_item_id(itype_wand);
 			no_jinx = checkitem_jinx(attackid);
@@ -19007,7 +19196,7 @@ bool HeroClass::premove()
 			}
 		}
 		else if((btnwpn==itype_hammer)&&!((action==attacking||action==sideswimattacking) && attack==wHammer)
-				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].family==itype_hammer : false) : current_item(itype_hammer)))
+				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].type==itype_hammer : false) : current_item(itype_hammer)))
 		{
 			no_jinx = checkitem_jinx(dowpn);
 			if(!(no_jinx && checkmagiccost(dowpn) && checkbunny(dowpn)))
@@ -19025,7 +19214,7 @@ bool HeroClass::premove()
 			}
 		}
 		else if((btnwpn==itype_candle)&&!((action==attacking||action==sideswimattacking) && attack==wFire)
-				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].family==itype_candle : false) : current_item(itype_candle)))
+				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].type==itype_candle : false) : current_item(itype_candle)))
 		{
 			//checkbunny handled where magic cost is paid
 			attackid=directWpn>-1 ? directWpn : current_item_id(itype_candle);
@@ -19038,7 +19227,7 @@ bool HeroClass::premove()
 			}
 		}
 		else if((btnwpn==itype_cbyrna)&&!((action==attacking||action==sideswimattacking) && attack==wCByrna)
-				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].family==itype_cbyrna : false) : current_item(itype_cbyrna)))
+				&& (directWpn>-1 ? (!item_disabled(directWpn) ? itemsbuf[directWpn].type==itype_cbyrna : false) : current_item(itype_cbyrna)))
 		{
 			attackid=directWpn>-1 ? directWpn : current_item_id(itype_cbyrna);
 			no_jinx = checkitem_jinx(attackid);
@@ -19058,7 +19247,7 @@ bool HeroClass::premove()
 			}
 		}
 		else if((btnwpn==itype_bugnet)&&!((action==attacking||action==sideswimattacking) && attack==wBugNet)
-				&& (directWpn>-1 ? (!item_disabled(directWpn) && itemsbuf[directWpn].family==itype_bugnet) : current_item(itype_bugnet)))
+				&& (directWpn>-1 ? (!item_disabled(directWpn) && itemsbuf[directWpn].type==itype_bugnet) : current_item(itype_bugnet)))
 		{
 			attackid = directWpn>-1 ? directWpn : current_item_id(itype_bugnet);
 			no_jinx = checkitem_jinx(attackid);
@@ -19077,7 +19266,6 @@ bool HeroClass::premove()
 		}
 		else
 		{
-			auto itmid = directWpn>-1 ? directWpn : current_item_id(btnwpn);
 			no_jinx = checkitem_jinx(itmid);
 			if(no_jinx)
 			{
@@ -19148,14 +19336,14 @@ bool HeroClass::premove()
 		{
 			if((xoff==0)||diagonalMovement)
 			{
-				if(DrunkUp()) dir=up;
-				if(DrunkDown()) dir=down;
+				if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = up;
+				if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = down;
 			}
 			
 			if((yoff==0)||diagonalMovement)
 			{
-				if(DrunkLeft()) dir=left;
-				if(DrunkRight()) dir=right;
+				if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = left;
+				if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = right;
 			}
 		}
 		
@@ -19167,16 +19355,15 @@ bool HeroClass::premove()
 		{
 			if((xoff==0)||diagonalMovement)
 			{
-				if(DrunkUp()) dir=up;
-				
-				if(DrunkDown()) dir=down;
+				if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = up;
+				if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = down;
+
 			}
 			
 			if((yoff==0)||diagonalMovement)
 			{
-				if(DrunkLeft()) dir=left;
-				
-				if(DrunkRight()) dir=right;
+				if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = left;
+				if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION)) dir = right;
 			}
 		}
 		
@@ -19194,7 +19381,7 @@ bool HeroClass::premove()
 				if(spins%5==0)
 				{
 					int id = currentscroll > -1 ? currentscroll : (current_item_id(spins>5 ? itype_spinscroll2 : itype_spinscroll));
-					sfx(itemsbuf[id].usesound,pan(x.getInt()));
+					sfx(itemsbuf[id].usesound,pan(x));
 				}
 				attackclk=1;
 				
@@ -19235,20 +19422,20 @@ bool HeroClass::premove()
 void HeroClass::movehero()
 {
 	bool earlyret = false;
-	bool nohorz = (isdungeon() && (y<=26 || y>=world_h-42) && !get_qr(qr_FREEFORM) && !toogam);
-	bool novert = (isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !toogam);
+	bool nohorz = (isdungeon() && (y<=26 || y>=world_h-42) && !get_qr(qr_FREEFORM) && !walk_through_walls);
+	bool novert = (isdungeon() && (x<=26 || x>=world_w - 42) && !get_qr(qr_FREEFORM) && !walk_through_walls);
 	zfix dx, dy;
 	auto push=pushing;
 	pushing=0;
 	
-	if(!is_conveyor_stunned) //these do not apply to conveyor auto-walk
+	if(!is_conveyor_stunned && !is_autowalking()) //these do not apply to conveyor auto-walk
 	{
 		if(pitslide()) //Check pit's 'pull'. If true, then Hero cannot fight the pull.
 			return;
 		
 		if(action==walking) //still walking
 		{
-			if(!DrunkUp() && !DrunkDown() && !DrunkLeft() && !DrunkRight() && !autostep)
+			if (!getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && !getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && !autostep)
 			{
 				if(attackclk>0) SetAttack();
 				else {action = none; FFCore.setHeroAction(none);}
@@ -19266,7 +19453,12 @@ void HeroClass::movehero()
 		}
 	}
 	
-	if(is_conveyor_stunned)
+	if(is_autowalking())
+	{
+		if(check_pitslide() > -1)
+			try_hover();
+	}
+	else if(is_conveyor_stunned)
 	{
 		dx = convey_forcex;
 		dy = convey_forcey;
@@ -19282,7 +19474,7 @@ void HeroClass::movehero()
 		switch(holddir)
 		{
 		case up:
-			if(!Up())
+			if (!getInput(btnUp, INPUT_HERO_ACTION))
 			{
 				holddir=-1;
 			}
@@ -19290,7 +19482,7 @@ void HeroClass::movehero()
 			break;
 			
 		case down:
-			if(!Down())
+			if (!getInput(btnDown, INPUT_HERO_ACTION))
 			{
 				holddir=-1;
 			}
@@ -19298,7 +19490,7 @@ void HeroClass::movehero()
 			break;
 			
 		case left:
-			if(!Left())
+			if (!getInput(btnLeft, INPUT_HERO_ACTION))
 			{
 				holddir=-1;
 			}
@@ -19306,7 +19498,7 @@ void HeroClass::movehero()
 			break;
 			
 		case right:
-			if(!Right())
+			if (!getInput(btnRight, INPUT_HERO_ACTION))
 			{
 				holddir=-1;
 			}
@@ -19316,22 +19508,22 @@ void HeroClass::movehero()
 		default:
 			break;
 		} //end switch
-		
-		if(DrunkUp()&&(holddir==-1||holddir==up)&&!novert)
+
+		if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == up) && !novert)
 		{
 			if(charging==0 && spins==0 && action != sideswimattacking && !(IsSideSwim() && get_qr(qr_SIDESWIMDIR)))
 			{
 				dir=up;
 			}
 			holddir=up;
-			
-			if(DrunkRight()&&shiftdir!=left&&!nohorz)
+
+			if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != left && !nohorz)
 			{
 				shiftdir=right;
 				if (IsSideSwim() && get_qr(qr_SIDESWIMDIR) && (charging==0 && spins==0)) dir = right;
 				if (!IsSideSwim() || (charging==0 && spins==0)) sideswimdir = right;
 			}
-			else if(DrunkLeft()&&shiftdir!=right&&!nohorz)
+			else if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != right && !nohorz)
 			{
 				shiftdir=left;
 				if (IsSideSwim() && get_qr(qr_SIDESWIMDIR) && (charging==0 && spins==0)) dir = left;
@@ -19342,21 +19534,21 @@ void HeroClass::movehero()
 				shiftdir=-1;
 			}
 		}
-		else if(DrunkDown()&&(holddir==-1||holddir==down)&&!novert)
+		else if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == down) && !novert)
 		{
 			if(charging==0 && spins==0 && action != sideswimattacking && !(IsSideSwim() && get_qr(qr_SIDESWIMDIR)))
 			{
 				dir=down;
 			}
 			holddir=down;
-				
-			if(DrunkRight()&&shiftdir!=left&&!nohorz)
+
+			if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != left && !nohorz)
 			{
 				shiftdir=right;
 				if (IsSideSwim() && get_qr(qr_SIDESWIMDIR) && (charging==0 && spins==0)) dir = right;
 				if (!IsSideSwim() || (charging==0 && spins==0)) sideswimdir = right;
 			}
-			else if(DrunkLeft()&&shiftdir!=right&&!nohorz)
+			else if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != right && !nohorz)
 			{
 				shiftdir=left;
 				if (IsSideSwim() && get_qr(qr_SIDESWIMDIR) && (charging==0 && spins==0)) dir = left;
@@ -19367,7 +19559,7 @@ void HeroClass::movehero()
 				shiftdir=-1;
 			}
 		}
-		else if(DrunkLeft()&&(holddir==-1||holddir==left)&&!nohorz)
+		else if (getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == left) && !nohorz)
 		{
 			if(charging==0 && spins==0 && action != sideswimattacking)
 			{
@@ -19375,12 +19567,12 @@ void HeroClass::movehero()
 			}
 			sideswimdir = left;
 			holddir=left;
-			
-			if(DrunkUp()&&shiftdir!=down&&!novert)
+
+			if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != down && !novert)
 			{
 				shiftdir=up;
 			}
-			else if(DrunkDown()&&shiftdir!=up&&!novert)
+			else if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != up && !novert)
 			{
 				shiftdir=down;
 			}
@@ -19389,7 +19581,7 @@ void HeroClass::movehero()
 				shiftdir=-1;
 			}
 		}
-		else if(DrunkRight()&&(holddir==-1||holddir==right)&&!nohorz)
+		else if (getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) && (holddir == -1 || holddir == right) && !nohorz)
 		{
 			if(charging==0 && spins==0 && action != sideswimattacking)
 			{
@@ -19397,12 +19589,12 @@ void HeroClass::movehero()
 			}
 			sideswimdir = right;
 			holddir=right;
-				
-			if(DrunkUp()&&shiftdir!=down&&!novert)
+
+			if (getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != down && !novert)
 			{
 				shiftdir=up;
 			}
-			else if(DrunkDown()&&shiftdir!=up&&!novert)
+			else if (getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION) && shiftdir != up && !novert)
 			{
 				shiftdir=down;
 			}
@@ -19440,19 +19632,19 @@ void HeroClass::movehero()
 	{
 		shiftdir = -1;
 		holddir = -1;
-		if(!novert && DrunkUp())
+		if (!novert && getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			holddir = dir = up;
 		}
-		else if(!novert && DrunkDown())
+		else if (!novert && getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			holddir = dir = down;
 		}
-		else if(!nohorz && DrunkLeft())
+		else if (!nohorz && getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			holddir = dir = left;
 		}
-		else if(!nohorz && DrunkRight())
+		else if (!nohorz && getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION))
 		{
 			holddir = dir = right;
 		}
@@ -19462,7 +19654,7 @@ void HeroClass::movehero()
 newmove_slide:
 	if(conv_forcedir > -1 && !spins)
 		dir = conv_forcedir;
-	if(!is_conveyor_stunned)
+	if(!is_conveyor_stunned && !is_autowalking())
 	{
 		bool is_inair = (z > 0 || fakez > 0) || (sideview_mode() && !get_qr(qr_BROKEN_ICY_FLOOR_SIDEVIEW) && !isStanding(true));
 		auto ic = ice_combo;
@@ -19671,7 +19863,7 @@ void HeroClass::get_move(int movedir, zfix& dx, zfix& dy, int32_t& facedir)
 
 bool HeroClass::new_engine_move(zfix dx, zfix dy) //no collision check
 {
-	if(!dx && !dy) return true;
+	if(!dx && !dy && !is_autowalking()) return true;
 	if(action != swimming && action != sideswimming && action != sideswimhit && action != sideswimattacking)
 	{
 		herostep();
@@ -19690,12 +19882,11 @@ bool HeroClass::new_engine_move(zfix dx, zfix dy) //no collision check
 		herostep();
 	}
 	
-	bool ret = true;
-	if(charging==0 || attack!=wHammer)
-	{
-		ret = movexy(dx,dy,false,false,true);
-	}
-	return ret;
+	if(is_autowalking())
+		autowalk_move();
+	else if(charging==0 || attack!=wHammer)
+		return movexy(dx,dy,false,false,true);
+	return true;
 }
 
 void HeroClass::moveOld(int32_t d2)
@@ -20017,7 +20208,7 @@ void HeroClass::moveOld2(int32_t d2, int32_t forceRate)
 		     //!DIMITODO: add QR for slow combos under hero
 	if(slowcombo) for (int32_t i = 1; i <= 2; ++i)
 	{
-		if (get_scr_layer_valid(hero_screen, i))
+		if (get_scr_layer_valid(current_screen, i))
 		{
 			if (get_qr(qr_OLD_BRIDGE_COMBOS))
 			{
@@ -20312,7 +20503,128 @@ void HeroClass::moveOld2(int32_t d2, int32_t forceRate)
 		}
 	}
 }
+
+void HeroClass::start_auto_walk(const combined_handle_t& target)
+{
+	auto& cmb = target.combo();
+	if(cmb.type != cCUTSCENEEFFECT || cmb.attribytes[0] != CUTEFF_PLAYER_WALK) return;
 	
+	zfix dx = zslongToFix(cmb.attributes[0]), dy = zslongToFix(cmb.attributes[1]);
+	if(cmb.usrflags & cflag1)
+	{
+		auto [cx, cy] = target.center_xy();
+		dx += cx-8;
+		dy += cy-8;
+	}
+	else if(cmb.usrflags & cflag2)
+	{
+		dx += x;
+		dy += y;
+	}
+	
+	reset_hookshot();
+	
+	autowalk_dest_x = dx;
+	autowalk_dest_y = dy;
+	autowalk_combo_id = target.data();
+	autowalk_handle = target;
+}
+void HeroClass::finish_auto_walk()
+{
+	if(!autowalk_handle) return;
+	
+	if(autowalk_combo_id >= 0 && autowalk_handle.data() == autowalk_combo_id)
+	{
+		auto& cmb = autowalk_handle.combo();
+		if(cmb.type == cCUTSCENEEFFECT && cmb.attribytes[0] == CUTEFF_PLAYER_WALK)
+			do_trigger_ctype_causes(autowalk_handle);
+	}
+	autowalk_handle = rpos_handle_t();
+	autowalk_combo_id = -1;
+	autowalk_dest_x = autowalk_dest_y = 0;
+}
+
+void HeroClass::autowalk_move()
+{
+	if(x == autowalk_dest_x && y == autowalk_dest_y) // reached destination already
+	{
+		finish_auto_walk();
+		return;
+	}
+	
+	zfix pix_dist;
+	if(autowalk_combo_id > -1)
+	{
+		newcombo const& cmb = combobuf[autowalk_combo_id];
+		if(cmb.type == cCUTSCENEEFFECT && cmb.attribytes[0] == CUTEFF_PLAYER_WALK)
+		{
+			if(cmb.attributes[2])
+				pix_dist = zslongToFix(cmb.attributes[2]);
+		}
+	}
+	if(!pix_dist)
+	{
+		pix_dist = steprate / 100_zf;
+		vector<zfix*> vec = { &pix_dist };
+		mod_steps(vec);
+		if(!pix_dist) // ensure not stuck
+			pix_dist = 1;
+	}
+	
+	// -1, 0, or 1
+	int dir_x = (autowalk_dest_x > x) - (autowalk_dest_x < x);
+	int dir_y = (autowalk_dest_y > y) - (autowalk_dest_y < y);
+	
+	double _MSVC2022_tmp1, _MSVC2022_tmp2;
+	double angle = atan2_MSVC2022_FIX(double(autowalk_dest_y-y),double(autowalk_dest_x-x));
+	zfix dx, dy;
+	if(x != autowalk_dest_x)
+		dx = zc::math::Cos(angle)*pix_dist;
+	if(y != autowalk_dest_y)
+		dy = zc::math::Sin(angle)*pix_dist;
+	
+	zfix cur_dest_x = x+dx, cur_dest_y = y+dy;
+	// check if this move will reach or pass the destination, and make it land exactly on the destination instead
+	if(dir_x != ((autowalk_dest_x > cur_dest_x) - (autowalk_dest_x < cur_dest_x)))
+	{
+		cur_dest_x = autowalk_dest_x;
+		dx = cur_dest_x - x;
+	}
+	if(dir_y != ((autowalk_dest_y > cur_dest_y) - (autowalk_dest_y < cur_dest_y)))
+	{
+		cur_dest_y = autowalk_dest_y;
+		dy = cur_dest_y - y;
+	}
+	
+	movexy(dx, dy, false, true, false, true); // try to move for purposes such as the ladder
+	x = cur_dest_x; y = cur_dest_y; // ... but just set the x/y to be sure nothing got in the way
+	
+	if(dx || dy)
+	{
+		if(abs(dx) > abs(dy))
+		{
+			if(dx < 0) dir = left;
+			else dir = right;
+		}
+		else
+		{
+			if(dy < 0) dir = up;
+			else dir = down;
+		}
+	}
+	
+	if(x == autowalk_dest_x && y == autowalk_dest_y) // reached destination
+		finish_auto_walk();
+}
+
+bool HeroClass::is_autowalking() const
+{
+	return autowalk_combo_id >= 0;
+}
+bool HeroClass::no_control() const
+{
+	return is_autowalking(); // can possibly add other stuff here later, like maybe a script bool?
+}
 HeroClass::WalkflagInfo HeroClass::walkflag(zfix fx,zfix fy,int32_t cnt,byte d2)
 {
 	return walkflag(fx.getInt(), fy.getInt(), cnt, d2);
@@ -20327,7 +20639,7 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
 		return ret;
 	}
 
-    if(toogam)
+    if(walk_through_walls)
     {
         ret.setUnwalkable(false);
         return ret;
@@ -20351,14 +20663,14 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
 	return ret;
     }
     
-    if(isdungeon() && cur_screen<128 && wy<(bigHitbox?32:40) && (((diagonalMovement||NO_GRIDLOCK)?(x<=112||x>=128):x!=120) || _walkflag(120,24,2,SWITCHBLOCK_STATE))
+    if(isdungeon() && cur_screen<128 && wy<(bigHitbox?32:40) && (((diagonalMovement||NO_GRIDLOCK)?(x<=112||x>=128):x!=120) || _walkflag(120,24,2,get_standing_z_state()))
             && !get_qr(qr_FREEFORM))
     {
         ret.setUnwalkable(true);
         return ret;
     }
     
-    bool wf = _walkflag(wx,wy,cnt,SWITCHBLOCK_STATE);
+    bool wf = _walkflag(wx,wy,cnt,get_standing_z_state());
     
     if(isdungeon() && cur_screen<128 && !get_qr(qr_FREEFORM))
     {
@@ -20375,10 +20687,10 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
         if(!wf)
         {
 	    bool isthissolid = false;
-		if (_walkflag(x+7,y+(bigHitbox?6:11),1,SWITCHBLOCK_STATE)
-                || _walkflag(x+7,y+(bigHitbox?9:12),1,SWITCHBLOCK_STATE)
-		|| _walkflag(x+8,y+(bigHitbox?6:11),1,SWITCHBLOCK_STATE)
-                || _walkflag(x+8,y+(bigHitbox?9:12),1,SWITCHBLOCK_STATE)) isthissolid = true;
+		if (_walkflag(x+7,y+(bigHitbox?6:11),1,get_standing_z_state())
+                || _walkflag(x+7,y+(bigHitbox?9:12),1,get_standing_z_state())
+		|| _walkflag(x+8,y+(bigHitbox?6:11),1,get_standing_z_state())
+                || _walkflag(x+8,y+(bigHitbox?9:12),1,get_standing_z_state())) isthissolid = true;
 		//This checks if Hero is currently swimming in solid water (cause even if the QR "No Hopping" is enabled, he should still hop out of solid water) - Dimi
 		
 		
@@ -20413,8 +20725,8 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
                     {
                         if(!iswaterex_z3(MAPCOMBO(x-1,y+(bigHitbox?6:11)), -1, x-1,y+(bigHitbox?6:11)) &&
                            !iswaterex_z3(MAPCOMBO(x-1,y+(bigHitbox?9:12)), -1, x-1,y+(bigHitbox?9:12)) &&
-                           !_walkflag(x-1,y+(bigHitbox?6:11),1,SWITCHBLOCK_STATE) &&
-                           !_walkflag(x-1,y+(bigHitbox?9:12),1,SWITCHBLOCK_STATE))
+                           !_walkflag(x-1,y+(bigHitbox?6:11),1,get_standing_z_state()) &&
+                           !_walkflag(x-1,y+(bigHitbox?9:12),1,get_standing_z_state()))
                         {
                             ret.setHopDir(d2);
                             ret.setIlswim(true);
@@ -20425,8 +20737,8 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
                     {
                         if(!iswaterex_z3(MAPCOMBO(x+16,y+(bigHitbox?6:11)), -1, x+16,y+(bigHitbox?6:11)) &&
                            !iswaterex_z3(MAPCOMBO(x+16,y+(bigHitbox?9:12)), -1, x+16,y+(bigHitbox?9:12)) &&
-                           !_walkflag(x+16,y+(bigHitbox?6:11),1,SWITCHBLOCK_STATE) &&
-                           !_walkflag(x+16,y+(bigHitbox?9:12),1,SWITCHBLOCK_STATE))
+                           !_walkflag(x+16,y+(bigHitbox?6:11),1,get_standing_z_state()) &&
+                           !_walkflag(x+16,y+(bigHitbox?9:12),1,get_standing_z_state()))
                         {
                             ret.setHopDir(d2);
                             ret.setIlswim(true);
@@ -20437,8 +20749,8 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
                     {
                         if(!iswaterex_z3(MAPCOMBO(x+7,y+(bigHitbox?0:8)-1), -1, x+7,y+(bigHitbox?0:8)-1) &&
                            !iswaterex_z3(MAPCOMBO(x+8,y+(bigHitbox?0:8)-1), -1, x+8,y+(bigHitbox?0:8)-1) &&
-                           !_walkflag(x+7,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE) &&
-                           !_walkflag(x+8,y+(bigHitbox?0:8)-1,1,SWITCHBLOCK_STATE))
+                           !_walkflag(x+7,y+(bigHitbox?0:8)-1,1,get_standing_z_state()) &&
+                           !_walkflag(x+8,y+(bigHitbox?0:8)-1,1,get_standing_z_state()))
                         {
                             ret.setHopDir(d2);
                             ret.setIlswim(true);
@@ -20449,8 +20761,8 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
                     {
                         if(!iswaterex_z3(MAPCOMBO(x+7,y+16), -1, x+7,y+16) &&
                            !iswaterex_z3(MAPCOMBO(x+8,y+16), -1, x+8,y+16) &&
-                           !_walkflag(x+7,y+16,1,SWITCHBLOCK_STATE) &&
-                           !_walkflag(x+8,y+16,1,SWITCHBLOCK_STATE))
+                           !_walkflag(x+7,y+16,1,get_standing_z_state()) &&
+                           !_walkflag(x+8,y+16,1,get_standing_z_state()))
                         {
                             ret.setHopDir(d2);
                             ret.setIlswim(true);
@@ -20492,8 +20804,8 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
     }
     else if(ladderx+laddery)                                  // ladder is being used
     {
-        int32_t lx = !(get_qr(qr_DROWN)&&iswaterex_z3(MAPCOMBO(x+4,y+11), -1, x+4,y+11)&&!_walkflag(x+4,y+11,1,SWITCHBLOCK_STATE)) ? zfix(wx) : x;
-        int32_t ly = !(get_qr(qr_DROWN)&&iswaterex_z3(MAPCOMBO(x+4,y+11), -1, x+4,y+11)&&!_walkflag(x+4,y+11,1,SWITCHBLOCK_STATE)) ? zfix(wy) : y;
+        int32_t lx = !(get_qr(qr_DROWN)&&iswaterex_z3(MAPCOMBO(x+4,y+11), -1, x+4,y+11)&&!_walkflag(x+4,y+11,1,get_standing_z_state())) ? zfix(wx) : x;
+        int32_t ly = !(get_qr(qr_DROWN)&&iswaterex_z3(MAPCOMBO(x+4,y+11), -1, x+4,y+11)&&!_walkflag(x+4,y+11,1,get_standing_z_state())) ? zfix(wy) : y;
         
         if((diagonalMovement||NO_GRIDLOCK))
         {
@@ -20556,8 +20868,8 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
                 case up:
                     if(y.getInt()<=laddery)
                     {
-                        ret.setUnwalkable(_walkflag(ladderx,laddery-8,1,SWITCHBLOCK_STATE) ||
-                                          _walkflag(ladderx+8,laddery-8,1,SWITCHBLOCK_STATE));
+                        ret.setUnwalkable(_walkflag(ladderx,laddery-8,1,get_standing_z_state()) ||
+                                          _walkflag(ladderx+8,laddery-8,1,get_standing_z_state()));
                         return ret;
                         
                     }
@@ -20582,11 +20894,11 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
                 
                 if(d2<=down)
                 {
-                    ret.setUnwalkable(_walkflag(ladderx,wy,1,SWITCHBLOCK_STATE) || _walkflag(ladderx+8,wy,1,SWITCHBLOCK_STATE));
+                    ret.setUnwalkable(_walkflag(ladderx,wy,1,get_standing_z_state()) || _walkflag(ladderx+8,wy,1,get_standing_z_state()));
                     return ret;
                 }
                 
-                ret.setUnwalkable(_walkflag(TRUNCATE_TILE(wx),wy,1,SWITCHBLOCK_STATE) || _walkflag(TRUNCATE_TILE(wx)+8,wy,1,SWITCHBLOCK_STATE));
+                ret.setUnwalkable(_walkflag(TRUNCATE_TILE(wx),wy,1,get_standing_z_state()) || _walkflag(TRUNCATE_TILE(wx)+8,wy,1,get_standing_z_state()));
                 return ret;
             }
             
@@ -20607,8 +20919,8 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
     else if(wf || isSideViewHero() || get_qr(qr_DROWN))
     {
         // see if it's a good spot for the ladder or for swimming
-        bool unwalkablex  = _walkflag(wx,wy,1,SWITCHBLOCK_STATE); //will be used later for the ladder -DD
-        bool unwalkablex8 = _walkflag(x+8,wy,1,SWITCHBLOCK_STATE);
+        bool unwalkablex  = _walkflag(wx,wy,1,get_standing_z_state()); //will be used later for the ladder -DD
+        bool unwalkablex8 = _walkflag(x+8,wy,1,get_standing_z_state());
         
         if(get_qr(qr_DROWN))
         {
@@ -20680,8 +20992,8 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
             {
                 if(isSideViewHero())
                 {
-                    wtrx  = !_walkflag(wx, wy+8, 1,SWITCHBLOCK_STATE) && !_walkflag(wx, wy, 1,SWITCHBLOCK_STATE) && dir!=down;
-                    wtrx8 = !_walkflag(wx+8, wy+8, 1,SWITCHBLOCK_STATE) && !_walkflag(wx+8, wy, 1,SWITCHBLOCK_STATE) && dir!=down;
+                    wtrx  = !_walkflag(wx, wy+8, 1,get_standing_z_state()) && !_walkflag(wx, wy, 1,get_standing_z_state()) && dir!=down;
+                    wtrx8 = !_walkflag(wx+8, wy+8, 1,get_standing_z_state()) && !_walkflag(wx+8, wy, 1,get_standing_z_state()) && dir!=down;
                 }
                 // * walk on half-water using the ladder instead of using flippers.
                 // * otherwise, walk on ladder(+hookshot) combos.
@@ -20799,8 +21111,8 @@ HeroClass::WalkflagInfo HeroClass::walkflag(int32_t wx,int32_t wy,int32_t cnt,by
             }
             else
             {
-                bool flgx  = _walkflag(wx,wy,1,SWITCHBLOCK_STATE) && !wtrx; // Solid, and not steppable
-                bool flgx8 = _walkflag(x+8,wy,1,SWITCHBLOCK_STATE) && !wtrx8; // Solid, and not steppable
+                bool flgx  = _walkflag(wx,wy,1,get_standing_z_state()) && !wtrx; // Solid, and not steppable
+                bool flgx8 = _walkflag(x+8,wy,1,get_standing_z_state()) && !wtrx8; // Solid, and not steppable
                 
                 if((d2>=left && wtrx)
                         // Deploy the ladder vertically even if Hero is only half on water.
@@ -20843,7 +21155,7 @@ HeroClass::WalkflagInfo HeroClass::walkflagMBlock(int32_t wx,int32_t wy)
 		ret.setFlags(~1);
 		ret.setHopDir(-1);
 	}
-	if(toogam) return ret;
+	if(walk_through_walls) return ret;
 	if (mblock2.active())
 		ret.setUnwalkable(mblock2.hit(wx,wy,0,1,1,1));
 	if (collide_object(wx, wy,1, 1))
@@ -20853,7 +21165,7 @@ HeroClass::WalkflagInfo HeroClass::walkflagMBlock(int32_t wx,int32_t wy)
 
 bool HeroClass::checksoliddamage()
 {
-	if(toogam) return false;
+	if(walk_through_walls) return false;
 
 	if (get_qr(qr_NO_SIDEVIEW_SOLID_DAMAGE) && get_qr(qr_NOSOLIDDAMAGECOMBOS)) return false; //no point checking if both of these rules are on
     
@@ -20941,7 +21253,7 @@ bool HeroClass::checksoliddamage()
 				// Solid damage combos use pushing>0, hence the code is here.
 				if (!get_qr(qr_LESS_AWFUL_SIDESPIKES) || !isSideViewHero() || (dir != down && (dir != up || getOnSideviewLadder())))
 				{
-					if(combo_class_buf[t].modify_hp_amount && _walkflag(bx,by,1,SWITCHBLOCK_STATE) && pushing>0 && hclk<1 && action!=casting && action != sideswimcasting)
+					if(combo_class_buf[t].modify_hp_amount && _walkflag(bx,by,1,get_standing_z_state()) && pushing>0 && hclk<1 && action!=casting && action != sideswimcasting)
 					{
 						// Bite Hero
 						if (checkdamagecombos(bx, bx, by, by, i-1, true)) return true;
@@ -20958,7 +21270,7 @@ bool HeroClass::checksoliddamage()
 		{
 			if (get_qr(qr_LESS_AWFUL_SIDESPIKES))
 			{
-				if (on_sideview_solid_oldpos(this) && (!getOnSideviewLadder() || DrunkDown()))
+				if (on_sideview_solid_oldpos(this) && (!getOnSideviewLadder() || getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)))
 				{
 					if(checkdamagecombos(x+4, x+4, y+16, y+18, i-1, false, false) && checkdamagecombos(x+12, x+12, y+16, y+18, i-1, false, false))
 					{
@@ -20992,7 +21304,7 @@ bool HeroClass::checksoliddamage()
 }
 void HeroClass::checkpushblock()
 {
-	if(toogam) return;
+	if(walk_through_walls) return;
 	
 	if(z!=0||fakez!=0) return;
 	
@@ -21187,36 +21499,36 @@ void HeroClass::checkpushblock()
 				case up:
 					if(MAPFLAG2(lyr-1,bx,by-8)==mfBLOCKHOLE||MAPCOMBOFLAG2(lyr-1,bx,by-8)==mfBLOCKHOLE)
 						break; // ignore solidity for BLOCKHOLE flagged combos
-					if(_walkflag(bx,by-8,2,SWITCHBLOCK_STATE))
+					if(_walkflag(bx,by-8,2,get_standing_z_state()))
 						doit = false;
-					else if(!get_qr(qr_BROKEN_PUSHBLOCK_TOP_HALF_SOLIDS) && _walkflag(bx,by-16,2,SWITCHBLOCK_STATE))
+					else if(!get_qr(qr_BROKEN_PUSHBLOCK_TOP_HALF_SOLIDS) && _walkflag(bx,by-16,2,get_standing_z_state()))
 						doit = false; // top half wasn't checked before...
 					break;
 					
 				case down:
 					if(MAPFLAG2(lyr-1,bx,by+24)==mfBLOCKHOLE||MAPCOMBOFLAG2(lyr-1,bx,by+24)==mfBLOCKHOLE)
 						break; // ignore solidity for BLOCKHOLE flagged combos
-					if(_walkflag(bx,by+24,2,SWITCHBLOCK_STATE))
+					if(_walkflag(bx,by+24,2,get_standing_z_state()))
 						doit = false;
-					else if(!get_qr(qr_BROKEN_PUSHBLOCK_TOP_HALF_SOLIDS) && _walkflag(bx,by+16,2,SWITCHBLOCK_STATE))
+					else if(!get_qr(qr_BROKEN_PUSHBLOCK_TOP_HALF_SOLIDS) && _walkflag(bx,by+16,2,get_standing_z_state()))
 						doit = false; // top half wasn't checked before...
 					break;
 					
 				case left:
 					if(MAPFLAG2(lyr-1,bx-16,by+8)==mfBLOCKHOLE||MAPCOMBOFLAG2(lyr-1,bx-16,by+8)==mfBLOCKHOLE)
 						break; // ignore solidity for BLOCKHOLE flagged combos
-					if(_walkflag(bx-16,by+8,2,SWITCHBLOCK_STATE))
+					if(_walkflag(bx-16,by+8,2,get_standing_z_state()))
 						doit = false;
-					else if(!get_qr(qr_BROKEN_PUSHBLOCK_TOP_HALF_SOLIDS) && _walkflag(bx-16,by,2,SWITCHBLOCK_STATE))
+					else if(!get_qr(qr_BROKEN_PUSHBLOCK_TOP_HALF_SOLIDS) && _walkflag(bx-16,by,2,get_standing_z_state()))
 						doit = false; // top half wasn't checked before...
 					break;
 					
 				case right:
 					if(MAPFLAG2(lyr-1,bx+16,by+8)==mfBLOCKHOLE||MAPCOMBOFLAG2(lyr-1,bx+16,by+8)==mfBLOCKHOLE)
 						break; // ignore solidity for BLOCKHOLE flagged combos
-					if(_walkflag(bx+16,by+8,2,SWITCHBLOCK_STATE))
+					if(_walkflag(bx+16,by+8,2,get_standing_z_state()))
 						doit = false;
-					else if(!get_qr(qr_BROKEN_PUSHBLOCK_TOP_HALF_SOLIDS) && _walkflag(bx+16,by,2,SWITCHBLOCK_STATE))
+					else if(!get_qr(qr_BROKEN_PUSHBLOCK_TOP_HALF_SOLIDS) && _walkflag(bx+16,by,2,get_standing_z_state()))
 						doit = false; // top half wasn't checked before...
 					break;
 			}
@@ -21298,7 +21610,7 @@ bool usekey()
 			int32_t key_item = 0; //current_item_id(itype_lkey); //not possible
 			for ( int32_t q = 0; q < MAXITEMS; ++q )
 			{
-				if ( itemsbuf[q].family == itype_lkey )
+				if ( itemsbuf[q].type == itype_lkey )
 				{
 					key_item = q; break;
 				}
@@ -21325,7 +21637,7 @@ bool usekey()
 				int32_t key_item = 0; //current_item_id(itype_key); //not possible
 				for ( int32_t q = 0; q < MAXITEMS; ++q )
 				{
-					if ( itemsbuf[q].family == itype_key )
+					if ( itemsbuf[q].type == itype_key )
 					{
 						key_item = q; break;
 					}
@@ -21382,7 +21694,7 @@ bool islockeddoor(int32_t x, int32_t y, int32_t lock)
 
 void HeroClass::oldchecklockblock()
 {
-	if(toogam) return;
+	if(walk_through_walls) return;
 	
 	int32_t bx = TRUNCATE_TILE(x.getInt());
 	int32_t bx2 = TRUNCATE_TILE(x.getInt() + 8);
@@ -21532,7 +21844,7 @@ void HeroClass::oldchecklockblock()
 
 void HeroClass::oldcheckbosslockblock()
 {
-	if(toogam) return;
+	if(walk_through_walls) return;
 	
 	int32_t bx = TRUNCATE_TILE(x.getInt());
 	int32_t bx2 = TRUNCATE_TILE(x.getInt()+8);
@@ -21632,7 +21944,7 @@ void HeroClass::oldcheckbosslockblock()
 			newcombo const& cmb2 = combobuf[cid2];
 			if (i == 0)
 			{
-				if (get_scr_layer_valid(hero_screen, 2))
+				if (get_scr_layer_valid(current_screen, 2))
 				{
 					if (get_qr(qr_OLD_BRIDGE_COMBOS))
 					{
@@ -21669,14 +21981,14 @@ void HeroClass::oldcheckbosslockblock()
 	}
 	int32_t cid = found1 ? cid1 : cid2;
 	
-	if(!(game->lvlitems[dlevel]&liBOSSKEY)) return;
+	if(!(game->lvlitems[dlevel]&(1 << li_boss_key))) return;
 	
 	
 	// Run Boss Key Script
 	int32_t key_item = 0; //current_item_id(itype_bosskey); //not possible
 	for ( int32_t q = 0; q < MAXITEMS; ++q )
 	{
-		if ( itemsbuf[q].family == itype_bosskey )
+		if ( itemsbuf[q].type == itype_bosskey )
 		{
 			key_item = q; break;
 		}
@@ -21707,7 +22019,7 @@ void HeroClass::oldcheckbosslockblock()
 void HeroClass::oldcheckchest(int32_t type)
 {
 	// chests aren't affected by hero_scr->flags2&fAIRCOMBOS
-	if(toogam || z>0 || fakez > 0) return;
+	if(walk_through_walls || z>0 || fakez > 0) return;
 	if(pushing<8) return;
 
 	int32_t bx = TRUNCATE_TILE(x.getInt());
@@ -21811,12 +22123,12 @@ void HeroClass::oldcheckchest(int32_t type)
 			break;
 			
 		case cBOSSCHEST:
-			if(!(game->lvlitems[dlevel]&liBOSSKEY)) return;
+			if(!(game->lvlitems[dlevel]&(1 << li_boss_key))) return;
 			// Run Boss Key Script
 			int32_t key_item = 0; //current_item_id(itype_bosskey); //not possible
 			for ( int32_t q = 0; q < MAXITEMS; ++q )
 			{
-				if ( itemsbuf[q].family == itype_bosskey )
+				if ( itemsbuf[q].type == itype_bosskey )
 				{
 					key_item = q; break;
 				}
@@ -21878,7 +22190,7 @@ void HeroClass::checkchest(int32_t type)
 			oldcheckbosslockblock();
 		return;
 	}
-	if(toogam || z>0 || fakez > 0) return;
+	if(walk_through_walls || z>0 || fakez > 0) return;
 	zfix bx, by;
 	zfix bx2, by2;
 	zfix fx(-1), fy(-1);
@@ -22060,13 +22372,13 @@ void HeroClass::checkchest(int32_t type)
 			int altcmb = cmb->attributes[2]/10000;
 			prompt_combo = cmb->attributes[1]/10000;
 			if(altcmb && ((islocked && !can_locked_combo(*cmb))
-				|| (isbosslocked && !(game->lvlitems[dlevel]&liBOSSKEY))))
+				|| (isbosslocked && !(game->lvlitems[dlevel]&(1 << li_boss_key)))))
 				prompt_combo = altcmb;
 			prompt_cset = cmb->attribytes[4];
 			prompt_x = cmb->attrishorts[0];
 			prompt_y = cmb->attrishorts[1];
 		}
-		if(!getIntBtnInput(intbtn, true, true, false, false))
+		if(!getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK))
 		{
 			return; //Button not pressed
 		}
@@ -22093,20 +22405,10 @@ void HeroClass::checkgenpush(rpos_t rpos)
 	for (int layer = 0; layer < 7; ++layer)
 	{
 		auto rpos_handle = get_rpos_handle(rpos, layer);
-		auto cid = rpos_handle.data();
-		auto& cmb = rpos_handle.combo();
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-		{
-			auto& trig = cmb.triggers[idx];
-			if (trig.triggerflags[1] & combotriggerPUSH)
-			{
-				if (pushing && !(pushing % zc_max(1, trig.trig_pushtime)))
-				{
-					do_trigger_combo(rpos_handle, idx);
-					if(rpos_handle.data() != cid) break;
-				}
-			}
-		}
+		trig_each_combo_trigger(rpos_handle, [&](combo_trigger const& trig){
+			if(!trig.trigger_flags.get(TRIGFLAG_PUSH)) return false;
+			return pushing && !(pushing % zc_max(1,trig.trig_pushtime));
+		});
 	}
 }
 
@@ -22152,20 +22454,10 @@ void HeroClass::checkgenpush()
 		for_some_ffcs([&](const ffc_handle_t& ffc_handle) {
 			if (ffcIsAt(ffc_handle, bx, by) || ffcIsAt(ffc_handle, bx2, by2))
 			{
-				auto& cmb3 = ffc_handle.combo();
-				
-				for(size_t idx = 0; idx < cmb3.triggers.size(); ++idx)
-				{
-					auto& trig = cmb3.triggers[idx];
-					if(trig.triggerflags[1] & combotriggerPUSH)
-					{
-						if(pushing && !(pushing % zc_max(1,trig.trig_pushtime)))
-						{
-							do_trigger_combo(ffc_handle, idx);
-							return false;
-						}
-					}
-				}
+				trig_each_combo_trigger(ffc_handle, [&](combo_trigger const& trig){
+					if(!trig.trigger_flags.get(TRIGFLAG_PUSH)) return false;
+					return pushing && !(pushing % zc_max(1,trig.trig_pushtime));
+				});
 			}
 			return true;
 		});
@@ -22174,7 +22466,7 @@ void HeroClass::checkgenpush()
 
 void HeroClass::checksigns() //Also checks for generic trigger buttons
 {
-	if(toogam || z>0 || fakez>0) return;
+	if(walk_through_walls || z>0 || fakez>0) return;
 	if(msg_active || (msg_onscreen && get_qr(qr_MSGDISAPPEAR)))
 		return; //Don't overwrite a message waiting to be dismissed
 	zfix bx, by;
@@ -22391,7 +22683,7 @@ void HeroClass::checksigns() //Also checks for generic trigger buttons
 		
 		if(intbtn) //
 		{
-			signInput = getIntBtnInput(intbtn, true, true, false, false);
+			signInput = getIntBtnInput(intbtn, INPUT_PRESS | INPUT_DRUNK);
 			if(!signInput)
 			{
 				if(cmb.usrflags & cflag13) //display prompt
@@ -22416,41 +22708,31 @@ endsigns:
 	switch(dir)
 	{
 		case down:
-			dir_trigflag = combotriggerBTN_TOP;
+			dir_trigflag = TRIGFLAG_BTN_TOP;
 			break;
 		case up:
-			dir_trigflag = combotriggerBTN_BOTTOM;
+			dir_trigflag = TRIGFLAG_BTN_BOTTOM;
 			break;
 		case right:
-			dir_trigflag = combotriggerBTN_LEFT;
+			dir_trigflag = TRIGFLAG_BTN_LEFT;
 			break;
 		case left:
-			dir_trigflag = combotriggerBTN_RIGHT;
+			dir_trigflag = TRIGFLAG_BTN_RIGHT;
 			break;
 	}
 	bool found_a_trigger_dir = false, did_trigger = false;
-	rpos_handle_t rpos_handle;
+	combined_handle_t comb_handle;
 	if(fx != -1 && fy != -1)
-		rpos_handle = get_rpos_handle_for_world_xy(fx, fy, found_lyr);
-	for (size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-	{
-		auto& trig = cmb.triggers[idx];
-		if(!(trig.triggerflags[0] & dir_trigflag)) continue;
+		comb_handle = get_rpos_handle_for_world_xy(fx, fy, found_lyr);
+	if(foundffc)
+		comb_handle = foundffc.value();
+	did_trigger = trig_each_combo_trigger(comb_handle, [&](combo_trigger const& trig, size_t idx){
+		if(!trig.trigger_flags.get(dir_trigflag)) return false;
 		found_a_trigger_dir = true;
 		auto& trig_data = cpos.trig_data[idx];
-		if(fx != -1 && fy != -1 && trig_data.cooldown) continue;
-		if(trig.triggerbtn && (getIntBtnInput(trig.triggerbtn, true, true, false, false) || checkIntBtnVal(trig.triggerbtn, signInput)))
-		{
-			did_trigger = true;
-			int oldcombo = (foundffc ? foundffc->data() : rpos_handle.data());
-			if (foundffc)
-				do_trigger_combo(foundffc.value(), idx, didsign ? ctrigIGNORE_SIGN : 0);
-			else if (fx != -1 && fy != -1)
-				do_trigger_combo(rpos_handle, idx, didsign ? ctrigIGNORE_SIGN : 0);
-			if ((foundffc ? foundffc->data() : rpos_handle.data()) != oldcombo)
-				break;
-		}
-	}
+		if(fx != -1 && fy != -1 && trig_data.cooldown) return false;
+		return trig.triggerbtn && (getIntBtnInput(trig.triggerbtn, INPUT_PRESS | INPUT_DRUNK) || checkIntBtnVal(trig.triggerbtn, signInput));
+	});
 	if(!found_a_trigger_dir || didprompt || did_trigger)
 		return;
 	else if(cmb.type == cBUTTONPROMPT)
@@ -22465,7 +22747,7 @@ endsigns:
 		auto& trig_data = cpos.trig_data[idx];
 		if(fx != -1 && fy != -1 && trig_data.cooldown) continue;
 		auto& trig = cmb.triggers[idx];
-		bool cond = (foundffc ? check_trig_conditions(foundffc.value(), idx) : check_trig_conditions(rpos_handle, idx));
+		bool cond = check_trig_conditions(comb_handle, idx);
 		auto pcid = cond ? trig.prompt_cid : trig.fail_prompt_cid;
 		auto pcs = cond ? trig.prompt_cs : trig.fail_prompt_cs;
 		if(pcid)
@@ -22480,16 +22762,16 @@ endsigns:
 }
 
 // Checks for locked doors, and potentially unlocks them.
-// Only looks at `hero_screen`.
+// Only looks at `current_screen`.
 void HeroClass::checklocked()
 {
-	if(toogam) return; //Walk through walls. 
-	if(!isdungeon(hero_screen)) return;
+	if(walk_through_walls) return; //Walk through walls. 
+	if(!isdungeon(current_screen)) return;
 	if( !diagonalMovement && pushing!=8) return;
 	//This is required to allow the player to open a door, while sliding along a wall (pressing in the direction of the door, and sliding left or right)
 	if ( diagonalMovement && pushing < 8 ) return; //Allow wall walking Should I add a quest rule for this? -Z
 
-	auto [offx, offy] = translate_screen_coordinates_to_world(hero_screen);
+	auto [offx, offy] = translate_screen_coordinates_to_world(current_screen);
 	int x = this->x - offx;
 	int y = this->y - offy;
 
@@ -22526,13 +22808,13 @@ void HeroClass::checklocked()
 			{
 				putdoor(hero_scr, scrollbuf, d, dUNLOCKED);
 				hero_scr->door[d]=dUNLOCKED;
-				set_doorstate(hero_screen, d);
+				set_doorstate(current_screen, d);
 				sfx(WAV_DOOR);
 				markBmap();
 
 				// set_doorstate updates the door state of the opposite screen too, but it doesn't
 				// update anything for the current region. Do that here.
-				if (mapscr* opp_scr = get_scr_current_region_dir(hero_screen, (direction)d))
+				if (mapscr* opp_scr = get_scr_current_region_dir(current_screen, (direction)d))
 				{
 					if (opp_scr->door[d^1] == dLOCKED)
 					{
@@ -22545,17 +22827,17 @@ void HeroClass::checklocked()
 		}
 		else if(hero_scr->door[d]==dBOSS)
 		{
-			if(game->lvlitems[dlevel]&liBOSSKEY)
+			if(game->lvlitems[dlevel]&(1 << li_boss_key))
 			{
 				putdoor(hero_scr, scrollbuf, d, dOPENBOSS);
 				hero_scr->door[d]=dOPENBOSS;
-				set_doorstate(hero_screen, d);
+				set_doorstate(current_screen, d);
 				sfx(WAV_DOOR);
 				markBmap();
 
 				// set_doorstate updates the door state of the opposite screen too, but it doesn't
 				// update anything for the current region. Do that here.
-				if (mapscr* opp_scr = get_scr_current_region_dir(hero_screen, (direction)d))
+				if (mapscr* opp_scr = get_scr_current_region_dir(current_screen, (direction)d))
 				{
 					if (opp_scr->door[d^1] == dBOSS)
 					{
@@ -22566,7 +22848,7 @@ void HeroClass::checklocked()
 
 				// Run Boss Key Script
 				for ( int32_t q = 0; q < MAXITEMS; ++q )
-					if ( itemsbuf[q].family == itype_bosskey )
+					if ( itemsbuf[q].type == itype_bosskey )
 					{
 						if (itemsbuf[q].script && !(FFCore.doscript(ScriptType::Item, q) && get_qr(qr_ITEMSCRIPTSKEEPRUNNING)))
 						{
@@ -22592,34 +22874,34 @@ void HeroClass::checkswordtap()
 	switch(dir)
 	{
 	case up:
-		if(!Up()) return;
+		if (!getInput(btnUp, INPUT_HERO_ACTION)) return;
 		
 		by-=16;
 		break;
 		
 	case down:
-		if(!Down()) return;
+		if (!getInput(btnDown, INPUT_HERO_ACTION)) return;
 		
 		by+=16;
 		bx+=8;
 		break;
 		
 	case left:
-		if(!Left()) return;
+		if (!getInput(btnLeft, INPUT_HERO_ACTION)) return;
 		
 		bx-=16;
 		by+=8;
 		break;
 		
 	case right:
-		if(!Right()) return;
+		if (!getInput(btnRight, INPUT_HERO_ACTION)) return;
 		
 		bx+=16;
 		by+=8;
 		break;
 	}
 	
-	if(!_walkflag(bx,by,0,SWITCHBLOCK_STATE)) return;
+	if(!_walkflag(bx,by,0,get_standing_z_state())) return;
 	
 	attackclk=SWORDTAPFRAME;
 	pushing=-8; //16 frames between taps
@@ -22653,7 +22935,7 @@ void HeroClass::checkswordtap()
 		if(tap_sfx < 0)
 			tap_sfx = QMisc.miscsfx[sfxTAP];
 		if(tap_sfx)
-			sfx(tap_sfx,pan(x.getInt()));
+			sfx(tap_sfx,pan(x));
 	}
 }
 
@@ -22709,42 +22991,6 @@ void HeroClass::fairycircle(int32_t type)
 		refilling=REFILL_NONE;
 		map_bkgsfx(true);
 	}
-}
-
-int32_t touchcombo(int32_t x,int32_t y)
-{
-	for (int32_t i = 0; i <= 1; ++i)
-	{
-		if (get_qr(qr_OLD_BRIDGE_COMBOS))
-		{
-			if (combobuf[MAPCOMBO2(i,x,y)].type == cBRIDGE && !_walkflag_layer(x,y,i)) return 0;
-		}
-		else
-		{
-			if (combobuf[MAPCOMBO2(i,x,y)].type == cBRIDGE && _effectflag_layer(x,y,i)) return 0;
-		}
-	}
-	if (!_effectflag(x,y,1, -1)) return 0;
-	newcombo const& cmb = combobuf[MAPCOMBO(x,y)];
-	if(cmb.only_gentrig)
-		return 0;
-	switch(cmb.type)
-	{
-		case cBSGRAVE:
-		case cGRAVE:
-			if(MAPFLAG(x,y)||MAPCOMBOFLAG(x,y)) //!DIMITODO: all flags break graves, not just push flags
-			{
-				break;
-			}
-
-			[[fallthrough]];
-		case cARMOS:
-		{
-			return cmb.type;
-		}
-	}
-    
-	return 0;
 }
 
 static int32_t GridX(int32_t x) 
@@ -23393,7 +23639,7 @@ void HeroClass::handleSpotlights()
 
 		clear_bitmap(lightbeam_bmp);
 
-		bool foundany = false;
+		bool found_any_light = false;
 
 		for_every_base_screen_in_region([&](mapscr* scr, unsigned int region_scr_x, unsigned int region_scr_y) {
 			bool pos_has_seen_cmb[176] = {0};
@@ -23408,34 +23654,41 @@ void HeroClass::handleSpotlights()
 
 					rpos_t rpos = POS_TO_RPOS(pos, region_scr_x, region_scr_y);
 					auto& cmb = combobuf[layer_scr->data[pos]];
+					bool found_combo = false;
 					switch(cmb.type)
 					{
 						case cMIRROR: case cMIRRORSLASH: case cMIRRORBACKSLASH:
 						case cMAGICPRISM: case cMAGICPRISM4:
+							if(!cmb.attributes[0] || (cmb.attributes[0] & sh_lightbeam))
+							{
+								typeMap[(int)rpos] = cmb.type;
+								found_combo = true;
+							}
+							break;
 						case cBLOCKALL: case cLIGHTTARGET:
 							typeMap[(int)rpos] = cmb.type;
+							found_combo = true;
 							break;
 						case cMIRRORNEW:
-							typeMap[(int)rpos] = cMIRRORNEW;
-							customTypeMap[(int)rpos] = layer_scr->data[pos];
+							if(!cmb.attributes[0] || (cmb.attributes[0] & sh_lightbeam))
+							{
+								typeMap[(int)rpos] = cMIRRORNEW;
+								customTypeMap[(int)rpos] = layer_scr->data[pos];
+								found_combo = true;
+							}
 							break;
 						case cGLASS:
+							found_combo = true;
 							// Already been initialized to zero.
 							break;
 						case cSPOTLIGHT:
-							foundany = true;
-							[[fallthrough]];
-						default:
-						{
-							if(lyr < 3 && (cmb.walk & 0xF))
-							{
-								typeMap[(int)rpos] = SPTYPE_SOLID;
-							}
-							continue; // may update on the next layer
-						}
+							found_any_light = true;
+							break;
 					}
-
-					pos_has_seen_cmb[pos] = true;
+					if(found_combo)
+						pos_has_seen_cmb[pos] = true;
+					else if(lyr < 3 && (cmb.walk & 0xF))
+						typeMap[(int)rpos] = SPTYPE_SOLID;
 				}
 			}
 
@@ -23452,7 +23705,7 @@ void HeroClass::handleSpotlights()
 		});
 
 		// The world is dark and full of terrors.
-		if (!foundany) return;
+		if (!found_any_light) return;
 		
 		switch (typeMap[(int)beam_hero_rpos])
 		{
@@ -23557,20 +23810,11 @@ void HeroClass::handleSpotlights()
 		}
 		else if (mini_cmb.trigger)
 		{
-			auto cid = rpos_handle.data();
-			auto& cmb = rpos_handle.combo();
-			for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-			{
-				auto& trig = cmb.triggers[idx];
+			trig_each_combo_trigger(rpos_handle, [&](combo_trigger const& trig){
 				int32_t trigflag = trig.triglbeam ? (1 << (trig.triglbeam-1)) : ~0;
 				bool trigged = (istrig[(int)rpos_handle.rpos]&trigflag);
-				if(trigged ? (trig.triggerflags[1] & combotriggerLIGHTON)
-					: (trig.triggerflags[1] & combotriggerLIGHTOFF))
-				{
-					do_trigger_combo(rpos_handle, idx);
-					if(rpos_handle.data() != cid) break;
-				}
-			}
+				return trig.trigger_flags.get(trigged ? TRIGFLAG_LIGHTON : TRIGFLAG_LIGHTOFF);
+			});
 		}
 	});
 
@@ -23609,20 +23853,11 @@ void HeroClass::handleSpotlights()
 		}
 		else //if (mini_cmb.trigger)
 		{
-			auto cid = ffc_handle.data();
-			auto& cmb = ffc_handle.combo();
-			for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-			{
-				auto& trig = cmb.triggers[idx];
+			trig_each_combo_trigger(ffc_handle, [&](combo_trigger const& trig){
 				int32_t trigflag = trig.triglbeam ? (1 << (trig.triglbeam-1)) : ~0;
 				bool trigged = (istrig[(int)rpos]&trigflag);
-				if(trigged ? (trig.triggerflags[1] & combotriggerLIGHTON)
-					: (trig.triggerflags[1] & combotriggerLIGHTOFF))
-				{
-					do_trigger_combo(ffc_handle, idx);
-					if(ffc_handle.data() != cid) break;
-				}
-			}
+				return trig.trigger_flags.get(trigged ? TRIGFLAG_LIGHTON : TRIGFLAG_LIGHTOFF);
+			});
 		}
 	});
 
@@ -23649,84 +23884,114 @@ void HeroClass::handleSpotlights()
 
 void HeroClass::checktouchblk()
 {
-	if(toogam) return;
-	
-	if(!pushing)
+	if (walk_through_walls) return;
+
+	if (getAction() == hopping && !isSideViewHero())
 		return;
-		
+
+	if (!pushing)
+		return;
+
 	int32_t tdir = dir; //Bad hack #2. _L_, your welcome to fix this properly. ;)
-	
-	if(charging > 0 || spins > 0) //if not I probably will at some point...
+
+	if (charging > 0 || spins > 0) //if not I probably will at some point...
 	{
-		if(Up()&&Left())tdir = (charging%2)*2;
-		else if(Up()&&Right())tdir = (charging%2)*3;
-		else if(Down()&&Left())tdir = 1+(charging%2)*1;
-		else if(Down()&&Right())tdir = 1+(charging%2)*2;
+		if (getInput(btnUp, INPUT_HERO_ACTION) && getInput(btnLeft, INPUT_HERO_ACTION)) tdir = (charging % 2) * 2;
+		else if (getInput(btnUp, INPUT_HERO_ACTION) && getInput(btnRight, INPUT_HERO_ACTION)) tdir = (charging % 2) * 3;
+		else if (getInput(btnDown, INPUT_HERO_ACTION) && getInput(btnLeft, INPUT_HERO_ACTION)) tdir = 1 + (charging % 2) * 1;
+		else if (getInput(btnDown, INPUT_HERO_ACTION) && getInput(btnRight, INPUT_HERO_ACTION)) tdir = 1 + (charging % 2) * 2;
 		else
 		{
-			if(Up())tdir=0;
-			else if(Down())tdir=1;
-			else if(Left())tdir=2;
-			else if(Right())tdir=3;
+			if (getInput(btnUp, INPUT_HERO_ACTION)) tdir = 0;
+			else if (getInput(btnDown, INPUT_HERO_ACTION)) tdir = 1;
+			else if (getInput(btnLeft, INPUT_HERO_ACTION)) tdir = 2;
+			else if (getInput(btnRight, INPUT_HERO_ACTION)) tdir = 3;
 		}
 	}
-	
-	int32_t tx=0,ty=-1;
-	
-	switch(tdir)
+
+	int xs[2], ys[2];
+	int pos_count = 0;
+	bool fixed_big_hitbox = bigHitbox && !get_qr(qr_BROKEN_ARMOS_GRAVE_BIGHITBOX_COLLISION);
+	switch (tdir)
 	{
-	case up:
-		if(touchcombo(x,y+(bigHitbox?0:7)))
-		{
-			tx=x;
-			ty=y+(bigHitbox?0:7);
-		}
-		else if(touchcombo(x+8,y+(bigHitbox?0:7)))
-		{
-			tx=x+8;
-			ty=y+(bigHitbox?0:7);
-		}
-		
-		break;
-		
-	case down:
-		if(touchcombo(x,y+16))
-		{
-			tx=x;
-			ty=y+16;
-		}
-		else if(touchcombo(x+8,y+16))
-		{
-			tx=x+8;
-			ty=y+16;
-		}
-		
-		break;
-		
-	case left:
-		if(touchcombo(x-1,y+15))
-		{
-			tx=x-1;
-			ty=y+15;
-		}
-		
-		break;
-		
-	case right:
-		if(touchcombo(x+16,y+15))
-		{
-			tx=x+16;
-			ty=y+15;
-		}
-		
-		break;
+		case up:
+			xs[0] = x;
+			ys[0] = y + (fixed_big_hitbox ? -1 : (bigHitbox ? 0 : 7));
+			xs[1] = x + 8;
+			ys[1] = ys[0];
+			pos_count = 2;
+			break;
+
+		case down:
+			xs[0] = x;
+			ys[0] = y + 16;
+			xs[1] = x + 8;
+			ys[1] = ys[0];
+			pos_count = 2;
+			break;
+
+		case left:
+			xs[0] = x - 1;
+			ys[0] = y + 15;
+			pos_count = 1;
+			if (fixed_big_hitbox)
+			{
+				xs[1] = xs[0];
+				ys[1] = y + 7;
+				pos_count = 2;
+			}
+			break;
+
+		case right:
+			xs[0] = x + 16;
+			ys[0] = y + 15;
+			pos_count = 1;
+			if (fixed_big_hitbox)
+			{
+				xs[1] = xs[0];
+				ys[1] = y + 7;
+				pos_count = 2;
+			}
+			break;
 	}
-	
-	if(ty>=0)
+	int max_layer = get_qr(qr_ARMOS_GRAVE_ON_LAYERS) ? 6 : 0;
+	int start_layer = zc_max(2, max_layer);
+	bool pos_done[2] = { false,false };
+	for (int layer = start_layer; layer >= 0; --layer)
 	{
-		if (getAction() != hopping || isSideViewHero())
+		for (int idx = 0; idx < pos_count; ++idx)
 		{
-			trigger_armos_grave(get_rpos_handle_for_world_xy(tx, ty, 0), dir);
+			if (pos_done[idx]) continue;
+			auto tx = xs[idx];
+			auto ty = ys[idx];
+			auto rpos_handle = get_rpos_handle_for_world_xy(tx, ty, layer);
+			newcombo const& cmb = rpos_handle.combo();
+			if (cmb.type == cBRIDGE)
+			{
+				if (get_qr(qr_OLD_BRIDGE_COMBOS)
+					? !_walkflag_layer(x, y, layer - 1)
+					: _effectflag_layer(x, y, layer - 1))
+				{
+					pos_done[idx] = true; // cover lower layers at this position
+					continue;
+				}
+			}
+			if (layer > max_layer) continue; // only checking this layer for bridges
+			if (!_effectflag(x, y, 1, layer - 1)) continue;
+			if (cmb.only_gentrig) continue;
+			switch (cmb.type)
+			{
+				case cBSGRAVE: case cGRAVE:
+					if (cmb.flag || rpos_handle.sflag())
+						continue;
+					break;
+				case cARMOS:
+					break;
+				default:
+					continue;
+			}
+			trigger_armos_grave(rpos_handle, dir);
+			break; // only one per layer, even if multiple poses match
 		}
 	}
 }
@@ -23870,17 +24135,9 @@ void HeroClass::checkspecial()
 
 			// generic 'Enemies->' trigger
 			for_every_combo_in_screen(create_screen_handles(scr), [&](const auto& handle) {
-				auto& cmb = handle.combo();	
-				auto cid = handle.data();
-				for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-				{
-					auto& trig = cmb.triggers[idx];
-					if (trig.triggerflags[2] & combotriggerENEMIESKILLED)
-					{
-						do_trigger_combo(handle, idx);
-						if(handle.data() != cid) break;
-					}
-				}
+				trig_each_combo_trigger(handle, [&](combo_trigger const& trig){
+					return trig.trigger_flags.get(TRIGFLAG_ENEMIESKILLED);
+				});
 			});
 
 			if (scr->flags9 & fENEMY_WAVES)
@@ -23902,18 +24159,24 @@ void HeroClass::checkspecial()
 						zfix x = region_scr_x*256 + scr->itemx;
 						zfix y = region_scr_y*176 + ((scr->flags7&fITEMFALLS && isSideViewHero()) ? -170 : scr->itemy+1);
 						add_item_for_screen(screen, new item(x, y, (scr->flags7&fITEMFALLS && !isSideViewHero()) ? (zfix)170 : (zfix)0,
-										Item,ipONETIME|ipBIGRANGE|((itemsbuf[Item].family==itype_triforcepiece ||
+										Item,ipONETIME|ipBIGRANGE|((itemsbuf[Item].type==itype_triforcepiece ||
 												(scr->flags3&fHOLDITEM)) ? ipHOLDUP : 0) | ((scr->flags8&fITEMSECRET) ? ipSECRETS : 0),0));
 					}
 
 					state.item_state = ScreenItemState::None;
 				}
-				// if room has traps, guys don't come back
-				for (int32_t i=0; i<eMAXGUYS; i++)
+				if(!getmapflag(scr, mTMPNORET))
 				{
-					if (guysbuf[i].family==eeTRAP&&guysbuf[i].attributes[1])
-						if (guys.idCount(i, screen) && !getmapflag(screen, mTMPNORET))
+					// if room has traps, guys don't come back
+					for (int32_t i=0; i<eMAXGUYS; i++)
+					{
+						if (guysbuf[i].type==eeTRAP && guysbuf[i].attributes[1]
+							&& guys.idCount(i, screen))
+						{
 							setmapflag(scr, mTMPNORET);
+							break;
+						}
+					}
 				}
 				// clear enemies and open secret
 				if (!state.did_enemy_secret && (scr->flags2&fCLEARSECRET))
@@ -23928,6 +24191,11 @@ void HeroClass::checkspecial()
 					
 					sfx(scr->secretsfx);
 					state.did_enemy_secret = true;
+				}
+				if(scr->flags9 & fENEMIES_STAY_DEAD)
+				{
+					if(!getmapflag(scr, mNO_ENEMIES_RETURN))
+						setmapflag(scr, mNO_ENEMIES_RETURN);
 				}
 			}
 		}
@@ -23962,7 +24230,7 @@ void HeroClass::checkspecial()
     	// set boss flag when boss is gone
 		if (state.loaded_enemies && scr->flags11&efBOSS && !hasmainguy)
 		{
-			game->lvlitems[dlevel]|=liBOSS;
+			game->lvlitems[dlevel]|=(1 << li_boss_killed);
 			stop_sfx(scr->bosssfx);
 		}
 
@@ -23995,7 +24263,7 @@ void HeroClass::checkspecial()
 				auto [x, y] = translate_screen_coordinates_to_world(screen, scr->itemx, (scr->flags7&fITEMFALLS && isSideViewHero()) ? -170 : scr->itemy+1);
 				add_item_for_screen(screen, new item(x, y,
 								(scr->flags7&fITEMFALLS && !isSideViewHero()) ? (zfix)170 : (zfix)0,
-								Item,ipONETIME|ipBIGRANGE|((itemsbuf[Item].family==itype_triforcepiece ||
+								Item,ipONETIME|ipBIGRANGE|((itemsbuf[Item].type==itype_triforcepiece ||
 										(scr->flags3&fHOLDITEM)) ? ipHOLDUP : 0) | ((scr->flags8&fITEMSECRET) ? ipSECRETS : 0),0));
 			}
 
@@ -24045,7 +24313,7 @@ void HeroClass::checkspecial2(int32_t *ls)
 		}
 	}
 	
-	if(toogam) return;
+	if(walk_through_walls) return;
 	
 	bool didstrig = false;
 	
@@ -24549,7 +24817,8 @@ void HeroClass::checkspecial2(int32_t *ls)
 				for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
 				{
 					auto& trig = cmb.triggers[idx];
-					if (trig.triggerflags[0] & (combotriggerSTEP|combotriggerSTEPSENS) || types[p] == cSTEP)
+					if (trig.trigger_flags.any({TRIGFLAG_STEP,TRIGFLAG_STEPSENS})
+						|| types[p] == cSTEP)
 					{
 						hasStep[p] = true;
 						break;
@@ -24576,35 +24845,17 @@ void HeroClass::checkspecial2(int32_t *ls)
 				if (rposes[p] != rpos_t::None)
 				{
 					auto rpos_handle = get_rpos_handle(rposes[p], lyr);
-					bool did_trig = false;
-					auto& cmb = rpos_handle.combo();
-					auto cid = rpos_handle.data();
-					for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-					{
-						auto& trig = cmb.triggers[idx];
-						if (canNormalStep && (trig.triggerflags[0] & combotriggerSTEP))
-						{
-							do_trigger_combo(rpos_handle, idx);
-							did_trig = true;
-							if(rpos_handle.data() != cid) break;
-						}
-					}
+					bool did_trig = canNormalStep && trig_each_combo_trigger(rpos_handle, [&](combo_trigger const& trig){
+						return trig.trigger_flags.get(TRIGFLAG_STEP);
+					});
 					if (did_trig && rposes[p] == sensRposes[p]) continue;
 				}
 				if (sensRposes[p] != rpos_t::None)
 				{
 					auto rpos_handle = get_rpos_handle(sensRposes[p], lyr);
-					auto& cmb = rpos_handle.combo();
-					auto cid = rpos_handle.data();
-					for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-					{
-						auto& trig = cmb.triggers[idx];
-						if (trig.triggerflags[0] & combotriggerSTEPSENS)
-						{
-							do_trigger_combo(rpos_handle, idx);
-							if(rpos_handle.data() != cid) break;
-						}
-					}
+					trig_each_combo_trigger(rpos_handle, [&](combo_trigger const& trig){
+						return trig.trigger_flags.get(TRIGFLAG_STEPSENS);
+					});
 				}
 			}
 		}
@@ -24623,17 +24874,9 @@ void HeroClass::checkspecial2(int32_t *ls)
 			}
 			if (found)
 			{
-				auto& cmb = ffc_handle.combo();
-				auto cid = ffc_handle.data();
-				for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-				{
-					auto& trig = cmb.triggers[idx];
-					if (trig.triggerflags[0] & (combotriggerSTEP|combotriggerSTEPSENS))
-					{
-						do_trigger_combo(ffc_handle, idx);
-						if(ffc_handle.data() != cid) break;
-					}
-				}
+				trig_each_combo_trigger(ffc_handle, [&](combo_trigger const& trig){
+					return trig.trigger_flags.any({TRIGFLAG_STEP,TRIGFLAG_STEPSENS});
+				});
 			}
 		});
 	}
@@ -24651,70 +24894,35 @@ void HeroClass::checkspecial2(int32_t *ls)
 			auto rpos_handle = get_rpos_handle(rpos, lyr);
 			auto& cmb = rpos_handle.combo();
 			auto cid = rpos_handle.data();
-			for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-			{
-				auto& trig = cmb.triggers[idx];
-				if (trig.triggerflags[3] & combotriggerDIVETRIG)
-				{
-					do_trigger_combo(rpos_handle, idx);
-					didtrig = true;
-					if(rpos_handle.data() != cid) break;
-				}
-			}
+			didtrig = trig_each_combo_trigger(rpos_handle, [&](combo_trigger const& trig){
+				return trig.trigger_flags.get(TRIGFLAG_DIVETRIG);
+			});
 			for(auto q = 0; q < 4; ++q)
 			{
 				if(rposes[q] == rpos_t::None) continue;
 				if(rposes[q] == rpos && didtrig) continue;
 
 				auto rpos_handle_2 = get_rpos_handle(rposes[q], lyr);
-				auto& cmb = rpos_handle_2.combo();
-				auto cid = rpos_handle_2.data();
-				for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-				{
-					auto& trig = cmb.triggers[idx];
-					if (trig.triggerflags[3] & combotriggerDIVESENSTRIG)
-					{
-						do_trigger_combo(rpos_handle_2, idx);
-						if(rpos_handle_2.data() != cid) break;
-					}
-				}
+				trig_each_combo_trigger(rpos_handle_2, [&](combo_trigger const& trig){
+					return trig.trigger_flags.get(TRIGFLAG_DIVESENSTRIG);
+				});
 			}
 		}
 
 		for_every_ffc([&](const ffc_handle_t& ffc_handle) {
-			bool did_trig = false;
-			auto& cmb = ffc_handle.combo();
-			auto cid = ffc_handle.data();
 			if(ffcIsAt(ffc_handle, x+8, y+8))
 			{
-				for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-				{
-					auto& trig = cmb.triggers[idx];
-					if (trig.triggerflags[3] & combotriggerDIVETRIG)
-					{
-						do_trigger_combo(ffc_handle, idx);
-						did_trig = true;
-						if(ffc_handle.data() != cid) break;
-					}
-				}
+				if(trig_each_combo_trigger(ffc_handle, [&](combo_trigger const& trig){
+					return trig.trigger_flags.get(TRIGFLAG_DIVETRIG);
+				})) return;
 			}
-			if(did_trig) return;
 			for(auto q = 0; q < 4; ++q)
 			{
 				if(ffcIsAt(ffc_handle, xposes[q], yposes[q]))
 				{
-					for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-					{
-						auto& trig = cmb.triggers[idx];
-						if (trig.triggerflags[3] & combotriggerDIVESENSTRIG)
-						{
-							do_trigger_combo(ffc_handle, idx);
-							did_trig = true;
-							if(ffc_handle.data() != cid) break;
-						}
-					}
-					if(did_trig)
-						break;
+					if(trig_each_combo_trigger(ffc_handle, [&](combo_trigger const& trig){
+						return trig.trigger_flags.get(TRIGFLAG_DIVESENSTRIG);
+					})) break;
 				}
 			}
 		});
@@ -24792,40 +25000,14 @@ void HeroClass::checkspecial2(int32_t *ls)
 	//
 	if(get_qr(qr_DROWN) || CanSideSwim())
 	{
-		y1 = ty+9;
-		y2 = ty+15;
-		if (get_qr(qr_SMARTER_WATER))
+		water = onWater(false);
+		if (water && diveclk == 1)
 		{
-			if (iswaterex_z3(0, -1, x1, y1, true, false) &&
-			iswaterex_z3(0, -1, x1, y2, true, false) &&
-			iswaterex_z3(0, -1, x2, y1, true, false) &&
-			iswaterex_z3(0, -1, x2, y2, true, false)) water = iswaterex_z3(0, -1, (x2+x1)/2,(y2+y1)/2, true, false);
-		}
-		else
-		{
-			types[0] = COMBOTYPE(x1,y1);
-			if (auto ffc_handle = getFFCAt(x1, y1))
-				types[0] = ffc_handle->ctype();
-			
-			types[1] = COMBOTYPE(x1,y2);
-			if (auto ffc_handle = getFFCAt(x1, y2))
-				types[1] = ffc_handle->ctype();
-
-			types[2] = COMBOTYPE(x2,y1);
-			if (auto ffc_handle = getFFCAt(x2, y1))
-				types[2] = ffc_handle->ctype();
-
-			types[3] = COMBOTYPE(x2,y2);
-			if (auto ffc_handle = getFFCAt(x2, y2))
-				types[3] = ffc_handle->ctype();
-
-			int32_t typec = COMBOTYPE((x2+x1)/2,(y2+y1)/2);
-			if(MAPFFCOMBO((x2+x1)/2,(y2+y1)/2))
-				typec = FFCOMBOTYPE((x2+x1)/2,(y2+y1)/2);
-				
-			if(combo_class_buf[types[0]].water && combo_class_buf[types[1]].water &&
-					combo_class_buf[types[2]].water && combo_class_buf[types[3]].water && combo_class_buf[typec].water)
-				water = typec;
+			auto old_stand_z = standing_on_z;
+			standing_on_z = 0;
+			if (!onWater(false)) // player hits head on the solid above them, stay underwater longer
+				diveclk = 2;
+			standing_on_z = old_stand_z;
 		}
 	}
 	
@@ -25008,13 +25190,13 @@ void HeroClass::checkspecial2(int32_t *ls)
 		&& ((get_qr(qr_DROWN) && z==0 && fakez==0 && fall>=0 && fakefall>=0) || CanSideSwim())
 		&& (sideview_mode() || !platform_ffc))
 	{
-		if(current_item(itype_flippers) <= 0 || current_item(itype_flippers) < combobuf[water].attribytes[0] || ((combobuf[water].usrflags&cflag1) && !(itemsbuf[current_item_id(itype_flippers)].flags & item_flag3))) 
+		if(!is_autowalking() && (current_item(itype_flippers) <= 0 || current_item(itype_flippers) < combobuf[water].attribytes[0] || ((combobuf[water].usrflags&cflag1) && !(itemsbuf[current_item_id(itype_flippers)].flags & item_flag3))))
 		{
 			if(!(ladderx+laddery)) drownCombo = water;
 			if (combobuf[water].usrflags&cflag1) Drown(1);
 			else Drown();
 			if(byte drown_sfx = combobuf[water].attribytes[4])
-				sfx(drown_sfx, pan(int32_t(x)));
+				sfx(drown_sfx, pan(x));
 		}
 		else if (!isSwimming())
 		{
@@ -25142,7 +25324,7 @@ RaftingStuff:
 							reset_swordcharge();
 							action=rafting; FFCore.setHeroAction(rafting);
 							raftclk=0;
-							if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x.getInt()));
+							if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x));
 							else sfx(get_scr_for_world_xy(tx,ty+11)->secretsfx);
 						}
 						else if (get_qr(qr_BETTER_RAFT) && doraft)
@@ -25154,7 +25336,7 @@ RaftingStuff:
 									reset_swordcharge();
 									action=rafting; FFCore.setHeroAction(rafting);
 									raftclk=0;
-									if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x.getInt()));
+									if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x));
 									else sfx(get_scr_for_world_xy(tx+8,ty+11)->secretsfx);
 									dir = i;
 									break;
@@ -25199,7 +25381,7 @@ RaftingStuff:
 						reset_swordcharge();
 						action=rafting; FFCore.setHeroAction(rafting);
 						raftclk=0;
-						if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x.getInt()));
+						if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x));
 						else sfx(get_scr_for_world_xy(tx,ty)->secretsfx);
 					}
 					else if (get_qr(qr_BETTER_RAFT) && doraft)
@@ -25211,7 +25393,7 @@ RaftingStuff:
 								reset_swordcharge();
 								action=rafting; FFCore.setHeroAction(rafting);
 								raftclk=0;
-								if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x.getInt()));
+								if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x));
 								else sfx(get_scr_for_world_xy(tx+8,ty+8)->secretsfx);
 								dir = i;
 								break;
@@ -25261,7 +25443,7 @@ RaftingStuff:
 						reset_swordcharge();
 						action=rafting; FFCore.setHeroAction(rafting);
 						raftclk=0;
-						if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x.getInt()));
+						if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x));
 						else sfx(get_scr_for_world_xy(tx,ty)->secretsfx);
 					}
 					else if (get_qr(qr_BETTER_RAFT) && doraft)
@@ -25273,7 +25455,7 @@ RaftingStuff:
 								reset_swordcharge();
 								action=rafting; FFCore.setHeroAction(rafting);
 								raftclk=0;
-								if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x.getInt()));
+								if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x));
 								else sfx(get_scr_for_world_xy(tx+8,ty+8)->secretsfx);
 								dir = i;
 								break;
@@ -25323,7 +25505,7 @@ RaftingStuff:
 						reset_swordcharge();
 						action=rafting; FFCore.setHeroAction(rafting);
 						raftclk=0;
-						if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x.getInt()));
+						if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x));
 						else sfx(get_scr_for_world_xy(tx,ty)->secretsfx);
 					}
 					else if (get_qr(qr_BETTER_RAFT) && doraft)
@@ -25335,7 +25517,7 @@ RaftingStuff:
 								reset_swordcharge();
 								action=rafting; FFCore.setHeroAction(rafting);
 								raftclk=0;
-								if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x.getInt()));
+								if (get_qr(qr_RAFT_SOUND)) sfx(itemsbuf[current_item_id(itype_raft)].usesound,pan(x));
 								else sfx(get_scr_for_world_xy(tx+8,ty+8)->secretsfx);
 								dir = i;
 								break;
@@ -25478,33 +25660,27 @@ RaftingStuff:
 			advanceframe(true);
 		}
 		
-		if(!(scr->noreset&mSECRET)) unsetmapflag(scr, mSECRET);
-		
-		if(!(scr->noreset&mITEM)) unsetmapflag(scr, mITEM);
-		
-		if(!(scr->noreset&mSPECIALITEM)) unsetmapflag(scr, mSPECIALITEM);
-		
-		if(!(scr->noreset&mNEVERRET)) unsetmapflag(scr, mNEVERRET);
-		
-		if(!(scr->noreset&mCHEST)) unsetmapflag(scr, mCHEST);
-		
-		if(!(scr->noreset&mLOCKEDCHEST)) unsetmapflag(scr, mLOCKEDCHEST);
-		
-		if(!(scr->noreset&mBOSSCHEST)) unsetmapflag(scr, mBOSSCHEST);
-		
-		if(!(scr->noreset&mLOCKBLOCK)) unsetmapflag(scr, mLOCKBLOCK);
-		
-		if(!(scr->noreset&mBOSSLOCKBLOCK)) unsetmapflag(scr, mBOSSLOCKBLOCK);
+		for(auto flag : {mSECRET,mITEM,mSPECIALITEM,mNEVERRET,mCHEST,mLOCKEDCHEST,mBOSSCHEST,
+			mLOCKBLOCK,mBOSSLOCKBLOCK,mTMPNORET,mVISITED,mLIGHTBEAM,mNO_ENEMIES_RETURN})
+		{
+			if(!(scr->noreset&flag))
+				unsetmapflag(scr, flag);
+		}
 		
 		if(isdungeon())
 		{
-			if(!(scr->noreset&mDOOR_LEFT)) unsetmapflag(scr, mDOOR_LEFT);
-			
-			if(!(scr->noreset&mDOOR_RIGHT)) unsetmapflag(scr, mDOOR_RIGHT);
-			
-			if(!(scr->noreset&mDOOR_DOWN)) unsetmapflag(scr, mDOOR_DOWN);
-			
-			if(!(scr->noreset&mDOOR_UP)) unsetmapflag(scr, mDOOR_UP);
+			for(auto flag : {mDOOR_LEFT,mDOOR_RIGHT,mDOOR_DOWN,mDOOR_UP})
+			{
+				if(!(scr->noreset&flag))
+					unsetmapflag(scr, flag);
+			}
+		}
+		
+		if(scr->exstate_reset)
+		{
+			for(uint q = 0; q < 32; ++q)
+				if(scr->exstate_reset&(1<<q))
+					unsetxmapflag(scr->screen, (1<<q));
 		}
 		
 		setpit();
@@ -25534,14 +25710,14 @@ int32_t selectWlevel(int32_t d)
     
     do
     {
-        if(d==0 && (game->lvlitems[l+1] & liTRIFORCE))
+        if(d==0 && (game->lvlitems[l+1] & (1 << li_mcguffin)))
             break;
         else if(d<0)
             l = (l==0) ? 7 : l-1;
         else
             l = (l==7) ? 0 : l+1;
     }
-    while(!(game->lvlitems[l+1] & liTRIFORCE));
+    while(!(game->lvlitems[l+1] & (1 << li_mcguffin)));
     
     game->set_wlevel(l);
     return l;
@@ -25564,7 +25740,7 @@ bool HeroClass::HasHeavyBoots()
 {
 	for ( int32_t q = 0; q < MAXITEMS; ++q )
 	{
-		if ( game->item[q] && ( itemsbuf[q].family == itype_boots ) && /*iron*/ (itemsbuf[q].flags&item_flag2) ) return true;
+		if ( game->item[q] && ( itemsbuf[q].type == itype_boots ) && /*iron*/ (itemsbuf[q].flags&item_flag2) ) return true;
 	}
 	return false;
 }
@@ -25578,6 +25754,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 	{
 		return false;
 	}
+	finish_auto_walk();
 	is_warping = true;
 	for (int32_t q = 0; q < Lwpns.Count(); ++q)
 	{
@@ -25731,7 +25908,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 					if(swd->id == (attack==wSword ? wSword : wWand))
 					{
 					int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-					int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+					int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 					positionSword(swd,item_id);
 					break;
 					}
@@ -25789,7 +25966,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 					if(swd->id == (attack==wSword ? wSword : wWand))
 					{
 					int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-					int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+					int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 					positionSword(swd,item_id);
 					break;
 					}
@@ -25822,7 +25999,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 		kill_sfx();
 		ALLOFF();
 		//play sound
-		if(warpsfx > 0) sfx(warpsfx,pan(x.getInt()));
+		if(warpsfx > 0) sfx(warpsfx,pan(x));
 		specialcave = PASSAGEWAY;
 		byte warp_screen_2 = wscr + DMaps[wdmap].xoff;
 		draw_screen(false);
@@ -25885,7 +26062,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 				if(swd->id == (attack==wSword ? wSword : wWand))
 				{
 				int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 				positionSword(swd,item_id);
 				break;
 				}
@@ -26041,7 +26218,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 			}
 		}
 		
-		markBmap(dir^1, hero_screen);
+		markBmap(dir^1, current_screen);
 		//preloaded freeform combos
 		ffscript_engine(true);
 	
@@ -26056,7 +26233,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 				if(swd->id == (attack==wSword ? wSword : wWand))
 				{
 				int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 				positionSword(swd,item_id);
 				break;
 				}
@@ -26156,7 +26333,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 				if(swd->id == (attack==wSword ? wSword : wWand))
 				{
 				int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 				positionSword(swd,item_id);
 				break;
 				}
@@ -26303,13 +26480,13 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 			if(wasswimming)
 			{
 				Hero.SetSwim();
-				diveclk = olddiveclk;
+				set_dive(olddiveclk);
 			}
 			
 			kill_sfx();
 		}
 		//play sound
-		if(warpsfx > 0) sfx(warpsfx,pan(x.getInt()));
+		if(warpsfx > 0) sfx(warpsfx,pan(x));
 		if(wtype==wtIWARPZAP)
 		{
 			zapout();
@@ -26358,7 +26535,8 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 		if(DMaps[cur_dmap].color != c)
 			loadlvlpal(DMaps[cur_dmap].color);
 		
-		int prevscr = cur_screen;
+		auto prev_region = cur_region;
+		int prev_origin_screen = cur_screen;
 		loadscr(cur_dmap, wscr + DMaps[cur_dmap].xoff, -1, overlay);
 		scr = hero_scr;
 		lightingInstant(); // Also sets naturaldark
@@ -26367,10 +26545,27 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 		// state for the new screen.
 		if (!kill_action)
 		{
-			if (get_screen_state(prevscr).loaded_enemies)
-				get_screen_state(cur_screen).loaded_enemies = true;
+			// Mark the "loaded_enemies" state true if the previous screen had it as true.
+			// The new screen is attempted to be matched 1:1 with screens in the old region, but if
+			// the regions are different sizes then the nearest screen is used (it's clamped).
+			for_every_base_screen_in_region([&](mapscr* scr, unsigned int region_scr_x, unsigned int region_scr_y) {
+				int previous_screen_x = zc_min(prev_region.screen_width, region_scr_x);
+				int previous_screen_y = zc_min(prev_region.screen_height, region_scr_y);
+				int previous_screen = prev_origin_screen + previous_screen_x + previous_screen_y*16;
+				if (get_screen_state(previous_screen).loaded_enemies)
+					get_screen_state(scr->screen).loaded_enemies = true;
+			});
+
+			// Update "screen_spawned" for every sprite to keep it valid.
+			for_every_sprite([&](sprite& spr) {
+				int x = get_region_relative_dx(spr.screen_spawned, prev_origin_screen);
+				int y = get_region_relative_dy(spr.screen_spawned, prev_origin_screen);
+				x = zc_min(x, cur_region.screen_width);
+				y = zc_min(y, cur_region.screen_height);
+				spr.screen_spawned = cur_screen + x + y*16;
+			});
 		}
-		
+
 		x = hero_scr->warpreturnx[wrindex];
 		y = hero_scr->warpreturny[wrindex];
 		
@@ -26397,11 +26592,11 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 		y += region_scr_dy * 176;
 		update_viewport();
 		
-		markBmap(dir^1, hero_screen);
+		markBmap(dir^1, current_screen);
 		
 		int32_t checkwater = iswaterex_z3(MAPCOMBO(x,y+8), -1, x,y+(bigHitbox?8:12)); //iswaterex can be intensive, so let's avoid as many calls as we can.
 		
-		if(checkwater && _walkflag(x,y+(bigHitbox?8:12),0,SWITCHBLOCK_STATE) && current_item(itype_flippers) > 0 && current_item(itype_flippers) >= combobuf[checkwater].attribytes[0] && (!(combobuf[checkwater].usrflags&cflag1) || (itemsbuf[current_item_id(itype_flippers)].flags & item_flag3)))
+		if(checkwater && _walkflag(x,y+(bigHitbox?8:12),0,get_standing_z_state()) && current_item(itype_flippers) > 0 && current_item(itype_flippers) >= combobuf[checkwater].attribytes[0] && (!(combobuf[checkwater].usrflags&cflag1) || (itemsbuf[current_item_id(itype_flippers)].flags & item_flag3)))
 		{
 			hopclk=0xFF;
 			SetSwim();
@@ -26453,7 +26648,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 				if(swd->id == (attack==wSword ? wSword : wWand))
 				{
 				int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 				positionSword(swd,item_id);
 				break;
 				}
@@ -26504,13 +26699,13 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 				if(wasswimming)
 				{
 					Hero.SetSwim();
-					diveclk = olddiveclk;
+					set_dive(olddiveclk);
 				}
 				
 				kill_sfx();
 			}
 			//play sound
-			if(warpsfx > 0) sfx(warpsfx,pan(x.getInt()));	
+			if(warpsfx > 0) sfx(warpsfx,pan(x));	
 			if(wtype==wtIWARPZAP)
 			{
 				zapout();
@@ -26588,9 +26783,9 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 			y += region_scr_dy * 176;
 			update_viewport();
 			
-			markBmap(dir^1, hero_screen);
+			markBmap(dir^1, current_screen);
 			
-			if(iswaterex_z3(MAPCOMBO(x,y+8), -1, x,y+8) && _walkflag(x,y+8,0,SWITCHBLOCK_STATE) && current_item(itype_flippers))
+			if(iswaterex_z3(MAPCOMBO(x,y+8), -1, x,y+8) && _walkflag(x,y+8,0,get_standing_z_state()) && current_item(itype_flippers))
 			{
 				hopclk=0xFF;
 				SetSwim();
@@ -26643,7 +26838,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 					if(swd->id == (attack==wSword ? wSword : wWand))
 					{
 						int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-						int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+						int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 						positionSword(swd,item_id);
 						break;
 					}
@@ -26670,7 +26865,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 					if(swd->id == (attack==wSword ? wSword : wWand))
 					{
 						int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-						int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+						int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 						positionSword(swd,item_id);
 						break;
 					}
@@ -26698,7 +26893,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 				if(swd->id == (attack==wSword ? wSword : wWand))
 				{
 				int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 				positionSword(swd,item_id);
 				break;
 				}
@@ -26720,7 +26915,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 	int32_t checkwater = iswaterex_z3(MAPCOMBO(x,y+(bigHitbox?8:12)), -1, x,y+(bigHitbox?8:12));
 	// But keep him swimming if he ought to be!
 	// Unless the water is too high levelled, in which case... well, he'll drown on transition probably anyways. -Dimi
-	if(action!=rafting && checkwater && (_walkflag(x,y+(bigHitbox?8:12),0,SWITCHBLOCK_STATE) || get_qr(qr_DROWN))
+	if(action!=rafting && checkwater && (_walkflag(x,y+(bigHitbox?8:12),0,get_standing_z_state()) || get_qr(qr_DROWN))
 			//&& (current_item(itype_flippers) >= combobuf[checkwater].attribytes[0]) 
 		&& (action!=inwind))
 	{
@@ -26770,7 +26965,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 				guys.spr(i)->fakez = 0;
 			}
 			
-			if(((enemy*)guys.spr(i))->family!=eeTRAP && ((enemy*)guys.spr(i))->family!=eeSPINTILE)
+			if(((enemy*)guys.spr(i))->type!=eeTRAP && ((enemy*)guys.spr(i))->type!=eeSPINTILE)
 				guys.spr(i)->yofs += 2;
 		}
 	}
@@ -26778,7 +26973,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 	{
 		for(int32_t i=0; i<guys.Count(); i++)
 		{
-			if(((enemy*)guys.spr(i))->family!=eeTRAP && ((enemy*)guys.spr(i))->family!=eeSPINTILE)
+			if(((enemy*)guys.spr(i))->type!=eeTRAP && ((enemy*)guys.spr(i))->type!=eeSPINTILE)
 				guys.spr(i)->yofs -= 2;
 		}
 	}
@@ -26879,7 +27074,7 @@ bool HeroClass::dowarp(const mapscr* scr, int32_t type, int32_t index, int32_t w
 			if(swd->id == (attack==wSword ? wSword : wWand))
 			{
 				int32_t itype = (attack==wFire ? itype_candle : attack==wCByrna ? itype_cbyrna : attack==wWand ? itype_wand : attack==wHammer ? itype_hammer : itype_sword);
-				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].family==itype) ? directWpn : current_item_id(itype);
+				int32_t item_id = (directWpn>-1 && itemsbuf[directWpn].type==itype) ? directWpn : current_item_id(itype);
 				positionSword(swd,item_id);
 				break;
 			}
@@ -27206,7 +27401,7 @@ void HeroClass::walkdown(bool opening) //entering cave
     
     hclk=0;
     stop_item_sfx(itype_brang);
-    sfx(WAV_STAIRS,pan(x.getInt()));
+    sfx(WAV_STAIRS,pan(x));
     clk=0;
     // Fix Hero's position to the grid
     y=TRUNCATE_TILE(y.getInt());
@@ -27270,7 +27465,7 @@ void HeroClass::walkdown2(bool opening) //exiting cave 2
     
     hclk=0;
     stop_item_sfx(itype_brang);
-    sfx(WAV_STAIRS,pan(x.getInt()));
+    sfx(WAV_STAIRS,pan(x));
     clk=0;
     action=climbcovertop; FFCore.setHeroAction(climbcovertop);
     attack=wNone;
@@ -27325,7 +27520,7 @@ void HeroClass::walkup(bool opening) //exiting cave
     
     hclk=0;
     stop_item_sfx(itype_brang);
-    sfx(WAV_STAIRS,pan(x.getInt()));
+    sfx(WAV_STAIRS,pan(x));
     dir=down;
     clk=0;
     action=climbcoverbottom; FFCore.setHeroAction(climbcoverbottom);
@@ -27375,7 +27570,7 @@ void HeroClass::walkup2(bool opening) //entering cave2
     
     hclk=0;
     stop_item_sfx(itype_brang);
-    sfx(WAV_STAIRS,pan(x.getInt()));
+    sfx(WAV_STAIRS,pan(x));
     dir=up;
     clk=0;
     action=climbcovertop; FFCore.setHeroAction(climbcovertop);
@@ -27536,7 +27731,7 @@ void HeroClass::stepout() // Step out of item cellars and passageways
 
 bool HeroClass::nextcombo_wf(int32_t d2)
 {
-    if(toogam || (action!=swimming && !IsSideSwim() && action != swimhit) || hopclk==0) //!DIMITODO: ...does swimming just let you ignore smart scrolling entirely!?
+    if(walk_through_walls || (action!=swimming && !IsSideSwim() && action != swimhit) || hopclk==0) //!DIMITODO: ...does swimming just let you ignore smart scrolling entirely!?
         return false;
         
     // assumes Hero is about to scroll screens
@@ -27607,7 +27802,7 @@ bool HeroClass::nextcombo_wf(int32_t d2)
 
 bool HeroClass::nextcombo_solid(int32_t d2)
 {
-	if(toogam || cur_screen>=128)
+	if(walk_through_walls || cur_screen>=128)
 		return false;
 
 	// assumes Hero is about to scroll screens
@@ -27725,6 +27920,7 @@ void HeroClass::do_scroll_direction(direction dir)
 
 	if (should_scroll || action == inwind)
 	{
+		finish_auto_walk();
 		if(cur_screen>=128)
 		{
 			if(specialcave >= GUYCAVE)
@@ -27778,7 +27974,7 @@ static bool has_advanced_maze(mapscr* scr)
 
 void HeroClass::maybe_begin_advanced_maze()
 {
-	if (!(hero_scr->flags&fMAZE) || hero_screen == scrolling_maze_last_solved_screen || maze_state.active)
+	if (!(hero_scr->flags&fMAZE) || current_screen == scrolling_maze_last_solved_screen || maze_state.active)
 		return;
 
 	// Basic mazes are handled in scrollscr.
@@ -27791,14 +27987,14 @@ void HeroClass::maybe_begin_advanced_maze()
 	maze_state.transition_wipe = hero_scr->maze_transition_wipe;
 	maze_state.can_get_lost = hero_scr->flags10&fMAZE_CAN_GET_LOST;
 	maze_state.scr = hero_scr;
-	maze_state.exit_screen = screen_index_direction(hero_screen, (direction)hero_scr->exitdir);
+	maze_state.exit_screen = screen_index_direction(current_screen, (direction)hero_scr->exitdir);
 	maze_state.last_check_herox = x;
 	maze_state.last_check_heroy = y;
 
 	if (maze_state.loopy)
 	{
-		int dx = get_region_relative_dx(prev_hero_scr->screen) - get_region_relative_dx(hero_screen);
-		int dy = get_region_relative_dy(prev_hero_scr->screen) - get_region_relative_dy(hero_screen);
+		int dx = get_region_relative_dx(prev_hero_scr->screen) - get_region_relative_dx(current_screen);
+		int dy = get_region_relative_dy(prev_hero_scr->screen) - get_region_relative_dy(current_screen);
 		maze_state.enter_dir = XY_DELTA_TO_DIR(sign2(dx), sign2(dy));
 	}
 }
@@ -27856,14 +28052,14 @@ void HeroClass::checkscroll()
 			if (determine_hero_screen_from_coords()->screen == maze_state.exit_screen)
 			{
 				maze_state.active = false;
-				update_heroscr();
+				update_current_screen();
 				return;
 			}
 
 			if (maze_state.enter_dir != dir_invalid && determine_hero_screen_from_coords() == prev_hero_scr)
 			{
 				maze_state.active = false;
-				update_heroscr();
+				update_current_screen();
 				return;
 			}
 		}
@@ -27947,7 +28143,7 @@ void HeroClass::checkscroll()
 				if (maze_state.transition_wipe)
 					closescreen(maze_state.transition_wipe - 1);
 
-				loadscr(cur_dmap, hero_screen, -1, false);
+				loadscr(cur_dmap, current_screen, -1, false);
 				maze_state.scr = get_scr(maze_screen);
 
 				// A bit janky, but works: clear all state (as usual during a screen change), but keep
@@ -28002,6 +28198,8 @@ void HeroClass::checkscroll()
 
 bool HeroClass::check_prescroll()
 {
+	if (walk_through_walls)
+		return true;
 	if(get_qr(qr_BROKEN_SCROLL_INSTEAD_OF_DROWN_FALL))
 		return true; // skip checks
 	if (x <= world_w-16 && x >= 0 && y <= world_h-16 && y >= 0)
@@ -28064,28 +28262,28 @@ bool HeroClass::edge_of_dmap(int32_t side)
     switch(side)
     {
     case up:
-        return hero_screen<16;
+        return current_screen<16;
         
     case down:
-        return hero_screen>=112;
+        return current_screen>=112;
         
     case left:
-        if((hero_screen&15)==0)
+        if((current_screen&15)==0)
             return true;
             
         if((DMaps[cur_dmap].type&dmfTYPE)!=dmOVERW)
             //    if(dlevel)
-            return (((hero_screen&15)-DMaps[cur_dmap].xoff)<=0);
+            return (((current_screen&15)-DMaps[cur_dmap].xoff)<=0);
             
         break;
         
     case right:
-        if((hero_screen&15)==15)
+        if((current_screen&15)==15)
             return true;
             
         if((DMaps[cur_dmap].type&dmfTYPE)!=dmOVERW)
             //    if(dlevel)
-            return (((hero_screen&15)-DMaps[cur_dmap].xoff)>=7);
+            return (((current_screen&15)-DMaps[cur_dmap].xoff)>=7);
             
         break;
     }
@@ -28549,7 +28747,7 @@ struct nearby_scrolling_screens_t
 
 // Returns all the screens (old and new region) that need to be rendered during scrolling, along
 // with thier draw offsets.
-// Note: The destination screen is hero_screen, the starting screen is scrolling_hero_screen.
+// Note: The destination screen is Hero.current_screen, the starting screen is scrolling_hero_screen.
 // old_viewport_start: the viewport in the old region at start of scrolling
 // new_viewport_final: the viewport in the new region at end of scrolling
 // old_region_visible: the viewport in the old region that will be visible
@@ -28611,9 +28809,9 @@ static nearby_scrolling_screens_t get_nearby_scrolling_screens(const std::vector
 	{
 		// ... anchored at the point where the screen scrolling starts.
 		dx = get_region_relative_dx(cur_screen, scrolling_region.origin_screen) -
-			(get_region_relative_dx(hero_screen, scrolling_region.origin_screen) - get_region_relative_dx(scrolling_hero_screen, scrolling_region.origin_screen));
+			(get_region_relative_dx(Hero.current_screen, scrolling_region.origin_screen) - get_region_relative_dx(scrolling_hero_screen, scrolling_region.origin_screen));
 		dy = get_region_relative_dy(cur_screen, scrolling_region.origin_screen) -
-			(get_region_relative_dy(hero_screen, scrolling_region.origin_screen) - get_region_relative_dy(scrolling_hero_screen, scrolling_region.origin_screen));
+			(get_region_relative_dy(Hero.current_screen, scrolling_region.origin_screen) - get_region_relative_dy(scrolling_hero_screen, scrolling_region.origin_screen));
 		if      (scrolling_dir == up) dy -= 1;
 		else if (scrolling_dir == down) dy += 1;
 		else if (scrolling_dir == left) dx -= 1;
@@ -28918,7 +29116,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 	int original_destscr = dest_screen;
 	if (dest_screen == -1)
 	{
-		dest_screen = hero_screen;
+		dest_screen = current_screen;
 		if (checkmaze(origin_scr, false) && !edge_of_dmap(scrolldir)) {
 			dest_screen = screen_index_direction(dest_screen, (direction)scrolldir);
 		}
@@ -29019,6 +29217,8 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 		int scroll_width = std::min(viewport.w, new_viewport.w);
 		scroll_amount = scrolldir == up || scrolldir == down ? scroll_height : scroll_width;
 		scroll_counter = scroll_amount / step;
+		if (scroll_amount % step != 0)
+			scroll_counter++;
 
 		dx = 0;
 		dy = 0;
@@ -29079,7 +29279,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 	FFCore.ScrollingData[SCROLLDATA_ORY] = -viewport.y;
 
 	// Get the screen coords of the top-left of the screen we are scrolling away from.
-	auto [old_sx, old_sy] = translate_screen_coordinates_to_world(hero_screen);
+	auto [old_sx, old_sy] = translate_screen_coordinates_to_world(current_screen);
 	FFCore.ScrollingData[SCROLLDATA_OX] = old_sx - viewport.x;
 	FFCore.ScrollingData[SCROLLDATA_OY] = old_sy - viewport.y;
 
@@ -29118,7 +29318,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 	conveyclk = 2;
 	screenscrolling = true;
 	scrolling_dir = (direction) scrolldir;
-	scrolling_hero_screen = hero_screen;
+	scrolling_hero_screen = current_screen;
 	scrolling_region = cur_region;
 	scrolling_region_is_lit = region_is_lit;
 
@@ -29303,7 +29503,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 		case dmDNGN:
 			if(!get_qr(qr_DUNGEONS_USE_CLASSIC_CHARTING))
 			{
-				markBmap(scrolldir, hero_screen);
+				markBmap(scrolldir, current_screen);
 			}
 			break;
 		case dmOVERW: case dmBSOVERW:
@@ -29311,7 +29511,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 				break;
 			[[fallthrough]];
 		case dmCAVE:
-			markBmap(scrolldir, hero_screen);
+			markBmap(scrolldir, current_screen);
 			break;
 	}
 
@@ -29590,6 +29790,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 	new_region_offset_y = ny - get_region_relative_dy(dest_screen)*176;
 
 	cur_dmap = new_dmap;
+	bool classic_draw = get_qr(qr_CLASSIC_DRAWING_ORDER);
 	for (int i = 0; (scroll_counter >= 0 && delay != 0) || align_counter || pfo_counter; i++, scroll_counter--)
 	{
 		// Scripts see the hero position as if relative to the scrolling viewport. This is a weird
@@ -29721,7 +29922,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 			move_counter++;
 			{
 				viewport.x = initial_viewport.x + step * move_counter * dx;
-				viewport.y = initial_viewport.y + step * move_counter * dy + playing_field_offset - old_original_playing_field_offset;
+				viewport.y = initial_viewport.y + std::min(step * move_counter, scroll_amount) * dy + playing_field_offset - old_original_playing_field_offset;
 			}
 
 			// This is the only thing that moves the hero.
@@ -29774,14 +29975,20 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 
 		clear_bitmap(framebuf);
 		clear_info_bmp();
-
-		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
-			mapscr* base_scr = screen_handles[0].base_scr;
-			if(XOR(base_scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG)) do_layer(framebuf, 0, screen_handles[2], offx, offy);
-		});
-		if(XOR((newscr->flags7&fLAYER2BG) || (oldscr->flags7&fLAYER2BG), DMaps[cur_dmap].flags&dmfLAYER2BG))
-			do_primitives(framebuf, 2);
-		do_ffc_scroll_layer(framebuf, -2, nearby_screens, new_region_offset_x, new_region_offset_y);
+		if (!classic_draw)
+			for (int layer = -7; layer <= -4; ++layer)
+				do_ffc_scroll_layer(framebuf, layer, nearby_screens, new_region_offset_x, new_region_offset_y);
+		
+		if(classic_draw) // -2 < -3
+		{
+			for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
+				mapscr* base_scr = screen_handles[0].base_scr;
+				if(XOR(base_scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG)) do_layer(framebuf, 0, screen_handles[2], offx, offy);
+			});
+			if(XOR((newscr->flags7&fLAYER2BG) || (oldscr->flags7&fLAYER2BG), DMaps[cur_dmap].flags&dmfLAYER2BG))
+				do_primitives(framebuf, 2);
+			do_ffc_scroll_layer(framebuf, -2, nearby_screens, new_region_offset_x, new_region_offset_y);
+		}
 		
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
 			mapscr* base_scr = screen_handles[0].base_scr;
@@ -29790,7 +29997,20 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 		if(XOR((newscr->flags7&fLAYER3BG) || (oldscr->flags7&fLAYER3BG), DMaps[cur_dmap].flags&dmfLAYER3BG))
 			do_primitives(framebuf, 3);
 		do_ffc_scroll_layer(framebuf, -3, nearby_screens, new_region_offset_x, new_region_offset_y);
-
+		
+		if(!classic_draw) // -2 > -3
+		{
+			for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
+				mapscr* base_scr = screen_handles[0].base_scr;
+				if(XOR(base_scr->flags7&fLAYER2BG, DMaps[cur_dmap].flags&dmfLAYER2BG)) do_layer(framebuf, 0, screen_handles[2], offx, offy);
+			});
+			if(XOR((newscr->flags7&fLAYER2BG) || (oldscr->flags7&fLAYER2BG), DMaps[cur_dmap].flags&dmfLAYER2BG))
+				do_primitives(framebuf, 2);
+			do_ffc_scroll_layer(framebuf, -2, nearby_screens, new_region_offset_x, new_region_offset_y);
+			do_ffc_scroll_layer(framebuf, -1, nearby_screens, new_region_offset_x, new_region_offset_y);
+		}
+		
+		
 		combotile_add_y = is_unsmooth_vertical_scrolling ? -3 : 0;
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
 			offy += playing_field_offset;
@@ -29923,7 +30143,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 		do_layer_primitives(framebuf, 5);
 		do_ffc_scroll_layer(framebuf, 5, nearby_screens, new_region_offset_x, new_region_offset_y);
 		
-		do_ffc_scroll_layer(framebuf, -1, nearby_screens, new_region_offset_x, new_region_offset_y);
+		do_ffc_scroll_layer(framebuf, -1000, nearby_screens, new_region_offset_x, new_region_offset_y);
 
 		for_every_nearby_screen_during_scroll(nearby_screens, [&](screen_handles_t screen_handles, int screen, int offx, int offy, bool is_new_screen) {
 			do_layer(framebuf, 0, screen_handles[6], offx, offy); //layer 6
@@ -30064,7 +30284,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 
 	// Check for raft flags
 	if((get_qr(qr_BROKEN_RAFT_SCROLL) || lastaction == rafting)
-		&& action!=rafting && hopclk==0 && !toogam)
+		&& action!=rafting && hopclk==0 && !walk_through_walls)
 	{
 		if(MAPFLAG(x,y)==mfRAFT||MAPCOMBOFLAG(x,y)==mfRAFT)
 		{
@@ -30087,7 +30307,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 	});
 	markBmap();
 
-	if (isdungeon(hero_screen))
+	if (isdungeon(current_screen))
 	{
 		switch(hero_scr->door[scrolldir^1])
 		{
@@ -30175,14 +30395,7 @@ void HeroClass::scrollscr(int32_t scrolldir, int32_t dest_screen, int32_t destdm
 	}
 
 	// Bye!
-	for (int i = 0; i < 136*7; i++)
-	{
-		if (old_temporary_screens[i])
-		{
-			free(old_temporary_screens[i]);
-			old_temporary_screens[i] = NULL;
-		}
-	}
+	delete_temporary_screens(old_temporary_screens.data());
 	FFCore.ScrollingScreensAll.clear();
 
 	if(!get_qr(qr_SCROLLWARP_NO_RESET_FRAME))
@@ -30342,13 +30555,13 @@ bool HeroClass::sideviewhammerpound()
         return (COMBOTYPE(x+wx,y+wy)!=cSHALLOWWATER && !iswaterex_z3(MAPCOMBO(x+wx,y+wy), -1, x+wx,y+wy));
     }
     
-    if(_walkflag(x+wx,y+wy,0,SWITCHBLOCK_STATE)) return true;
+    if(_walkflag(x+wx,y+wy,0,get_standing_z_state())) return true;
     
     if(dir==left || dir==right)
     {
         wx+=16;
         
-        if(_walkflag(x+wx,y+wy,0,SWITCHBLOCK_STATE)) return true;
+        if(_walkflag(x+wx,y+wy,0,get_standing_z_state())) return true;
     }
     
     return false;
@@ -30378,7 +30591,7 @@ bool checkbunny(int32_t itemid)
 bool usesSwordJinx(int32_t itemid)
 {
 	itemdata const& it = itemsbuf[itemid];
-	bool ret = (it.family==itype_sword);
+	bool ret = (it.type==itype_sword);
 	if(it.flags & item_flip_jinx) return !ret;
 	return ret;
 }
@@ -30386,7 +30599,7 @@ bool checkitem_jinx(int32_t itemid)
 {
 	itemdata const& it = itemsbuf[itemid];
 	if(it.flags & item_jinx_immune) return true;
-	if (it.family == itype_shield){
+	if (it.type == itype_shield){
 		if(HeroShieldClk() != 0) return false;
 		if(it.flags & !item_flag9) //Active Shields should also check sword/item jinx flags
 		{
@@ -30402,35 +30615,14 @@ bool checkitem_jinx(int32_t itemid)
 
 void stopCaneOfByrna()
 {
-	for(int32_t i=0; i<Lwpns.Count(); i++)
+	for (int32_t i = 0; i < Lwpns.Count(); i++)
 	{
-		weapon *w = ((weapon*)Lwpns.spr(i));
-		if(w->id==wCByrna)
-			w->dead=1;
+		weapon* w = ((weapon*)Lwpns.spr(i));
+		if (w->id == wCByrna && !w->weapon_dying_frame)
+			w->dead = 1;
 	}
 }
 
-/* Crashes if used by ffscript.cpp, in case LINKITEMD
-void stopCaneOfByrna()
-{
-	byte prnt_cane = -1; 
-	weapon *ew = (weapon*)(Lwpns.spr(Lwpns.idFirst(wCByrna)));
-        prnt_cane = ew->parentitem;
-	for(int32_t i=0; i<Lwpns.Count(); i++)
-	{
-		weapon *w = ((weapon*)Lwpns.spr(i));
-        
-		if(w->id==wCByrna)
-		{
-			w->dead=1;
-		}
-	}
-	if ( prnt_cane > -1 )
-	{
-		stop_sfx(itemsbuf[prnt_cane].usesound);
-	}
-}
-*/
 //Check if there are no beams, kill sfx, and reset last_cane_of_byrna_item_id
 void HeroClass::cleanupByrna()
 {
@@ -30447,19 +30639,19 @@ void HeroClass::cleanupByrna()
 // Used to find out if an item family is attached to one of the buttons currently pressed.
 bool isWpnPressed(int32_t itype)
 {
-    if((itype==getItemFamily(itemsbuf,Bwpn)) && DrunkcBbtn()) return true;
-    if((itype==getItemFamily(itemsbuf,Awpn)) && DrunkcAbtn()) return true;
-    if((itype==getItemFamily(itemsbuf,Xwpn)) && DrunkcEx1btn()) return true;
-    if((itype==getItemFamily(itemsbuf,Ywpn)) && DrunkcEx2btn()) return true;
+	if ((itype == getItemFamily(itemsbuf, Bwpn)) && getInput(btnB, INPUT_DRUNK | INPUT_HERO_ACTION)) return true;
+	if ((itype == getItemFamily(itemsbuf, Awpn)) && getInput(btnA, INPUT_DRUNK | INPUT_HERO_ACTION)) return true;
+	if ((itype == getItemFamily(itemsbuf, Xwpn)) && getInput(btnEx1, INPUT_DRUNK | INPUT_HERO_ACTION)) return true;
+	if ((itype == getItemFamily(itemsbuf, Ywpn)) && getInput(btnEx2, INPUT_DRUNK | INPUT_HERO_ACTION)) return true;
     return false;
 }
 
 int32_t getWpnPressed(int32_t itype)
 {
-    if((itype==getItemFamily(itemsbuf,Bwpn)) && DrunkcBbtn()) return Bwpn&0xFFF;
-    if((itype==getItemFamily(itemsbuf,Awpn)) && DrunkcAbtn()) return Awpn&0xFFF;
-    if((itype==getItemFamily(itemsbuf,Xwpn)) && DrunkcEx1btn()) return Xwpn&0xFFF;
-    if((itype==getItemFamily(itemsbuf,Ywpn)) && DrunkcEx2btn()) return Ywpn&0xFFF;
+	if ((itype == getItemFamily(itemsbuf, Bwpn)) && getInput(btnB, INPUT_DRUNK | INPUT_HERO_ACTION)) return Bwpn & 0xFFF;
+	if ((itype == getItemFamily(itemsbuf, Awpn)) && getInput(btnA, INPUT_DRUNK | INPUT_HERO_ACTION)) return Awpn & 0xFFF;
+	if ((itype == getItemFamily(itemsbuf, Xwpn)) && getInput(btnEx1, INPUT_DRUNK | INPUT_HERO_ACTION)) return Xwpn & 0xFFF;
+	if ((itype == getItemFamily(itemsbuf, Ywpn)) && getInput(btnEx2, INPUT_DRUNK | INPUT_HERO_ACTION)) return Ywpn & 0xFFF;
     
     return -1;
 }
@@ -30475,17 +30667,17 @@ int32_t getRocsPressed()
 		itemdata const& itm = itemsbuf[jumpid];
 		
 		byte intbtn = byte(itm.misc2&0xFF);
-		if(getIntBtnInput(intbtn, false, true, false, false, true))
+		if (getIntBtnInput(intbtn, INPUT_DRUNK | INPUT_PEEK))
 			return jumpid; //not pressed
 	}
 
-	if((itype_rocs==getItemFamily(itemsbuf,Bwpn)) && DrunkcBbtn())
+	if ((itype_rocs == getItemFamily(itemsbuf, Bwpn)) && getInput(btnB, INPUT_DRUNK | INPUT_HERO_ACTION))
 		return Bwpn;
-	if((itype_rocs==getItemFamily(itemsbuf,Awpn)) && DrunkcAbtn())
+	if ((itype_rocs == getItemFamily(itemsbuf, Awpn)) && getInput(btnA, INPUT_DRUNK | INPUT_HERO_ACTION))
 		return Awpn;
-	if((itype_rocs==getItemFamily(itemsbuf,Xwpn)) && DrunkcEx1btn())
+	if ((itype_rocs == getItemFamily(itemsbuf, Xwpn)) && getInput(btnEx1, INPUT_DRUNK | INPUT_HERO_ACTION))
 		return Xwpn;
-	if((itype_rocs==getItemFamily(itemsbuf,Ywpn)) && DrunkcEx2btn())
+	if ((itype_rocs == getItemFamily(itemsbuf, Ywpn)) && getInput(btnEx2, INPUT_DRUNK | INPUT_HERO_ACTION))
 		return Ywpn;
 
 	return -1;
@@ -30493,10 +30685,10 @@ int32_t getRocsPressed()
 
 bool isItmPressed(int32_t itmid)
 {
-    if(itmid==(NEG_OR_MASK(Bwpn,0xFFF)) && DrunkcBbtn()) return true;
-    if(itmid==(NEG_OR_MASK(Awpn,0xFFF)) && DrunkcAbtn()) return true;
-    if(itmid==(NEG_OR_MASK(Xwpn,0xFFF)) && DrunkcEx1btn()) return true;
-    if(itmid==(NEG_OR_MASK(Ywpn,0xFFF)) && DrunkcEx2btn()) return true;
+	if (itmid == (NEG_OR_MASK(Bwpn, 0xFFF)) && getInput(btnB, INPUT_DRUNK | INPUT_HERO_ACTION)) return true;
+	if (itmid == (NEG_OR_MASK(Awpn, 0xFFF)) && getInput(btnA, INPUT_DRUNK | INPUT_HERO_ACTION)) return true;
+	if (itmid == (NEG_OR_MASK(Xwpn, 0xFFF)) && getInput(btnEx1, INPUT_DRUNK | INPUT_HERO_ACTION)) return true;
+	if (itmid == (NEG_OR_MASK(Ywpn, 0xFFF)) && getInput(btnEx2, INPUT_DRUNK | INPUT_HERO_ACTION)) return true;
     return false;
 }
 
@@ -30752,7 +30944,7 @@ void dospecialmoney(mapscr* scr, int32_t index)
         //also give Hero an actual Bomb item
         for(int32_t i=0; i<MAXITEMS; i++)
         {
-            if(itemsbuf[i].family == itype_bomb && itemsbuf[i].fam_type == 1)
+            if(itemsbuf[i].type == itype_bomb && itemsbuf[i].level == 1)
                 getitem(i, true, true);
         }
         
@@ -30848,8 +31040,8 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 				for(int32_t i=0; i<MAXITEMS; i++)
 				{
 					// Find the item which is as close to this item's fam_type as possible.
-					if(itemsbuf[i].family==itemsbuf[id].family && itemsbuf[i].fam_type>itemsbuf[id].fam_type
-							&& (nextitem>-1 ? itemsbuf[i].fam_type<=itemsbuf[nextitem].fam_type : true))
+					if(itemsbuf[i].type==itemsbuf[id].type && itemsbuf[i].level>itemsbuf[id].level
+							&& (nextitem>-1 ? itemsbuf[i].level<=itemsbuf[nextitem].level : true))
 					{
 						nextitem = i;
 					}
@@ -30868,15 +31060,15 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 	itemdata const& idat = itemsbuf[id&0xFF];
 	
 	bool equipment = idat.flags &
-		((idat.family == itype_triforcepiece) ? item_flag8 : item_gamedata);
+		((idat.type == itype_triforcepiece) ? item_flag8 : item_gamedata);
 	
 	if(equipment)
 	{
 		// Fix boomerang sounds.
-		int32_t itemid = current_item_id(idat.family);
+		int32_t itemid = current_item_id(idat.type);
 		
-		if(itemid>=0 && (idat.family == itype_brang || idat.family == itype_divineprotection
-						 || idat.family == itype_hookshot || idat.family == itype_switchhook || idat.family == itype_cbyrna)
+		if(itemid>=0 && (idat.type == itype_brang || idat.type == itype_divineprotection
+						 || idat.type == itype_hookshot || idat.type == itype_switchhook || idat.type == itype_cbyrna)
 				&& sfx_allocated(itemsbuf[itemid].usesound)
 				&& idat.usesound != itemsbuf[itemid].usesound)
 		{
@@ -30884,9 +31076,9 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 			cont_sfx(idat.usesound);
 		}
 		
-		int32_t curitm = current_item_id(idat.family);
+		int32_t curitm = current_item_id(idat.type);
 		if(!get_qr(qr_KEEPOLD_APPLIES_RETROACTIVELY)
-			|| curitm < 0 || (itemsbuf[curitm].fam_type <= idat.fam_type)
+			|| curitm < 0 || (itemsbuf[curitm].level <= idat.level)
 			|| (itemsbuf[curitm].flags & item_keep_old))
 		{
 			game->set_item(id,true);
@@ -30895,14 +31087,14 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 		
 		if(!(idat.flags & item_keep_old))
 		{
-			if(!get_qr(qr_BROKEN_KEEPOLD_FLAG) || current_item(idat.family)<idat.fam_type)
+			if(!get_qr(qr_BROKEN_KEEPOLD_FLAG) || current_item(idat.type)<idat.level)
 			{
-				removeLowerLevelItemsOfFamily(game,itemsbuf,idat.family, idat.fam_type);
+				removeLowerLevelItemsOfFamily(game,itemsbuf,idat.type, idat.level);
 			}
 		}
 		
 		// NES consistency: replace all flying boomerangs with the current boomerang.
-		if(idat.family==itype_brang)
+		if(idat.type==itype_brang)
 			for(int32_t i=0; i<Lwpns.Count(); i++)
 			{
 				weapon *w = ((weapon*)Lwpns.spr(i));
@@ -30919,7 +31111,7 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 		if(idat.setmax)
 		{
 			// Bomb bags are a special case; they may be set not to increase super bombs
-			if(idat.family==itype_bombbag && idat.count==2 && (idat.flags&16)==0)
+			if(idat.type==itype_bombbag && idat.count==2 && (idat.flags&16)==0)
 			{
 				int32_t max = game->get_maxbombs();
 				
@@ -30971,9 +31163,9 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 	//add lower-level items
 	if(idat.flags&item_gain_old)
 	{
-		for(int32_t i=idat.fam_type-1; i>0; i--)
+		for(int32_t i=idat.level-1; i>0; i--)
 		{
-			int32_t potid = getItemID(itemsbuf, idat.family, i);
+			int32_t potid = getItemID(itemsbuf, idat.type, i);
 			
 			if(potid != -1)
 			{
@@ -30982,7 +31174,7 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 		}
 	}
 	
-	switch(idat.family)
+	switch(idat.type)
 	{
 		case itype_itmbundle:
 		{
@@ -31075,15 +31267,15 @@ void getitem(int32_t id, bool nosound, bool doRunPassive)
 		
 		
 		case itype_map:
-			game->lvlitems[dlevel]|=liMAP;
+			game->lvlitems[dlevel]|=(1 << li_map);
 			break;
 			
 		case itype_compass:
-			game->lvlitems[dlevel]|=liCOMPASS;
+			game->lvlitems[dlevel]|=(1 << li_compass);
 			break;
 			
 		case itype_bosskey:
-			game->lvlitems[dlevel]|=liBOSSKEY;
+			game->lvlitems[dlevel]|=(1 << li_boss_key);
 			break;
 			
 		case itype_fairy:
@@ -31140,7 +31332,7 @@ void takeitem(int32_t id)
         }
     }
     
-    switch(itemsbuf[id&0xFF].family)
+    switch(itemsbuf[id&0xFF].type)
     {
         // NES consistency: replace all flying boomerangs with the current boomerang.
 		case itype_brang:
@@ -31192,15 +31384,15 @@ void takeitem(int32_t id)
 			break;
 			
 		case itype_map:
-			game->lvlitems[dlevel]&=~liMAP;
+			game->lvlitems[dlevel]&=~(1 << li_map);
 			break;
 			
 		case itype_compass:
-			game->lvlitems[dlevel]&=~liCOMPASS;
+			game->lvlitems[dlevel]&=~(1 << li_compass);
 			break;
 			
 		case itype_bosskey:
-			game->lvlitems[dlevel]&=~liBOSSKEY;
+			game->lvlitems[dlevel]&=~(1 << li_boss_key);
 			break;
 			
 		case itype_lkey:
@@ -31235,7 +31427,7 @@ void HeroClass::handle_triforce(mapscr* scr, int32_t id)
 	if(unsigned(id) >= MAXITEMS)
 		return;
 	itemdata const& itm = itemsbuf[id];
-	switch(itm.family)
+	switch(itm.type)
 	{
 		case itype_itmbundle:
 		{
@@ -31312,7 +31504,7 @@ void HeroClass::checkitems(int32_t index)
 
 	if(ptr->fallclk > 0) return; //Don't pick up a falling item
 	
-	if(itemsbuf[id2].family == itype_progressive_itm)
+	if(itemsbuf[id2].type == itype_progressive_itm)
 	{
 		int32_t newid = get_progressive_item(id2);
 		if(newid > -1)
@@ -31365,10 +31557,10 @@ void HeroClass::checkitems(int32_t index)
 	}
 	else
 	{
-		if(itemsbuf[id2].family == itype_bottlefill && !game->canFillBottle())
+		if(itemsbuf[id2].type == itype_bottlefill && !game->canFillBottle())
 			return; //No picking these up unless you have a bottle to fill!
 		
-		if(((pickup&ipTIMER) && (ptr->clk2 < 32))&& !(pickup & ipCANGRAB))
+		if(((pickup&ipTIMER) && (ptr->clk2 < game->get_item_spawn_flicker()))&& !(pickup & ipCANGRAB))
 			if(ptr->id!=iFairyMoving)
 				// wait for it to stop flashing, doesn't check for other items yet
 				return;
@@ -31399,8 +31591,8 @@ void HeroClass::checkitems(int32_t index)
 				for(int32_t i=0; i<MAXITEMS; i++)
 				{
 					// Find the item which is as close to this item's fam_type as possible.
-					if(itemsbuf[i].family==itemsbuf[id2].family && itemsbuf[i].fam_type>itemsbuf[id2].fam_type
-							&& (nextitem>-1 ? itemsbuf[i].fam_type<=itemsbuf[nextitem].fam_type : true))
+					if(itemsbuf[i].type==itemsbuf[id2].type && itemsbuf[i].level>itemsbuf[id2].level
+							&& (nextitem>-1 ? itemsbuf[i].level<=itemsbuf[nextitem].level : true))
 					{
 						nextitem = i;
 					}
@@ -31620,7 +31812,7 @@ void HeroClass::checkitems(int32_t index)
 			}
 			if ( (pstr > 0 && pstr < msg_count) || (shop_pstr > 0 && shop_pstr < msg_count) )
 			{
-				if ( (pstr > 0 && pstr < msg_count) && ( ( ( pstr_flags&itemdataPSTRING_ALWAYS || pstr_flags&itemdataPSTRING_NOMARK || pstr_flags&itemdataPSTRING_IP_HOLDUP || (!(FFCore.GetItemMessagePlayed(id2)))  ) ) ) )
+				if ( (pstr > 0 && pstr < msg_count) && ( ( ( (pstr_flags&itemdataPSTRING_ALWAYS) || (pstr_flags&itemdataPSTRING_NOMARK) || ((pstr_flags&itemdataPSTRING_IP_HOLDUP) && replay_version_check(0, 44)) || (!(FFCore.GetItemMessagePlayed(id2)))  ) ) ) )
 				{
 					if ( (!(pstr_flags&itemdataPSTRING_NOMARK)) ) FFCore.SetItemMessagePlayed(id2);
 				}
@@ -31638,7 +31830,7 @@ void HeroClass::checkitems(int32_t index)
 			
 		}
 		
-		if(itemsbuf[id2].family!=itype_triforcepiece || !(itemsbuf[id2].flags & item_gamedata))
+		if(itemsbuf[id2].type!=itype_triforcepiece || !(itemsbuf[id2].flags & item_gamedata))
 		{
 			if (!ptr->noHoldSound) sfx(item_scr->holdupsfx);
 		}
@@ -31750,10 +31942,10 @@ void HeroClass::checkitems(int32_t index)
 		set_clip_state(pricesdisplaybuf, 1);
 	}
 	
-	if(itemsbuf[id2].family==itype_triforcepiece
+	if(itemsbuf[id2].type==itype_triforcepiece
 		&& itemsbuf[id2].misc2 <= 0 && linked_parent == eeGANON)
 	{
-		game->lvlitems[dlevel]|=liBOSS;
+		game->lvlitems[dlevel]|=(1 << li_boss_killed);
 	}
 	handle_triforce(item_scr, id2);
 	if(!holdclk)
@@ -31786,13 +31978,13 @@ void HeroClass::StartRefill(int32_t refillWhat)
 
 		if(refill_why>=0) // Item index
 		{
-			if(itemsbuf[refill_why].family==itype_potion)
+			if(itemsbuf[refill_why].type==itype_potion)
 			{
 				if(itemsbuf[refill_why].flags & item_flag3){swordclk=0;verifyAWpn();}
 				if(itemsbuf[refill_why].flags & item_flag4)itemclk=0;
 				if(itemsbuf[refill_why].flags & item_flag5)shieldjinxclk=0;
 			}
-			else if(itemsbuf[refill_why].family==itype_triforcepiece)
+			else if(itemsbuf[refill_why].type==itype_triforcepiece)
 			{
 				if(itemsbuf[refill_why].flags & item_flag3){swordclk=0;verifyAWpn();}
 				if(itemsbuf[refill_why].flags & item_flag4)itemclk=0;
@@ -31828,14 +32020,14 @@ void HeroClass::Start250Refill(int32_t refillWhat)
 
 		if(refill_why>=0) // Item index
 		{
-			if((itemsbuf[refill_why].family==itype_potion)&&(!get_qr(qr_NONBUBBLEMEDICINE)))
+			if((itemsbuf[refill_why].type==itype_potion)&&(!get_qr(qr_NONBUBBLEMEDICINE)))
 			{
 				swordclk=0;
 				verifyAWpn();
 				if(get_qr(qr_ITEMBUBBLE)) itemclk=0;
 			}
 
-			if((itemsbuf[refill_why].family==itype_triforcepiece)&&(!get_qr(qr_NONBUBBLETRIFORCE)))
+			if((itemsbuf[refill_why].type==itype_triforcepiece)&&(!get_qr(qr_NONBUBBLETRIFORCE)))
 			{
 				swordclk=0;
 				verifyAWpn();
@@ -31863,7 +32055,7 @@ bool HeroClass::refill()
     int32_t refill_heart_stop=game->get_maxlife();
     int32_t refill_magic_stop=game->get_maxmagic();
     
-    if(refill_why>=0 && itemsbuf[refill_why].family==itype_potion)
+    if(refill_why>=0 && itemsbuf[refill_why].type==itype_potion)
     {
         refill_heart_stop=zc_min(potion_life+(itemsbuf[refill_why].flags & item_flag1 ?int32_t(game->get_maxlife()*(itemsbuf[refill_why].misc1 /100.0)):((itemsbuf[refill_why].misc1 *game->get_hp_per_heart()))),game->get_maxlife());
         refill_magic_stop=zc_min(potion_magic+(itemsbuf[refill_why].flags & item_flag2 ?int32_t(game->get_maxmagic()*(itemsbuf[refill_why].misc2 /100.0)):((itemsbuf[refill_why].misc2 *game->get_mp_per_block()))),game->get_maxmagic());
@@ -31991,7 +32183,7 @@ void HeroClass::getTriforce(int32_t id2)
 	}
 	if(itemsbuf[id2].flags & item_gamedata)
 	{
-		game->lvlitems[dlevel]|=liTRIFORCE;
+		game->lvlitems[dlevel]|=(1 << li_mcguffin);
 	}
     
 	int32_t f=0;
@@ -32565,7 +32757,7 @@ void HeroClass::heroDeathAnimation()
 		switch(f)
 		{
 		case   0:
-			sfx(getHurtSFX(),pan(x.getInt()));
+			sfx(getHurtSFX(),pan(x));
 			break;
 			//Death sound.
 		case  60:
@@ -32613,7 +32805,7 @@ void HeroClass::ganon_intro()
     loaded_guys=true;
     loaditem(scr, offx, offy);
     
-    if(game->lvlitems[dlevel]&liBOSS)
+    if(game->lvlitems[dlevel]&(1 << li_boss_killed))
     {
         return;
     }
@@ -32767,18 +32959,46 @@ void HeroClass::reset_hookshot()
 	hs_ydist=0;
 }
 
+void HeroClass::set_dive(int32_t newdive)
+{
+	if (newdive > 0)
+	{
+		auto flippers_id = current_item_id(itype_flippers);
+		zfix targ_z = -1;
+		if (flippers_id >= 0)
+			targ_z = -(itemsbuf[flippers_id].level);
+		if (standing_on_z > targ_z)
+			standing_on_z = targ_z;
+	}
+	else
+	{
+		if (standing_on_z < 0)
+			standing_on_z = 0;
+	}
+	diveclk = newdive;
+}
+
 
 bool HeroClass::can_deploy_ladder()
 {
     bool ladderallowed = ((!get_qr(qr_LADDERANYWHERE) && (hero_scr->flags&fLADDER)) || isdungeon()
                           || (get_qr(qr_LADDERANYWHERE) && !(hero_scr->flags&fLADDER)));
-    return (current_item_id(itype_ladder)>-1 && ladderallowed && !ilswim && z==0 && fakez==0 &&
+    return (current_item_id(itype_ladder)>-1 && ladderallowed && !ilswim && z==0 && fakez==0 && !hoverclk &&
             (!isSideViewHero() || on_sideview_solid_oldpos(this)));
 }
 
 void HeroClass::reset_ladder()
 {
-    ladderx=laddery=0;
+	if (ladderx || laddery)
+	{
+		ladderx = laddery = 0;
+
+		if (is_autowalking())
+		{
+			if (check_pitslide() != -1)
+				try_hover();
+		}
+	}
 }
 
 bool is_conveyor(int32_t type);
@@ -32796,7 +33016,7 @@ void HeroClass::check_conveyor()
 			conv_forcedir = -1;
 	}
 	
-	if((!get_qr(qr_BROKEN_CONVEYORS) && action==rafting) || action==casting||action==sideswimcasting||action==drowning || action==sidedrowning||action==lavadrowning||inlikelike||pull_hero)
+	if((!get_qr(qr_BROKEN_CONVEYORS) && action==rafting) || action==casting||action==sideswimcasting||action==drowning || action==sidedrowning||action==lavadrowning||inlikelike||pull_hero||is_autowalking())
 	{
 		is_conveyor_stunned = 0;
 		return;
@@ -32899,7 +33119,7 @@ void HeroClass::check_conveyor()
 						movedy = true;
 						zfix step(0);
 						
-						if((DrunkRight()||DrunkLeft())&&dir!=left&&dir!=right&&!(diagonalMovement||NO_GRIDLOCK))
+						if ((getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) && dir != left && dir != right && !(diagonalMovement || NO_GRIDLOCK))
 						{
 							while(step<(abs(deltay)*(isSideViewHero()?2:1)))
 							{
@@ -32944,7 +33164,7 @@ void HeroClass::check_conveyor()
 						movedy = true;
 						zfix step(0);
 						
-						if((DrunkRight()||DrunkLeft())&&dir!=left&&dir!=right&&!(diagonalMovement||NO_GRIDLOCK))
+						if ((getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) && dir != left && dir != right && !(diagonalMovement || NO_GRIDLOCK))
 						{
 							while(step<abs(deltay))
 							{
@@ -32990,7 +33210,7 @@ void HeroClass::check_conveyor()
 						movedx = true;
 						zfix step(0);
 						
-						if((DrunkUp()||DrunkDown())&&dir!=up&&dir!=down&&!(diagonalMovement||NO_GRIDLOCK))
+						if ((getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) && dir != up && dir != down && !(diagonalMovement || NO_GRIDLOCK))
 						{
 							while(step<abs(deltax))
 							{
@@ -33035,7 +33255,7 @@ void HeroClass::check_conveyor()
 						movedx = true;
 						zfix step(0);
 						
-						if((DrunkUp()||DrunkDown())&&dir!=up&&dir!=down&&!(diagonalMovement||NO_GRIDLOCK))
+						if ((getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) && dir != up && dir != down && !(diagonalMovement || NO_GRIDLOCK))
 						{
 							while(step<abs(deltax))
 							{
@@ -33137,7 +33357,7 @@ void HeroClass::check_conveyor()
 						movedy = true;
 						zfix step(0);
 						
-						if((DrunkRight()||DrunkLeft())&&dir!=left&&dir!=right&&!(diagonalMovement||NO_GRIDLOCK))
+						if ((getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) && dir != left && dir != right && !(diagonalMovement || NO_GRIDLOCK))
 						{
 							while(step<(abs(deltay)*(isSideViewHero()?2:1)))
 							{
@@ -33183,7 +33403,7 @@ void HeroClass::check_conveyor()
 						movedy = true;
 						zfix step(0);
 						
-						if((DrunkRight()||DrunkLeft())&&dir!=left&&dir!=right&&!(diagonalMovement||NO_GRIDLOCK))
+						if ((getInput(btnRight, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnLeft, INPUT_DRUNK | INPUT_HERO_ACTION)) && dir != left && dir != right && !(diagonalMovement || NO_GRIDLOCK))
 						{
 							while(step<abs(deltay))
 							{
@@ -33232,7 +33452,7 @@ void HeroClass::check_conveyor()
 						movedx = true;
 						zfix step(0);
 						
-						if((DrunkUp()||DrunkDown())&&dir!=up&&dir!=down&&!(diagonalMovement||NO_GRIDLOCK))
+						if ((getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) && dir != up && dir != down && !(diagonalMovement || NO_GRIDLOCK))
 						{
 							while(step<abs(deltax))
 							{
@@ -33278,7 +33498,7 @@ void HeroClass::check_conveyor()
 						movedx = true;
 						zfix step(0);
 						
-						if((DrunkUp()||DrunkDown())&&dir!=up&&dir!=down&&!(diagonalMovement||NO_GRIDLOCK))
+						if ((getInput(btnUp, INPUT_DRUNK | INPUT_HERO_ACTION) || getInput(btnDown, INPUT_DRUNK | INPUT_HERO_ACTION)) && dir != up && dir != down && !(diagonalMovement || NO_GRIDLOCK))
 						{
 							while(step<abs(deltax))
 							{
@@ -33588,11 +33808,11 @@ void HeroClass::kill(bool bypassFairy)
 }
 bool HeroClass::sideview_mode() const
 {
-	return isSideViewHero() && (moveflags & move_obeys_grav) && !toogam;
+	return isSideViewHero() && (moveflags & move_obeys_grav) && !walk_through_walls;
 }
 bool HeroClass::is_unpushable() const
 {
-	return toogam;
+	return walk_through_walls;
 }
 
 HeroClass Hero;

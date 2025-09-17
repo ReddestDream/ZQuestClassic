@@ -445,6 +445,22 @@ public:
 		else if(get(ind))
 			cont[ind/8] &= ~(1 << ind%8);
 	}
+	template<typename T = std::vector<index_t>>
+	bool any(T const& index_cont) const
+	{
+		for(index_t ind : index_cont)
+			if(get(ind))
+				return true;
+		return false;
+	}
+	template<typename T = std::vector<index_t>>
+	bool all(T const& index_cont) const
+	{
+		for(index_t ind : index_cont)
+			if(!get(ind))
+				return false;
+		return true;
+	}
 	void toggle(index_t ind)
 	{
 		cont[ind/8] ^= (1 << ind%8);
@@ -455,6 +471,13 @@ public:
 	}
 	void normalize() {cont.normalize();}
 	void clear() {cont.clear();}
+	bool empty() const
+	{
+		for (auto val : cont.inner())
+			if (val)
+				return false;
+		return true;
+	}
 	bounded_vec<storage_t,byte>& inner() {return cont;}
 	bounded_vec<storage_t,byte> const& inner() const {return cont;}
 	bool operator==(bitstring const& other) const = default;

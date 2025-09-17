@@ -76,7 +76,7 @@ struct gamedata
 	int16_t _dcounter[MAX_COUNTERS];
 	
 	char version[17];
-	bounded_vec<word,byte> lvlitems {MAXLEVELS, 0};
+	bounded_vec<word,word> lvlitems {MAXLEVELS, 0};
 	bounded_vec<word,byte> lvlkeys {MAXLEVELS, 0};
 	bounded_vec<word,dword> lvlswitches {MAXLEVELS, 0};
 	byte _continue_scrn;
@@ -84,7 +84,7 @@ struct gamedata
 	bounded_vec<word,int32_t> _generic {genMAX, 0}; // Generic gamedata. See enum above this struct for indexes.
 	byte visited[MAXDMAPS];
 	bounded_vec<dword,byte> bmaps {MAX_MI, 0}; // the dungeon progress maps
-	bounded_vec<dword,word> maps {MAXSCRSNORMAL, 0}; // info on map changes, items taken, etc.
+	bounded_vec<dword,uint32_t> maps {MAXSCRSNORMAL, 0}; // info on map changes, items taken, etc.
 	bounded_vec<dword,byte> guys {MAXSCRSNORMAL, 0}; // guy counts (enemy kill progress)
 	bool item_messages_played[MAXITEMS]; //Each field is set when an item pickup message plays the first time per session
 	bounded_map<dword,bounded_vec<byte,int32_t>> screen_d {MAX_MI, {8, 0}}; // script-controlled screen variables
@@ -321,6 +321,18 @@ public:
 	
 	byte get_regionmapping();
 	void set_regionmapping(byte val);
+	
+	word get_item_spawn_flicker();
+	void set_item_spawn_flicker(word val);
+	
+	word get_item_timeout_dur();
+	void set_item_timeout_dur(word val);
+	
+	word get_item_timeout_flicker();
+	void set_item_timeout_flicker(word val);
+	
+	byte get_item_flicker_speed();
+	void set_item_flicker_speed(byte val);
 
 	byte get_continue_scrn() const;
 	void set_continue_scrn(byte s);

@@ -55,7 +55,6 @@ extern int32_t fairy_cnt;
 bool addfairy(zfix x, zfix y, int32_t misc3, int32_t id);
 bool addfairynew(zfix x, zfix y, int32_t misc3, item &itemfairy);
 bool can_drop(zfix x, zfix y);
-void item_fall(zfix& x, zfix& y, zfix& fall);
 int32_t item_pits(zfix& x, zfix& y, int32_t& fallclk);
 int32_t select_dropitem(int32_t item_set);
 int32_t select_dropitem(int32_t item_set, int32_t x, int32_t y);
@@ -76,7 +75,7 @@ public:
     int32_t fairyUID;
     word pstring; //pickup string
     word pickup_string_flags;
-    int32_t family;
+    int32_t type;
     byte lvl;
     int32_t linked_parent;
 	bool is_dragged;
@@ -90,7 +89,9 @@ public:
     item(zfix X,zfix Y,zfix Z,int32_t i,int32_t p,int32_t c, bool isDummy = false);
     virtual ~item();
     virtual bool animate(int32_t index);
+	virtual bool can_drawshadow() const;
     virtual void draw(BITMAP *dest);
+	virtual void drawshadow(BITMAP* dest, bool translucent);
 	virtual int32_t run_script(int32_t mode);
 	virtual optional<ScriptType> get_scrtype() const {return ScriptType::ItemSprite;}
 	virtual ALLEGRO_COLOR hitboxColor(byte opacity = 255) const;
@@ -157,8 +158,8 @@ struct itemdata
     byte speed;                                               // animation speed
     byte delay;                                               // extra delay factor (-1) for first frame
     int32_t ltm;                                                 // Hero Tile Modifier
-    int32_t family;												// What family the item is in
-    byte fam_type;	//level										// What type in this family the item is
+    int32_t type;												// What family the item is in
+    byte level;										// What type in this family the item is
     int32_t power;	// Damage, height, etc. //changed from byte to int32_t in V_ITEMS 31
     item_flags flags;
     word script;												// Which script the item is using
@@ -226,11 +227,13 @@ struct itemdata
 	
 	char display_name[256];
 	
-	byte pickup_litems;
+	word pickup_litems;
 	int16_t pickup_litem_level = -1;
 	
 	move_flags moveflags = (move_obeys_grav | move_can_pitfall);
 	weapon_data weap_data;
+	
+	int32_t cooldown;
 	
 	std::string get_name(bool init = false, bool plain = false) const;
 	//helper functions because stupid shit
@@ -288,4 +291,11 @@ void addOldStyleFamily(zinitdata *dest, itemdata *items, int32_t family, char le
 
 std::string bottle_name(size_t type);
 std::string bottle_slot_name(size_t slot, std::string const& emptystr);
+
+struct cooldown_data
+{
+	int cooldown, max_cooldown, base_cooldown;
+	int cooldown_ring_id = -1;
+};
+cooldown_data calc_item_cooldown(int item_id);
 #endif

@@ -2,6 +2,8 @@
 
 #include "auto/arrays.zs"
 #include "auto/bitmap_load_rt_screen.zs"
+#include "auto/bug_nested_class_constructors.zs"
+#include "auto/call_limit.zs"
 #include "auto/classes.zs"
 #include "auto/compat_qrs.zs"
 #include "auto/ffc_script_runner.zs"
@@ -12,6 +14,7 @@
 #include "auto/scc.zs"
 #include "auto/script_drawing.zs"
 #include "auto/sprites.zs"
+#include "auto/stack_limit.zs"
 #include "auto/std_unit.zs"
 #include "auto/varargs.zs"
 #include "auto/viewport.zs"

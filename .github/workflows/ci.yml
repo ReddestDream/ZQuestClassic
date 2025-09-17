@@ -89,13 +89,14 @@ jobs:
 
       - uses: mymindstorm/setup-emsdk@v14
         with:
-          version: "4.0.8"
+          version: "4.0.13"
           actions-cache-folder: "emsdk-cache-${{ runner.os }}-${{ runner.arch }}"
 
       - name: Install Node.js 20.x
         uses: actions/setup-node@v3
         with:
           node-version: 20.x
+      - run: npm add mime-types
       # puppeteer caches Chrome in ~/.ccache/puppeteer, but only on npm install. Which means
       # restored caches from actions/setup-node will never install Chrome.
       - run: npm rm puppeteer && npm add puppeteer@24.12.0
@@ -125,8 +126,6 @@ jobs:
         env:
           ZC_EMCC_CMAKE_EXTRA_FLAGS: -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - run: cmake --build build_emscripten --config RelWithDebInfo -t web
-        env:
-          ZC_PACKAGE_REPLAYS: 1
       - run: ccache -s
 
       - run: sudo apt-get update && sudo apt-get install libopengl0 libglu1
@@ -145,7 +144,7 @@ jobs:
       # Run each replay for just ~15 seconds, but run all of classic_1st_lvl1.zplay
       # - run: xvfb-run --auto-servernum python -Xutf8 tests/run_replay_tests.py --build_folder build_emscripten/RelWithDebInfo --test_results_folder .tmp/test_results --max_duration 15 --max_duration classic_1st_lvl1.zplay=0 --ci web --retries 2
       # TODO: restore the above, after web replay tests are less flaky / faster.
-      - run: xvfb-run --auto-servernum python -Xutf8 tests/run_replay_tests.py --build_folder build_emscripten/RelWithDebInfo --test_results_folder .tmp/test_results --filter classic_1st_lvl1 --filter playground --ci web --retries 2
+      - run: xvfb-run --auto-servernum python -Xutf8 tests/run_replay_tests.py --build_folder build_emscripten/RelWithDebInfo --test_results_folder .tmp/test_results --filter classic_1st_lvl1 --filter playground --filter freedom_in_chains --ci web --retries 2
 
       - run: BUILD_FOLDER=build_emscripten/RelWithDebInfo xvfb-run --auto-servernum python -Xutf8 tests/test_zeditor.py
       - run: BUILD_FOLDER=build_emscripten/RelWithDebInfo xvfb-run --auto-servernum python -Xutf8 tests/test_zplayer.py

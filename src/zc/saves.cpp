@@ -356,10 +356,18 @@ static int32_t read_saves(ReadMode read_mode, PACKFILE* f, std::vector<save_t>& 
 		
 		game.set_timevalid(tempbyte);
 		
-		if(section_version >= 37)
+		if(section_version >= 46)
 		{
 			if(!p_getbvec(&game.lvlitems,f))
 				return 25;
+		}
+		else if(section_version >= 37)
+		{
+			bounded_vec<word,byte> tmpbvec;
+			if(!p_getbvec(&tmpbvec,f))
+				return 25;
+			for(dword q = 0; q < tmpbvec.capacity(); ++q)
+				game.lvlitems[q] = word(tmpbvec[q]);
 		}
 		else if(section_version <= 5)
 		{
@@ -534,9 +542,13 @@ static int32_t read_saves(ReadMode read_mode, PACKFILE* f, std::vector<save_t>& 
 		
 		if(section_version < 37)
 		{
+			word tmpw;
 			for(int32_t j=0; j<MAXSCRSNORMAL; j++)
-				if(!p_igetw(&game.maps[j],f))
+			{
+				if(!p_igetw(&tmpw,f))
 					return 36;
+				game.maps[j] = tmpw;
+			}
 			for(int32_t j=0; j<MAXSCRSNORMAL; ++j)
 				if(!p_getc(&(game.guys[j]),f))
 					return 37;
@@ -545,8 +557,20 @@ static int32_t read_saves(ReadMode read_mode, PACKFILE* f, std::vector<save_t>& 
 		{
 			if(!p_getbvec(&game.bmaps, f))
 				return 35;
-			if(!p_getbvec(&game.maps, f))
-				return 36;
+			if(section_version < 45)
+			{
+				bounded_vec<dword,word> tmpbvec;
+				if(!p_getbvec(&tmpbvec, f))
+					return 36;
+				game.maps.clear();
+				for(dword q = 0; q < tmpbvec.capacity(); ++q)
+					game.maps[q] = tmpbvec[q];
+			}
+			else
+			{
+				if(!p_getbvec(&game.maps, f))
+					return 36;
+			}
 			if(!p_getbvec(&game.guys, f))
 				return 37;
 		}
@@ -1197,6 +1221,14 @@ static int32_t read_saves(ReadMode read_mode, PACKFILE* f, std::vector<save_t>& 
 
 				array.global = tempbyte!=0;
 
+				// internal_id
+				// This was actually a mistake. I didn't meant to write this field. But I added a
+				// read here because I accidentally shipped a prerelease that wrote this field, so
+				// this will unbreak those saves.
+				// game_data::save_script_objects never saves these arrays, so this will always be 0.
+				if(!p_getc(&tempbyte,f))
+					return 85;
+
 				//We get the size of each container
 				if(!p_igetl(&tempdword, f))
 					return 54;
@@ -1267,6 +1299,14 @@ static int32_t read_saves(ReadMode read_mode, PACKFILE* f, std::vector<save_t>& 
 				if(!p_getwstr(&exec.name,f))
 					return 94;
 			}
+		}
+		
+		if (section_version < 47)
+		{
+			game.set_item_spawn_flicker(zinit.item_spawn_flicker);
+			game.set_item_timeout_dur(zinit.item_timeout_dur);
+			game.set_item_timeout_flicker(zinit.item_timeout_flicker);
+			game.set_item_flicker_speed(zinit.item_flicker_speed);
 		}
 	}
 	
@@ -1730,7 +1770,10 @@ void saves_init()
 {
 	saves.clear();
 	currgame = -1;
-	game = new gamedata();
+	if (game)
+		game->Clear();
+	else
+		game = new gamedata();
 }
 
 static bool load_from_save_file(ReadMode read_mode, fs::path filename, std::vector<save_t>& out_saves, std::string& err)
@@ -1840,7 +1883,9 @@ static bool load_from_save_file_expect_one(ReadMode read_mode, fs::path path, sa
 		return false;
 	}
 
+	auto old_index = out_save.index;
 	out_save = std::move(saves[0]);
+	out_save.index = old_index;
 	out_save.path = path;
 	return true;
 }
@@ -2142,7 +2187,7 @@ static void update_icon(save_t* save)
 	int32_t ring = 0;
 	if (maxringid != -1)
 	{
-		ring = itemsbuf[maxringid].fam_type;
+		ring = itemsbuf[maxringid].level;
 	}
 	if (ring > 0) --ring;
 	int32_t i = ring;
@@ -2360,6 +2405,26 @@ int32_t saves_count()
 int32_t saves_current_selection()
 {
 	return currgame;
+}
+
+std::string saves_current_path()
+{
+	if (currgame == -1)
+		return "";
+
+	return saves[currgame].path.string();
+}
+
+int saves_find_index(std::string path)
+{
+	for (int i = 0; i < saves.size(); i++)
+	{
+		auto& save = saves[i];
+		if (save.path == path)
+			return i;
+	}
+
+	return -1;
 }
 
 bool saves_is_slot_loaded(int32_t index, bool full_data)

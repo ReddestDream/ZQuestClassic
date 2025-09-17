@@ -16,16 +16,17 @@ item::~item()
 {
 	if (dummy)
 		return;
-	// TODO: we should have an item manager class in zc and manage lifetime explicitly, not via dtors.
+
 #ifndef IS_EDITOR
-	if(itemsbuf[id].family==itype_fairy && itemsbuf[id].misc3>0 && misc>0 && (!get_qr(qr_OLD_FAIRY_LIMIT) || replay_version_check(28)))
+	if(itemsbuf[id].type==itype_fairy && itemsbuf[id].misc3>0 && misc>0 && (!get_qr(qr_OLD_FAIRY_LIMIT) || replay_version_check(28)))
 		killfairynew(*this);
-	FFCore.destroyScriptableObject(ScriptType::ItemSprite, getUID());
+	FFCore.destroySprite(this);
 #endif
 }
 
 bool item::animate(int32_t)
 {
+	update_current_screen();
 	if(switch_hooked)
 	{
 		solid_update(false);
@@ -35,7 +36,7 @@ bool item::animate(int32_t)
 	{
 		if(fallclk > 0)
 		{
-			if(fallclk == PITFALL_FALL_FRAMES && fallCombo) sfx(combobuf[fallCombo].attribytes[0], pan(x.getInt()));
+			if(fallclk == PITFALL_FALL_FRAMES && fallCombo) sfx(combobuf[fallCombo].attribytes[0], pan(x));
 			if(!--fallclk) return true;
 			
 			wpndata& spr = wpnsbuf[QMisc.sprites[sprFALL]];
@@ -50,7 +51,7 @@ bool item::animate(int32_t)
 		}
 		if(drownclk > 0)
 		{
-			//if(drownclk == WATER_DROWN_FRAMES && drownCombo) sfx(combobuf[fallCombo].attribytes[0], pan(x.getInt()));
+			//if(drownclk == WATER_DROWN_FRAMES && drownCombo) sfx(combobuf[fallCombo].attribytes[0], pan(x));
 			//!TODO: Drown SFX
 			if(!--drownclk) return true;
 			
@@ -66,6 +67,7 @@ bool item::animate(int32_t)
 			return false;
 		}
 #ifndef IS_EDITOR
+		handle_termv();
 		if(isSideViewGravity() && !subscreenItem)
 		{
 			if((
@@ -77,7 +79,22 @@ bool item::animate(int32_t)
 				( moveflags & move_obeys_grav ) //if the user set item->Gravity = false, let it float. -Z
 			)
 			{
-				item_fall(x, y, fall);
+				if (!get_qr(qr_ITEMS_IGNORE_SIDEVIEW_PLATFORMS) && checkSVLadderPlatform(x + 4, y + (fall / 100) + 15))
+				{
+					y += fall / 100;
+					y -= int32_t(y) % 16; //Fix to top of ladder
+					fall = 0;
+				}
+				else
+				{
+					y += fall / 100;
+
+					if ((fall / 100) == 0 && fall > 0)
+						fall *= (fall > 0 ? 2 : 0.5); // That oughta do something about the floatiness.
+
+					if (fall <= get_terminalv_fall())
+						fall += get_grav_fall();
+				}
 			}
 			else if(!can_drop(x,y) && !(pickup & ipDUMMY) && !(pickup & ipCHECK))
 			{
@@ -103,14 +120,14 @@ bool item::animate(int32_t)
 						fakez = 0;
 						fakefall = -fakefall/2;
 					}
-					else if(fakez <= 1 && abs(fakefall) < (int32_t)(zinit.gravity / 100))
+					else if(fakez <= 1 && abs(fakefall) < get_grav_fall())
 					{
 						fakez=0;
 						fakefall=0;
 					}
-					else if(fakefall <= (int32_t)zinit.terminalv)
+					else if(fakefall <= get_terminalv_fall())
 					{
-						fakefall += (zinit.gravity / 100);
+						fakefall += get_grav_fall();
 					}
 				}
 				if (!(moveflags & move_no_real_z))
@@ -122,31 +139,27 @@ bool item::animate(int32_t)
 						z = 0;
 						fall = -fall/2;
 					}
-					else if(z <= 1 && abs(fall) < (int32_t)(zinit.gravity / 100))
+					else if(z <= 1 && abs(fall) < get_grav_fall())
 					{
 						z=0;
 						fall=0;
 					}
-					else if(fall <= (int32_t)zinit.terminalv)
+					else if(fall <= get_terminalv_fall())
 					{
-						fall += (zinit.gravity / 100);
+						fall += get_grav_fall();
 					}
 				}
 			}
-			if ( moveflags & move_can_pitfall )
-			{
-				if(!subscreenItem && !force_grab && !is_dragged && z <= 0 && fakez <= 0 && !(pickup & ipDUMMY) && !(pickup & ipCHECK) && itemsbuf[id].family!=itype_fairy)
-				{
+		}
+		handle_termv();
+		if (!subscreenItem && !force_grab && !is_dragged && z <= 0 && fakez <= 0 && !(pickup & ipDUMMY) && !(pickup & ipCHECK) && itemsbuf[id].type != itype_fairy)
+		{
+			if (!isSideViewGravity())
+				if (moveflags & move_can_pitfall)
 					fallCombo = check_pits();
-				}
-			}
-			if ( moveflags & move_can_waterdrown )
-			{
-				if(!subscreenItem && !force_grab && !is_dragged && z <= 0 && fakez <= 0 && !(pickup & ipDUMMY) && !(pickup & ipCHECK) && itemsbuf[id].family!=itype_fairy)
-				{
+			if (!(isSideViewGravity() && get_qr(qr_OLD_SPRITE_FALL_DROWN)))
+				if (moveflags & move_can_waterdrown)
 					drownCombo = check_water();
-				}
-			}
 		}
 #endif
 	}
@@ -165,7 +178,7 @@ bool item::animate(int32_t)
 	}
 	
 	itemdata const* itm = &itemsbuf[id];
-	if(itm->family == itype_progressive_itm)
+	if(itm->type == itype_progressive_itm)
 	{
 		int32_t id2 = get_progressive_item(id);
 		if(unsigned(id2) >= MAXITEMS)
@@ -195,7 +208,7 @@ bool item::animate(int32_t)
 		}
 	}
 	
-	if(do_animation && ((get_qr(qr_0AFRAME_ITEMS_IGNORE_AFRAME_CHANGES) ? (anim) : (frames>0)) || itm->family==itype_bottle))
+	if(do_animation && ((get_qr(qr_0AFRAME_ITEMS_IGNORE_AFRAME_CHANGES) ? (anim) : (frames>0)) || itm->type==itype_bottle))
 	{
 		int32_t spd = o_speed;
 		
@@ -226,7 +239,7 @@ bool item::animate(int32_t)
 			tile = o_tile + aframe;
 #ifndef IS_EDITOR
 		//Bottles offset based on their slot's fill
-		if(itm->family == itype_bottle)
+		if(itm->type == itype_bottle)
 		{
 			int32_t slot = itm->misc1;
 			size_t btype = game->get_bottle_slot(slot);
@@ -244,45 +257,66 @@ bool item::animate(int32_t)
 	}
 	
 #ifndef IS_EDITOR
-	if(itemsbuf[id].family == itype_fairy && itemsbuf[id].misc3)
+	if(itemsbuf[id].type == itype_fairy && itemsbuf[id].misc3)
 	{
 		movefairynew(x,y,*this);
 	}
 #endif
 	
+	if ((z > 0 || fakez > 0) && get_qr(qr_ITEMSHADOWS) && !get_qr(qr_CLASSIC_DRAWING_ORDER))
+		shadowtile = wpnsbuf[spr_shadow].tile+aframe;
 	if(fadeclk==0 && !subscreenItem)
 	{
 		return true;
 	}
 	
 	if(pickup&ipTIMER)
-	{
-		if(++clk2 == 512)
-		{
+		if(++clk2 == game->get_item_timeout_dur())
 			return true;
-		}
-	}
 	
 	return false;
 }
 
 void item::draw(BITMAP *dest)
 {
-	if(pickup&ipNODRAW || tile==0 || force_grab)
+	if((pickup&ipNODRAW) || tile==0 || force_grab)
 		return;
-		
-	if ( (z > 0 || fakez > 0) && get_qr(qr_ITEMSHADOWS) )
+	
+	if ( (z > 0 || fakez > 0) && get_qr(qr_ITEMSHADOWS) && get_qr(qr_CLASSIC_DRAWING_ORDER))
 	{
 		shadowtile = wpnsbuf[spr_shadow].tile+aframe;
 		sprite::drawshadow(dest,get_qr(qr_TRANSSHADOWS) != 0);
 	}
-	if(!(pickup&ipFADE) || fadeclk<0 || fadeclk&1 || fallclk || drownclk)
+	bool ignore_flicker = fallclk || drownclk;
+	if (!ignore_flicker)
 	{
-		if(clk2>32 || (clk2&2)==0 || itemsbuf[id].family == itype_fairy || fallclk || drownclk)
+		if ((pickup & ipFADE) && fadeclk >= 0 && !(fadeclk & 1))
+			return; // flicker for ipFADE
+#ifdef IS_PLAYER
+		if (clk2 % (game->get_item_flicker_speed() * 2) >= game->get_item_flicker_speed())
 		{
-			sprite::draw(dest);
+			if (clk2 <= game->get_item_spawn_flicker() && itemsbuf[id].type != itype_fairy)
+				return; // flicker for items spawning in
+			if ((pickup & ipTIMER) && clk2 >= (game->get_item_timeout_dur() - game->get_item_timeout_flicker()))
+				return; // flicker for timeout items before vanishing
 		}
+#endif
 	}
+	sprite::draw(dest);
+}
+
+bool item::can_drawshadow() const
+{
+	if((pickup&ipNODRAW) || tile==0 || force_grab)
+		return false;
+	return (z > 0 || fakez > 0) && get_qr(qr_ITEMSHADOWS);
+}
+
+void item::drawshadow(BITMAP* dest, bool translucent)
+{
+	if (!can_drawshadow() || get_qr(qr_CLASSIC_DRAWING_ORDER))
+		return;
+	sprite::drawshadow(dest, translucent);
 }
 
 void item::draw_hitbox()
@@ -324,11 +358,11 @@ item::item(zfix X,zfix Y,zfix Z,int32_t i,int32_t p,int32_t c, bool isDummy) : s
 	o_delay = itm.delay;
 	frames = itm.frames;
 	flip = itm.misc_flags>>2;
-	family = itm.family;
-	lvl = itm.fam_type;
+	type = itm.type;
+	lvl = itm.level;
 	pstring = itm.pstring;
 	pickup_string_flags = itm.pickup_string_flags;
-	linked_parent = family == itype_progressive_itm ? -1 : 0;
+	linked_parent = type == itype_progressive_itm ? -1 : 0;
 	moveflags = itm.moveflags;
 	for ( int32_t q = 0; q < 8; q++ ) initD[q] = itm.initiald[q];
 	
@@ -380,7 +414,7 @@ item::item(zfix X,zfix Y,zfix Z,int32_t i,int32_t p,int32_t c, bool isDummy) : s
 		hit_height=12;
 	}
 	
-	if(!isDummy && itm.family == itype_fairy && itm.misc3)
+	if(!isDummy && itm.type == itype_fairy && itm.misc3)
 	{
 		misc = ++fairy_cnt;
 #ifndef IS_EDITOR
@@ -445,7 +479,7 @@ void item::load_gfx(itemdata const& itm)
 	flip = itm.misc_flags>>2;
 	anim = itm.frames>0;
 	aframe = aclk = 0;
-	if(do_animation && ((get_qr(qr_0AFRAME_ITEMS_IGNORE_AFRAME_CHANGES) ? (anim) : (frames>0))||itm.family==itype_bottle))
+	if(do_animation && ((get_qr(qr_0AFRAME_ITEMS_IGNORE_AFRAME_CHANGES) ? (anim) : (frames>0))||itm.type==itype_bottle))
 	{
 		int32_t spd = o_speed;
 		
@@ -480,7 +514,7 @@ void item::load_gfx(itemdata const& itm)
 			tile = o_tile + aframe;
 #ifndef IS_EDITOR
 		//Bottles offset based on their slot's fill
-		if(itm.family == itype_bottle)
+		if(itm.type == itype_bottle)
 		{
 			int32_t slot = itm.misc1;
 			size_t btype = game->get_bottle_slot(slot);
@@ -525,7 +559,7 @@ static void _check_itembundle_recursive(int32_t itmid, prog_item_data& data)
 		return;
 	}
 	itemdata const& itm = itemsbuf[itmid];
-	if(itm.family != itype_itmbundle)
+	if(itm.type != itype_itmbundle)
 	{
 		assert(false);
 		return;
@@ -538,7 +572,7 @@ static void _check_itembundle_recursive(int32_t itmid, prog_item_data& data)
 		if(unsigned(id) >= MAXITEMS)
 			continue;
 		itemdata const& targItem = itemsbuf[id];
-		if(targItem.family == itype_itmbundle)
+		if(targItem.type == itype_itmbundle)
 		{
 			prog_item_data subdata = data.make_child();
 			_check_itembundle_recursive(id, subdata);
@@ -549,7 +583,7 @@ static void _check_itembundle_recursive(int32_t itmid, prog_item_data& data)
 				break;
 			}
 		}
-		else if (targItem.family == itype_progressive_itm)
+		else if (targItem.type == itype_progressive_itm)
 		{
 			prog_item_data subdata = data.make_child();
 			_get_progressive_item(id, subdata);
@@ -599,7 +633,7 @@ static void _get_progressive_item(int32_t itmid, prog_item_data& data)
 		if(targItem.setmax > 0) //Increases a counter
 			if(game->get_maxcounter(targItem.count) >= targItem.max) //...but can't
 				continue;
-		if(targItem.family == itype_heartpiece)
+		if(targItem.type == itype_heartpiece)
 		{
 			int32_t hcid = heart_container_id();
 			if(hcid < 0) continue;
@@ -608,7 +642,7 @@ static void _get_progressive_item(int32_t itmid, prog_item_data& data)
 				if(game->get_maxcounter(hcitem.count) >= hcitem.max)
 					continue;
 		}
-		else if (targItem.family == itype_progressive_itm)
+		else if (targItem.type == itype_progressive_itm)
 		{
 			prog_item_data subdata = data.make_child();
 			_get_progressive_item(id, subdata);
@@ -627,7 +661,7 @@ static void _get_progressive_item(int32_t itmid, prog_item_data& data)
 			}
 			else continue;
 		}
-		else if (targItem.family == itype_itmbundle)
+		else if (targItem.type == itype_itmbundle)
 		{
 			prog_item_data subdata = data.make_child();
 			_check_itembundle_recursive(id, subdata);
@@ -767,14 +801,14 @@ void putitem3(BITMAP *dest,int32_t x,int32_t y,int32_t item_id, int32_t clk)
 int32_t getItemFamily(itemdata* items, int32_t item)
 {
 	if(item < 0) return -1;
-	return items[item&0xFF].family;
+	return items[item&0xFF].type;
 }
 
 void removeItemsOfFamily(gamedata *g, itemdata *items, int32_t family)
 {
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(items[i].family == family)
+		if(items[i].type == family)
 		{
 			g->set_item_no_flush(i,false);
 			if ( game->forced_bwpn == i ) 
@@ -802,7 +836,7 @@ void removeLowerLevelItemsOfFamily(gamedata *g, itemdata *items, int32_t family,
 {
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(items[i].family == family && items[i].fam_type < level)
+		if(items[i].type == family && items[i].level < level)
 		{
 			g->set_item_no_flush(i, false);
 			if ( game->forced_bwpn == i ) 
@@ -830,7 +864,7 @@ void removeItemsOfFamily(zinitdata *z, itemdata *items, int32_t family)
 {
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(items[i].family == family)
+		if(items[i].type == family)
 		{
 			z->set_item(i,false);
 			if ( game->forced_bwpn == i ) 
@@ -860,11 +894,11 @@ int32_t getHighestLevelOfFamily(zinitdata *source, itemdata *items, int32_t fami
 	
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(items[i].family == family && source->get_item(i))
+		if(items[i].type == family && source->get_item(i))
 		{
-			if(items[i].fam_type >= highestlevel)
+			if(items[i].level >= highestlevel)
 			{
-				highestlevel = items[i].fam_type;
+				highestlevel = items[i].level;
 				result=i;
 			}
 		}
@@ -880,11 +914,11 @@ int32_t getHighestLevelOfFamily(gamedata *source, itemdata *items, int32_t famil
 	
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(items[i].family == family && source->get_item(i) && (checkenabled?(!(source->items_off[i])):1))
+		if(items[i].type == family && source->get_item(i) && (checkenabled?(!(source->items_off[i])):1))
 		{
-			if(items[i].fam_type >= highestlevel)
+			if(items[i].level >= highestlevel)
 			{
-				highestlevel = items[i].fam_type;
+				highestlevel = items[i].level;
 				result=i;
 			}
 		}
@@ -900,11 +934,11 @@ int32_t getHighestLevelEvenUnowned(itemdata *items, int32_t family)
 	
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(items[i].family == family)
+		if(items[i].type == family)
 		{
-			if(items[i].fam_type >= highestlevel)
+			if(items[i].level >= highestlevel)
 			{
-				highestlevel = items[i].fam_type;
+				highestlevel = items[i].level;
 				result=i;
 			}
 		}
@@ -919,7 +953,7 @@ int32_t getItemID(itemdata *items, int32_t family, int32_t level)
 	
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(items[i].family == family && items[i].fam_type == level)
+		if(items[i].type == family && items[i].level == level)
 			return i;
 	}
 	
@@ -930,7 +964,7 @@ int32_t getItemIDPower(itemdata *items, int32_t family, int32_t power)
 {
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(items[i].family == family && items[i].power == power)
+		if(items[i].type == family && items[i].power == power)
 			return i;
 	}
 	
@@ -945,9 +979,9 @@ int32_t getCanonicalItemID(itemdata *items, int32_t family)
 	
 	for(int32_t i=0; i<MAXITEMS; i++)
 	{
-		if(items[i].family == family && (items[i].fam_type < lowestlevel || lowestlevel == -1))
+		if(items[i].type == family && (items[i].level < lowestlevel || lowestlevel == -1))
 		{
-			lowestlevel = items[i].fam_type;
+			lowestlevel = items[i].level;
 			lowestid = i;
 		}
 	}
@@ -1039,7 +1073,7 @@ std::string itemdata::get_name(bool init, bool plain) const
 		if(repl_pos != std::string::npos)
 		{
 			std::string arg;
-			switch(family)
+			switch(type)
 			{
 				case itype_bottle:
 					if(init)
@@ -1079,7 +1113,7 @@ std::string itemdata::get_name(bool init, bool plain) const
 		if(!plain)
 		{
 			std::string overname;
-			switch(family)
+			switch(type)
 			{
 				case itype_arrow:
 				{
@@ -1111,12 +1145,12 @@ void itemdata::advpaste(itemdata const& other, bitstring const& pasteflags)
 	if(pasteflags.get(ITM_ADVP_DISP_NAME))
 		strcpy(display_name, other.display_name);
 	if(pasteflags.get(ITM_ADVP_ITMCLASS))
-		family = other.family;
+		type = other.type;
 	if(pasteflags.get(ITM_ADVP_EQUIPMENTITM))
 		CPYFLAG(flags, item_gamedata, other.flags);
 	if(pasteflags.get(ITM_ADVP_ATTRIBS))
 	{
-		fam_type = other.fam_type;
+		level = other.level;
 		power = other.power;
 		misc1 = other.misc1;
 		misc2 = other.misc2;
@@ -1260,5 +1294,52 @@ void itemdata::advpaste(itemdata const& other, bitstring const& pasteflags)
 		for(int q = 0; q < 8; ++q)
 			weap_data.initd[q] = other.weap_data.initd[q];
 	}
+}
+
+static void apply_cooldown_ring(cooldown_data& data)
+{
+	auto cooldown_ring_id = current_item_id(itype_cooldown_ring, true);
+	if (unsigned(cooldown_ring_id) >= MAXITEMS)
+		return;
+	if (!checkmagiccost(cooldown_ring_id) || !checkbunny(cooldown_ring_id))
+		return;
+	itemdata const& cdring = itemsbuf[cooldown_ring_id];
+	if (!data.max_cooldown && !(cdring.flags & item_flag1))
+		return; // don't affect items already at 0 cooldown unless flag is set
+	zfix max_cd = data.max_cooldown;
+	max_cd += cdring.misc1;
+	max_cd *= cdring.misc2;
+	max_cd /= cdring.misc3;
+	max_cd.doMax(0); // no negatives
+	max_cd += cdring.misc4;
+	
+	int new_cd = max_cd.doMax(0).getCeil(); // no negatives
+	if (data.max_cooldown == new_cd) // didn't change at all
+		return;
+	if (cdring.flags & item_flag2) // strictly decrease
+		if (new_cd >= data.max_cooldown)
+			return;
+	if (cdring.flags & item_flag3) // strictly increase
+		if (new_cd <= data.max_cooldown)
+			return;
+	
+	data.max_cooldown = new_cd;
+	data.cooldown_ring_id = cooldown_ring_id; // store the ID to maybe pay magic cost later
+}
+cooldown_data calc_item_cooldown(int item_id)
+{
+	if (unsigned(item_id) >= MAXITEMS)
+		return {};
+	cooldown_data data;
+	
+	data.max_cooldown = data.base_cooldown = itemsbuf[item_id].cooldown;
+	apply_cooldown_ring(data);
+	
+#ifdef IS_PLAYER
+	data.cooldown = Hero.item_cooldown[item_id];
+#else
+	data.cooldown = data.max_cooldown - (subscr_item_clk % (data.max_cooldown+1));
+#endif
+	return data;
 }
 

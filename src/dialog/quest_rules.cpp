@@ -86,6 +86,22 @@ std::string const& getTagName(int32_t ruletype)
 
 static GUI::ListData animRulesList
 {
+	{ "Classic Drawing Order", qr_CLASSIC_DRAWING_ORDER,
+		"When enabled, uses the classic drawing order code."
+		" When disabled, uses the newer drawing code, which has several effects:"
+		"\n- 'Negative' layers draw in the proper order (-3 is behind -2)"
+		"\n- Scripts can draw to layers '-1' through '-7' to draw in the BG"
+		"\n- Sprites (enemies, weapons, player, etc) are drawn in their Z-order."
+		" This means that higher enemies will be drawn above lower enemies."
+		"\n- Several special script 'layer timings', notably sprite related ones"
+		" such as 'SPLAYER_LWEAP_ABOVE_DRAW', will no longer be used, as said"
+		" 'timings' don't exist anymore." },
+	{ "Y-Sort Sprites", qr_YSORT_SPRITES,
+		"Requires 'Classic Drawing Order' be disabled."
+		"\nWhen enabled, sprites which share the same Z coordinate will additionally"
+		" have their draws ordered by their Y-value, such that sprites lower on the"
+		" screen (higher Y values) are drawn over sprites higher on the screen."
+		+ QRHINT({qr_CLASSIC_DRAWING_ORDER}) },
 	{ "BS-Zelda Animation Quirks", qr_BSZELDA, 
 		"Affects a number of small miscellaneous stuff to make Z1 more"
 		" accurate to BS Zelda. Guy fires have their positions adjusted,"
@@ -173,24 +189,24 @@ static GUI::ListData animRulesList
 		" If enabled, the Hero's Shadow and Enemy Shadows only draw every other frame."
 		" Items and Weapons are not affected by this."},
 	{ "CSet 1 is level-specific", qr_CSET1_LEVEL,
-		" If enabled, CSet 1 becomes level dependent, allowing you to"
+		"If enabled, CSet 1 becomes level dependent, allowing you to"
 		" change it by changing the current palette."
-		" \nIf disabled, CSet 1 will use the Main Palette, and will remain static"
+		"\nIf disabled, CSet 1 will use the Main Palette, and will remain static"
 		" unless modified via script."},
 	{ "CSet 5 is level-specific", qr_CSET5_LEVEL,
-		" If enabled, CSet 5 becomes level dependent, allowing you to"
+		"If enabled, CSet 5 becomes level dependent, allowing you to"
 		" change it by changing the current palette."
-		" \nIf disabled, CSet 5 will use the Main Palette, and will remain static"
+		"\nIf disabled, CSet 5 will use the Main Palette, and will remain static"
 		" unless modified via script."},
 	{ "CSet 7 is level-specific", qr_CSET7_LEVEL,
-		" If enabled, CSet 7 becomes level dependent, allowing you to"
+		"If enabled, CSet 7 becomes level dependent, allowing you to"
 		" change it by changing the current palette."
-		" \nIf disabled, CSet 7 will use the Main Palette, and will remain static"
+		"\nIf disabled, CSet 7 will use the Main Palette, and will remain static"
 		" unless modified via script."},
 	{ "CSet 8 is level-specific", qr_CSET8_LEVEL,
-		" If enabled, CSet 8 becomes level dependent, allowing you to"
+		"If enabled, CSet 8 becomes level dependent, allowing you to"
 		" change it by changing the current palette."
-		" \nIf disabled, CSet 8 will use the Main Palette, and will remain static"
+		"\nIf disabled, CSet 8 will use the Main Palette, and will remain static"
 		" unless modified via script."},
 	{ "Fade CSet 1", qr_FADECS1, 
 		"When enabled, CSet 1 will also fade when in dark rooms or when scrolling."
@@ -356,6 +372,8 @@ static GUI::ListData comboRulesList
 	{ "Custom Combos Work On All Layers", qr_CUSTOMCOMBOS_EVERY_LAYER, 
 		"If enabled, all layers will also be checked for custom"
 		" triggers ('Triggers' tab in the Combo Editor). Only affects weapon trigger types."},
+	{ "Armos/Grave combo types work on layers", qr_ARMOS_GRAVE_ON_LAYERS,
+		"If enabled, armos and grave combos will work on layers."},
 	{ "Slash Combos Work On Layers 1 And 2", qr_BUSHESONLAYERS1AND2,
 		"If enabled, Bushes, Flowers, Tall Grass, Generic Combos, and"
 		" etc will work on Layers 1 and 2."},
@@ -800,7 +818,7 @@ static GUI::ListData compatRulesList
 	{ "Old Bridge Combo Behavior", qr_OLD_BRIDGE_COMBOS, 
 		"If enabled, Bridge Combos use the solidity box instead of the effects square to determine"
 		" what sections the bridge covers. Solid portions will use the solidity of what is beneath"
-		" it, while walkable portions will be walkable regardless of what is beneath it. \nIf disabled,"
+		" it, while walkable portions will be walkable regardless of what is beneath it.\nIf disabled,"
 		" the bridge will use the effects square to determine what parts should cover the below segments,"
 		" regardless of whether it's solid or not."},
 	{ "Broken Z3 Animation", qr_BROKEN_Z3_ANIMATION,
@@ -827,7 +845,7 @@ static GUI::ListData compatRulesList
 	{ "Broken DrawScreen Derivative Functions", qr_BROKEN_DRAWSCREEN_FUNCTIONS,
 		"If enabled, DrawScreenSolid, DrawScreenSolidity, DrawScreenComboFlags, DrawScreenComboIFlags,"
 		" and DrawScreenComboTypes will have broken draws if a screen has layers enabled."
-		" \nIf disabled, these functions will not break if a layer exists on the source screen. Note that only"
+		"\nIf disabled, these functions will not break if a layer exists on the source screen. Note that only"
 		" DrawScreenSolid works properly with layers; the other functions will otherwise only take Layer 0"
 		" of the source screen."},
 	{ "Scrolling Cancels Charge", qr_SCROLLING_KILLS_CHARGE,
@@ -836,7 +854,7 @@ static GUI::ListData compatRulesList
 	{ "Broken Enemy Item Carrying", qr_BROKEN_ITEM_CARRYING,
 		"If enabled, enemies will use the topleft corner of their tile as their item carry position when carrying an item,"
 		" which might look off with large enemies. They will also not pass their Z value onto the item."
-		" \nIf disabled, they will use the same position as their item drop position, and will carry the item into the Z axis." },
+		"\nIf disabled, they will use the same position as their item drop position, and will carry the item into the Z axis." },
 	{ "Custom Weapon / Ice Rod Bugged Cost", qr_CUSTOMWEAPON_IGNORE_COST,
 		"Custom Weapon and Ice Rod itemclasses will not charge the use cost set"
 		" in the item editor if this is enabled." },
@@ -1010,6 +1028,26 @@ static GUI::ListData compatRulesList
 	{ "Weapons that break on solids use imprecise hitbox", qr_IMPRECISE_WEAPON_SOLIDITY_CHECKS,
 		"If checked, weapons use a hardcoded hitbox for weapon collisions, instead of their"
 		" actual set hitbox." },
+	{ "Pitfall BlockHoles use wrong Next combo", qr_BROKEN_BLOCKHOLE_PITFALLS,
+		"If checked, Block Hole flags placed on Pitfalls will use the next combo of"
+		" the pitfall (if the pitfall and block are on the same layer)."
+		" If unchecked, it will use the next combo of the block as usual." },
+	{ "'Custom Weapon's ignore size flags", qr_CUSTOM_WEAPON_BROKEN_SIZE,
+		"If checked, Custom Weapons will not properly set their Extend value, causing changes"
+		" to tile width/height to not visually appear." },
+	{ "Old Weapon Reflection", qr_OLD_WEAPON_REFLECTION,
+		"If checked, some weapon types will not be reflected by mirror/prism combos, regardless of"
+		" the 'Reflect Flags' of the combos." },
+	{ "Old Non-Player Falling/Drowning", qr_OLD_SPRITE_FALL_DROWN,
+		"If checked, enemies, weapons, and items will fall/drown using a hardcoded 16x16 hitbox instead of"
+		" their actual hitbox, and enemies/items will not drown in sideview." },
+	{ "Old Terminal Velocity", qr_OLD_TERMINAL_VELOCITY,
+		"If enabled, terminal velocity is not applied as an absolute max speed." },
+	{ "Broken Armos/Graves with Large Hitbox Player", qr_BROKEN_ARMOS_GRAVE_BIGHITBOX_COLLISION,
+		"If enabled, and 'Large Hitbox' for the Player is enabled, armos/graves will not activate"
+		" from below, and will only activate from the sides if you are near their top side." },
+	{ "Old Weapon Animate Timings", qr_OLD_WEAPON_DRAW_ANIMATE_TIMING,
+		"If enabled, weapons animate when they are drawn (instead of when they are processed); and they draw their shadow during their own draw, instead of separately." },
 };
 
 static GUI::ListData enemiesRulesList
@@ -1106,7 +1144,7 @@ static GUI::ListData enemiesRulesList
 		" 0 enemies alive on the screen, or if you left and re-entered the map."},
 	{ "Enemy Drops use Hitbox for Position", qr_ENEMY_DROPS_USE_HITOFFSETS,
 		"If enabled, enemies will drop their dropset item at the center of their hitbox."
-		" \nIf disabled, they will drop their item at the center of their tile."},
+		"\nIf disabled, they will drop their item at the center of their tile."},
 	{ "Quake Hammer Stuns Leevers", qr_QUAKE_STUNS_LEEVERS,
 		"If enabled, Quake Hammer can stun Leevers. This barely does anything if 'Leever's Still"
 		" Submerge If Stunned' is enabled."},
@@ -1188,7 +1226,7 @@ static GUI::ListData itemRulesList
 		"If enabled, running out of ammo will not remove relevant items from the subscreen."
 		" For example, running out of bombs will not remove the Bomb item from your inventory,"
 		" and running out of Arrows will not remove the Bow and Arrow from your inventory."
-		" \nOtherwise, if disabled, they will be hidden from your inventory and be unselectable"
+		"\nOtherwise, if disabled, they will be hidden from your inventory and be unselectable"
 		" if you run out of ammo, until you get more ammo for it."},
 	{ "'Keep Lower Level Items' applies retroactively", qr_KEEPOLD_APPLIES_RETROACTIVELY,
 		"If enabled, then when you have a higher-level item which does not"
@@ -1214,7 +1252,7 @@ static GUI::ListData miscRulesList
 	{ "Messages Disappear", qr_MSGDISAPPEAR,
 		"If enabled, messages will disappear if their next string is '0'. This also has the side effect"
 		" of removing the barrier Guys put across the top of the screen, with the exception of 'Feed"
-		" the Goriya' rooms, which will still have this barrier. \nIf this rule is disabled, the current"
+		" the Goriya' rooms, which will still have this barrier.\nIf this rule is disabled, the current"
 		" message will remain onscreen whenever the next string is '0', until an item is picked up."
 		" Note that while picking up an item removes the string, it may not remove the Guy Barrier"
 		" depending on whether or not 'Items Disappear During Hold-Up' is checked and depending on"
@@ -1284,7 +1322,7 @@ static GUI::ListData miscRulesList
 		" 500 rupees and you buy a 300 rupee item, you'd normally be left with 200 rupees;"
 		" but if the Hero is fast enough, they can buy an item with their still-draining"
 		" money, possibly buying an item worth more than the 200 rupees they'd be left with."
-		" \nIf disabled, shops will check both your rupee count and your rupee drain amount to"
+		"\nIf disabled, shops will check both your rupee count and your rupee drain amount to"
 		" make sure you can afford whatever the Hero is buying."},
 	{ "Triforce in Cellar Warps Hero Out", qr_SIDEVIEWTRIFORCECELLAR,
 		"If enabled, the Triforce can warp you out of passageways if 'Side Warp Out' is checked on"
@@ -1462,7 +1500,7 @@ static GUI::ListData nesfixesRulesList
 		" you buy one."},
 	{ "Expanded Hero Tile Modifiers", qr_EXPANDEDLTM,
 		"If enabled, Hero Tile Modifiers from items (such as shields) will always be applied to the Hero."
-		" \nIf disabled, they will only be applied if the Hero is walking or standing (either on land or while"
+		"\nIf disabled, they will only be applied if the Hero is walking or standing (either on land or while"
 		" sideswimming), and only if the Hero is not facing up."},
 };
 
@@ -1470,12 +1508,12 @@ static GUI::ListData playerRulesList
 {
 	{ "Diagonal Movement", qr_LTTPWALK,
 		"If enabled, disables the built in Hero gridlock, and allows the Hero to move diagonally."
-		" \nDiagonal Movement also uses different logic for determining how many pixels the Hero should"
+		"\nDiagonal Movement also uses different logic for determining how many pixels the Hero should"
 		" move from  non-Diagonal Movement (or '4-way Movement', from here out) when 'New Hero Movement'"
 		" is disabled; 4-way Movement gives a different step speed depending on the Hero's current X/Y"
 		" position, usually averaging out to 1.3333 pixels of movement per frame; while Diagonal Movement"
 		" alternates between 1 and 2 pixels every frame, averaging out to 1.5 pixels of movement per frame."
-		" \nIf 'New Hero Movement' is enabled, there is no speed difference between 4-Way Movement and"
+		"\nIf 'New Hero Movement' is enabled, there is no speed difference between 4-Way Movement and"
 		" Diagonal Movement, as the Hero's position and speed use decimal precision."},
 	{ "Large Hitbox", qr_LTTPCOLLISION,
 		"If enabled, the Hero's walking hitbox is changed from 16x8 (the bottom half of the Hero's sprite)"
@@ -1492,7 +1530,12 @@ static GUI::ListData playerRulesList
 		"If enabled, disables the built in Hero gridlock. This does not allow the Hero to move diagonally,"
 		" but it does allow them to change direction when not aligned with the 8x8 pixel grid."},
 	{ "Invincible Hero Flickers", qr_HEROFLICKER,
-		"If enabled, the Hero will flicker when invincible or after taking damage instead of flashing colors."}
+		"If enabled, the Hero will flicker when invincible or after taking damage instead of flashing colors." },
+	{ "Improved Player Jump/Fall Animation", qr_BETTER_PLAYER_JUMP_ANIM,
+		"If enabled, the Player's jump/fall animation will play at a consistent speed without pausing, and will"
+		" loop instead of overflowing into the walking animation." },
+	{ "Player Draws Under Layer 1 While Diving", qr_HERO_DIVE_UNDER_LAYER_1,
+		"If enabled, the Player will be drawn under layer 1 while diving." },
 };
 
 static GUI::ListData subscrRulesList
@@ -1551,7 +1594,7 @@ static GUI::ListData weaponsRulesList
 		"If enabled, Prisms will reflect and duplicate angular weapons, creating new weapons at"
 		" angles perpendicular to the angle of the original weapon. If disabled, they will reflect"
 		" at regular directions instead of at angles."
-		" \nNote that this behavior is broken and undefined if ''Prisms Reflect Angular Weapons' Uses Broken Logic' is checked."},
+		"\nNote that this behavior is broken and undefined if ''Prisms Reflect Angular Weapons' Uses Broken Logic' is checked."},
 	{ "Mirrors Use Weapon Center for Collision", qr_MIRRORS_USE_WEAPON_CENTER,
 		"If enabled, mirror/prism combos activate when the center of a weapon hits them,"
 		" instead of when the edge hits them." },
@@ -1606,11 +1649,11 @@ static GUI::ListData weaponsRulesList
 	//should maybe keep these last
 	{ "Scripted and Enemy Boomerangs Have Corrected, Non-Hardcoded Animation", qr_CORRECTED_EW_BRANG_ANIM,
 		"If enabled, Script-created and Enemy-created boomerangs use the same animation as other weapons."
-		" \nIf disabled, they will use one of two hardcoded animations depending on whether or not 'BS-Zelda"
-		" Animation Quirks' is checked or not. \nIf 'BS-Zelda Animation Quirks' is enabled, it will use one"
+		"\nIf disabled, they will use one of two hardcoded animations depending on whether or not 'BS-Zelda"
+		" Animation Quirks' is checked or not.\nIf 'BS-Zelda Animation Quirks' is enabled, it will use one"
 		" tile and just flip it, with it alternating between no flip (flip of 0), vertical flip (flip of 2),"
 		" vertical and horizontal flip (flip of 3), and lastly horizontal flip (flip of 1); alternating every"
-		" 4 frames through 4 different flips for an animation that lasts 16 frames. \nIf 'BS-Zelda Animation "
+		" 4 frames through 4 different flips for an animation that lasts 16 frames.\nIf 'BS-Zelda Animation "
 		" Quirks' is disabled, it will use a combination of 3 different tiles and different flip states to get"
 		" an animation that has 8 different 'tiles'/frames that it alternates between every 2 frames, for an"
 		" animation that, again, lasts 16 frames total. The exact offset from the original tile and the flip"
@@ -1618,8 +1661,8 @@ static GUI::ListData weaponsRulesList
 		" in which {offset from o_tile} is the tile difference between the tile used and the sprite's o_tile,"
 		" and {flip value} is the value of the flip, in which flip of 0 is no flip, flip of 1 is horizontal, 2"
 		" is vertical, and 3 is both horizontal and vertical."
-		" \nThe exact offsets and flip values are, as follows: (0, 0), (1, 0), (2, 0), (1, 1), (0, 1), (1, 3), (2, 2), (1, 2)."
-		" \nAgain, none of this matters if you have this rule enabled, as enabling this rule will disable these"
+		"\nThe exact offsets and flip values are, as follows: (0, 0), (1, 0), (2, 0), (1, 1), (0, 1), (1, 3), (2, 2), (1, 2)."
+		"\nAgain, none of this matters if you have this rule enabled, as enabling this rule will disable these"
 		" hardcoded values, and will allow you to use the same animation system as every other weapon."
 		" If looking for the Hero-created weapons version of this, look at the boomerang itemclass."},
 	{ "Weapons Move Offscreen (Buggy, use at own risk)", qr_WEAPONSMOVEOFFSCREEN,
@@ -1673,7 +1716,6 @@ GUI::ListData scriptRulesList
 	{ "Combos Run Scripts on Layer 6", qr_COMBOSCRIPTS_LAYER_6 },
 	{ "Use Old Global Init and SaveLoad Timing", qr_OLD_INIT_SCRIPT_TIMING },
 	{ "Passive Subscreen Script runs during wipes/refills", qr_PASSIVE_SUBSCRIPT_RUNS_WHEN_GAME_IS_FROZEN },
-	{ "Scripts use 6-bit color (0-63) instead of 8-bit (0-255)", qr_SCRIPTS_6_BIT_COLOR},
 };
 
 GUI::ListData instructionRulesList
@@ -1705,6 +1747,13 @@ GUI::ListData instructionRulesList
 		" the new feature allowing accessing negative indexes of an array to backwards-index them"
 		" (i.e. 'arr[-1]' is the LAST element in the array) will be DISABLED if this is on."
 		"\nUseful for debugging if you're using this feature *by mistake*." },
+	{ "Scripts use 6-bit color (0-63) instead of 8-bit (0-255)", qr_SCRIPTS_6_BIT_COLOR},
+	{ "Scripts bound index for some internal arrays", qr_OLD_SCRIPTS_INTERNAL_ARRAYS_BOUND_INDEX,
+		"If enabled, some internal arrays will bound the index used to the valid range for the array."
+		" When disabled, internal arrays will never bound their index. Additionally, all internal arrays will support negative indices."},
+	{ "Scripts return non-zero for out-of-bounds access of some arrays", qr_OLD_SCRIPTS_ARRAYS_NON_ZERO_DEFAULT_VALUE,
+		"If enabled, some arrays will return a non-zero value (typically -1) when accessing an out-of-bounds index (though most return zero)."
+		" When disabled, all out-of-bounds accesses return zero."},
 	{ "Game->Generic[GEN_CONTINUEHEARTS] is in 'Hearts'", qr_SCRIPT_CONTHP_IS_HEARTS,
 		"If checked, read/write to 'Game->Generic[GEN_CONTINUEHEARTS]' is in 'Hearts'. Otherwise,"
 		" it will be in 'HP'. (Has no effect if 'Game->Generic[GEN_CONTINUEISPERCENT]' is true)"}
@@ -1750,6 +1799,10 @@ GUI::ListData bugfixRulesList
 	{ "Game->Suspend[susptFFCSCRIPTS] suspends screen scripts", qr_ZS_OLD_SUSPEND_FFC,
 		"If checked, setting 'Game->Suspend[susptFFCSCRIPTS]' will suspend screen scripts."
 		"\nIf disabled only the ffcscripts will be suspended."},
+	{ "Game->LevelStates[] and GlobalStates[] don't trigger switches", qr_OLD_SCRIPT_LEVEL_GLOBAL_STATES,
+		"If checked, setting 'Game->LevelStates[]' and 'Game->GlobalStates[] will NOT trigger"
+		" the effects of these states changing. (Note: Even with this unchecked, 'Game->LevelStates[]'"
+		" only causes changes when the current level's index is written to)" },
 };
 
 extern GUI::ListData compileSettingList;
@@ -1778,7 +1831,7 @@ GUI::ListData const& combinedZSRList()
 
 //}
 int32_t onStrFix(); //zquest.cpp
-void popup_bugfix_dlg(const char* cfg); //zq_class.cpp
+void popup_bugfix_dlg(const char* cfg, byte* dest_qrs); //zq_class.cpp
 bool hasCompatRulesEnabled()
 {
 	for(size_t q = 0; q < compatRulesList.size(); ++q)
@@ -1832,7 +1885,9 @@ void applyRuleTemplate(int32_t ruleTemplate, byte* qrptr)
 				qr_OLD_PRINTF_ARGS, qr_COMBODATA_INITD_MULT_TENK,
 				qr_OLDQUESTMISC, qr_DO_NOT_DEALLOCATE_INIT_AND_SAVELOAD_ARRAYS,
 				qr_BROKEN_GETPIXEL_VALUE, qr_ZS_NO_NEG_ARRAY, qr_SCRIPT_CONTHP_IS_HEARTS,
-				qr_OLD_BROKEN_WARPEX_MUSIC, qr_OLD_HERO_WARP_RETSQUARE, qr_SCRIPTS_6_BIT_COLOR
+				qr_OLD_BROKEN_WARPEX_MUSIC, qr_OLD_HERO_WARP_RETSQUARE, qr_ZS_OLD_SUSPEND_FFC,
+				qr_SCRIPTS_6_BIT_COLOR, qr_OLD_SCRIPT_LEVEL_GLOBAL_STATES, qr_OLD_SCRIPTS_INTERNAL_ARRAYS_BOUND_INDEX,
+				qr_OLD_SCRIPTS_ARRAYS_NON_ZERO_DEFAULT_VALUE,
 			};
 			for(int qr : zsOnRules)
 				set_qr(qr, 1, qrptr);
@@ -1869,10 +1924,9 @@ void applyRuleTemplate(int32_t ruleTemplate, byte* qrptr)
 void QRDialog::reloadQRs()
 {
 	memcpy(local_qrs, realqrs, QR_SZ);
-	unpack_qrs();
 }
 QRDialog::QRDialog(byte const* qrs, size_t qrs_per_tab, std::function<void(byte*)> setQRs):
-	searchmode(false), setQRs(setQRs), realqrs(qrs), qrs_per_tab(qrs_per_tab)
+	searchmode(false), setQRs(setQRs), realqrs(qrs), qrs_per_tab(qrs_per_tab), cur_tab(0), qr_subtabs()
 {
 	reloadQRs();
 }
@@ -1902,7 +1956,8 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					ptr = &scroll_pos1,
 					padding = 3_px,
 					onToggle = message::TOGGLE_QR,
-					initializer = local_qrs,
+					onCloseInfo = message::REFR_INFO,
+					qr_ptr = local_qrs,
 					count = 0, //scrollpane
 					showtags = true,
 					scrollWidth = 675_px,
@@ -1981,11 +2036,13 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 	}
 	else
 	{
+		size_t subtab_ind = 0;
 		window = Window(
 			title = "Quest Options",
 			onClose = message::CANCEL,
 			Column(
 				TabPanel(
+					ptr = &cur_tab,
 					maxwidth = 800_px,
 					TabRef(
 						name = "Options",
@@ -2053,9 +2110,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "Anim",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = animRulesList
 						)
@@ -2063,9 +2122,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "Combo",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = comboRulesList
 						)
@@ -2073,9 +2134,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "Compat",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = compatRulesList
 						)
@@ -2083,9 +2146,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "Enemy",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = enemiesRulesList
 						)
@@ -2093,9 +2158,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "Item",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = itemRulesList
 						)
@@ -2103,9 +2170,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "Misc",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = miscRulesList
 						)
@@ -2113,9 +2182,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "NESFix",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = nesfixesRulesList
 						)
@@ -2123,9 +2194,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "Hero",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = playerRulesList
 						)
@@ -2133,9 +2206,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "Subscreen",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = subscrRulesList
 						)
@@ -2143,9 +2218,11 @@ std::shared_ptr<GUI::Widget> QRDialog::view()
 					TabRef(
 						name = "Weapon",
 						QRPanel(
+							ptr = &qr_subtabs[subtab_ind++],
 							padding = 3_px,
 							onToggle = message::TOGGLE_QR,
-							initializer = local_qrs,
+							onCloseInfo = message::REFR_INFO,
+							qr_ptr = local_qrs,
 							count = qrs_per_tab,
 							data = weaponsRulesList
 						)
@@ -2174,6 +2251,9 @@ bool QRDialog::handleMessage(const GUI::DialogMessage<message>& msg)
 {
 	switch(msg.message)
 	{
+		case message::REFR_INFO:
+			rerun_dlg = true;
+			return true;
 		case message::TOGGLE_QR:
 			toggle_bit(local_qrs, msg.argument);
 			return false;
@@ -2181,13 +2261,13 @@ bool QRDialog::handleMessage(const GUI::DialogMessage<message>& msg)
 			call_header_dlg();
 			return false;
 		case message::RULESET:
-			call_ruleset_dlg();
-			reloadQRs();
+			if(!call_ruleset_dlg(local_qrs))
+				return false;
 			rerun_dlg = true;
 			return true;
 		case message::RULETMP:
-			call_ruletemplate_dlg();
-			reloadQRs();
+			if(!call_ruletemplate_dlg(local_qrs))
+				return false;
 			rerun_dlg = true;
 			return true;
 		case message::CHEATS:
@@ -2198,10 +2278,9 @@ bool QRDialog::handleMessage(const GUI::DialogMessage<message>& msg)
 			InfoDialog("Copied", "QR String copied to clipboard!").show();
 			return false;
 		case message::QRSTR_LOAD:
-			if(load_qr_hexstr_clipboard())
+			if(load_qr_hexstr_clipboard(local_qrs))
 			{
-				popup_bugfix_dlg("dsa_compatrule2");
-				reloadQRs();
+				popup_bugfix_dlg("dsa_compatrule2", local_qrs);
 				rerun_dlg = true;
 				return true;
 			}

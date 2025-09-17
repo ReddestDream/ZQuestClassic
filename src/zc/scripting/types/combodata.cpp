@@ -6,14 +6,14 @@
 
 static ArrayRegistrar COMBODATTRIBUTES_registrar(COMBODATTRIBUTES, []{
 	static ScriptingArray_ObjectMemberCArray<newcombo, &newcombo::attributes> impl;
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(false);
 	return &impl;
 }());
 
 static ArrayRegistrar COMBODATTRISHORTS_registrar(COMBODATTRISHORTS, []{
 	static ScriptingArray_ObjectMemberCArray<newcombo, &newcombo::attrishorts> impl;
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(true);
 	impl.setValueTransform(transforms::vbound<-32768, 32767>);
 	return &impl;
@@ -21,7 +21,7 @@ static ArrayRegistrar COMBODATTRISHORTS_registrar(COMBODATTRISHORTS, []{
 
 static ArrayRegistrar COMBODATTRIBYTES_registrar(COMBODATTRIBYTES, []{
 	static ScriptingArray_ObjectMemberCArray<newcombo, &newcombo::attribytes> impl;
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(true);
 
 	impl.setValueTransform(transforms::vbound<0, 214747>);
@@ -29,8 +29,7 @@ static ArrayRegistrar COMBODATTRIBYTES_registrar(COMBODATTRIBYTES, []{
 }());
 
 static ArrayRegistrar COMBODGENFLAGARR_registrar(COMBODGENFLAGARR, []{
-	static ScriptingArray_ObjectMemberBitwiseFlags<newcombo, &newcombo::genflags, 2> impl;
-	impl.setDefaultValue(0);
+	static ScriptingArray_ObjectMemberBitwiseFlags<newcombo, &newcombo::genflags, 4> impl;
 	impl.setMul10000(true);
 	return &impl;
 }());
@@ -54,14 +53,12 @@ static ArrayRegistrar COMBODLIFTFLAGS_registrar(COMBODLIFTFLAGS, []{
 				SETFLAG(cmb->liftflags, bit, value);
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
 
 static ArrayRegistrar COMBODUSRFLAGARR_registrar(COMBODUSRFLAGARR, []{
 	static ScriptingArray_ObjectMemberBitwiseFlags<newcombo, &newcombo::usrflags, 16> impl;
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
@@ -79,7 +76,6 @@ static ArrayRegistrar COMBODATAINITD_registrar(COMBODATAINITD, []{
 			cmb->initd[index] = value * ( get_qr(qr_COMBODATA_INITD_MULT_TENK) ? 10000 : 1);
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(false);
 	return &impl;
 }());
@@ -99,7 +95,6 @@ static ArrayRegistrar COMBODTRIGGERBUTTON_registrar(COMBODTRIGGERBUTTON, []{
 				SETFLAG(trig->triggerbtn, 1<<index, value);
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
@@ -112,10 +107,10 @@ static ArrayRegistrar COMBODTRIGGERFLAGS2_registrar(COMBODTRIGGERFLAGS2, []{
 		[](newcombo* cmb, int index) -> bool {
 			if (auto* trig = get_first_combo_trigger())
 			{
-				if (index/32 == 0 && (1<<index%32) == combotriggerONLYGENTRIG)
+				if (index == TRIGFLAG_ONLYGENTRIG)
 					return cmb->only_gentrig;
 				else
-					return (trig->triggerflags[index/32] & (1<<index%32));
+					return (trig->trigger_flags.get(index));
 			}
 
 			return 0;
@@ -123,13 +118,12 @@ static ArrayRegistrar COMBODTRIGGERFLAGS2_registrar(COMBODTRIGGERFLAGS2, []{
 		[](newcombo* cmb, int index, bool value){
 			if (auto* trig = get_first_combo_trigger())
 			{
-				SETFLAG(trig->triggerflags[index/32],1<<(index%32),value);
-				if (index/32 == 0 && (1<<index%32) == combotriggerONLYGENTRIG)
+				trig->trigger_flags.set(index, value);
+				if (index == TRIGFLAG_ONLYGENTRIG)
 					cmb->only_gentrig = value;
 			}
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
@@ -149,7 +143,7 @@ static ArrayRegistrar COMBODTRIGGERS_registrar(COMBODTRIGGERS, []{
 			return false;
 		}
 	);
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(false);
 	impl.readOnly();
 	return &impl;
@@ -162,7 +156,7 @@ static ArrayRegistrar COMBODTRIGGERFLAGS_registrar(COMBODTRIGGERFLAGS, []{
 			{
 				if (cmb->triggers.empty())
 					cmb->triggers.emplace_back();
-				return comptime_array_size(cmb->triggers[0].triggerflags);
+				return 6; // deprecated accessor
 			}
 
 			return 0;
@@ -171,9 +165,12 @@ static ArrayRegistrar COMBODTRIGGERFLAGS_registrar(COMBODTRIGGERFLAGS, []{
 			if (auto cmb = checkCombo(ref))
 			{
 				auto& trig = cmb->triggers[0];
-				int ret = trig.triggerflags[index];
+				int32_t ret = 0;
+				for(size_t q = 0; q < 32; ++q)
+					if(trig.trigger_flags.get(index*32 + q))
+						ret |= 1<<q;
 				if (index == 0)
-					SETFLAG(ret, combotriggerONLYGENTRIG, cmb->only_gentrig);
+					SETFLAG(ret, 1 << (TRIGFLAG_ONLYGENTRIG%32), cmb->only_gentrig);
 				return ret;
 			}
 
@@ -184,9 +181,10 @@ static ArrayRegistrar COMBODTRIGGERFLAGS_registrar(COMBODTRIGGERFLAGS, []{
 			{
 				auto& trig = cmb->triggers[0];
 				screen_combo_modify_pre(ref);
-				trig.triggerflags[index] = value;
+				for(size_t q = 0; q < 32; ++q)
+					trig.trigger_flags.set(index*32 + q, value & (1<<q));
 				if (index == 0)
-					cmb->only_gentrig = trig.triggerflags[0] & combotriggerONLYGENTRIG;
+					cmb->only_gentrig = trig.trigger_flags.get(TRIGFLAG_ONLYGENTRIG);
 				screen_combo_modify_post(ref);
 				return true;
 			}
@@ -194,7 +192,7 @@ static ArrayRegistrar COMBODTRIGGERFLAGS_registrar(COMBODTRIGGERFLAGS, []{
 			return false;
 		}
 	);
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(true);
 	impl.setValueTransform(transforms::vbound<0, 214747>);
 	return &impl;

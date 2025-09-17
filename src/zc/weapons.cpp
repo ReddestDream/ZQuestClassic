@@ -61,7 +61,7 @@ bool weapon::no_triggers() const
 		{
 			if(parentitem < 0) break;
 			itemdata const& itm = itemsbuf[parentitem];
-			if(itm.family == itype_hammer && (itm.flags & item_flag1) && Hero.getHammerState() < 3)
+			if(itm.type == itype_hammer && (itm.flags & item_flag1) && Hero.getHammerState() < 3)
 				return true;
 			break;
 		}
@@ -81,74 +81,77 @@ static bool MatchComboTrigger(weapon *w, combo_trigger const& trig)
 	if(w->no_triggers()) return false;
 	int32_t wid = (w->useweapon > 0) ? w->useweapon : w->id;
 	
-	if(w->z > 0 && (trig.triggerflags[3] & combotriggerONLY_GROUND_WPN))
+	if(w->z > 0 && trig.trigger_flags.get(TRIGFLAG_ONLY_GROUND_WPN))
 		return false; // Air based weapon shouldn't trigger ground-only combo
 	if(w->isLWeapon) //min/max level check
 	{
 		//Nothing should ever count as 'level 0'
-		int lv = w->type, tlv = trig.triggerlevel;
+		int lv = w->level, tlv = trig.triggerlevel;
 		if(lv<1) lv=1;
 		if(tlv<1) tlv=1;
-		if(!((trig.triggerflags[0]&combotriggerINVERTMINMAX) ? lv <= tlv : lv >= tlv))
+		if(!(trig.trigger_flags.get(TRIGFLAG_INVERTMINMAX) ? lv <= tlv : lv >= tlv))
 			return false;
 	}
-	bool ret = false;
+	int trigflag = -1;
 	switch(wid)
 	{
-		case wSword: ret = (trig.triggerflags[0]&combotriggerSWORD); break;
-		case wBeam: ret = (trig.triggerflags[0]&combotriggerSWORDBEAM); break;
-		case wBrang: ret = (trig.triggerflags[0]&combotriggerBRANG); break;
-		case wBomb: ret = (trig.triggerflags[0]&combotriggerBOMB); break;
-		case wSBomb: ret = (trig.triggerflags[0]&combotriggerSBOMB); break;
-		case wLitBomb: ret = (trig.triggerflags[0]&combotriggerLITBOMB); break;
-		case wLitSBomb: ret = (trig.triggerflags[0]&combotriggerLITSBOMB); break;
-		case wArrow: ret = (trig.triggerflags[0]&combotriggerARROW); break;
-		case wFire: ret = (trig.triggerflags[0]&combotriggerFIRE); break;
-		case wWhistle: ret = (trig.triggerflags[0]&combotriggerWHISTLE); break;
-		case wBait: ret = (trig.triggerflags[0]&combotriggerBAIT); break;
-		case wWand: ret = (trig.triggerflags[0]&combotriggerWAND); break;
-		case wMagic: ret = (trig.triggerflags[0]&combotriggerMAGIC); break;
-		case wWind: ret = (trig.triggerflags[0]&combotriggerWIND); break;
-		case wRefMagic: ret = (trig.triggerflags[0]&combotriggerREFMAGIC); break;
-		case wRefFireball: ret = (trig.triggerflags[0]&combotriggerREFFIREBALL); break;
-		case wRefRock: ret = (trig.triggerflags[0]&combotriggerREFROCK); break;
-		case wHammer: ret = (trig.triggerflags[0]&combotriggerHAMMER); break;
-		case wHookshot: ret = (trig.triggerflags[1]&combotriggerHOOKSHOT); break;
-		case wFSparkle: ret = (trig.triggerflags[1]&combotriggerSPARKLE); break;
-		case wSSparkle: ret = (trig.triggerflags[1]&combotriggerSPARKLE); break;
-		case wCByrna: ret = (trig.triggerflags[1]&combotriggerBYRNA); break;
-		case wRefBeam: ret = (trig.triggerflags[1]&combotriggerREFBEAM); break;
-		case wStomp: ret = (trig.triggerflags[1]&combotriggerSTOMP); break;
-		case wThrown: ret = (trig.triggerflags[2]&combotriggerTHROWN); break;
-		case wScript1: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT01) : (trig.triggerflags[2]&combotriggerEWSCRIPT01); break;
-		case wScript2: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT02) : (trig.triggerflags[2]&combotriggerEWSCRIPT02); break;
-		case wScript3: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT03) : (trig.triggerflags[2]&combotriggerEWSCRIPT03); break;
-		case wScript4: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT04) : (trig.triggerflags[2]&combotriggerEWSCRIPT04); break;
-		case wScript5: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT05) : (trig.triggerflags[2]&combotriggerEWSCRIPT05); break;
-		case wScript6: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT06) : (trig.triggerflags[2]&combotriggerEWSCRIPT06); break;
-		case wScript7: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT07) : (trig.triggerflags[2]&combotriggerEWSCRIPT07); break;
-		case wScript8: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT08) : (trig.triggerflags[2]&combotriggerEWSCRIPT08); break;
-		case wScript9: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT09) : (trig.triggerflags[2]&combotriggerEWSCRIPT09); break;
-		case wScript10: ret = w->isLWeapon ? (trig.triggerflags[1]&combotriggerSCRIPT10) : (trig.triggerflags[2]&combotriggerEWSCRIPT10); break;
-		case ewFireball: case ewFireball2: ret = (trig.triggerflags[0]&combotriggerEWFIREBALL); break;
-		case ewArrow: ret = (trig.triggerflags[1]&combotriggerEWARROW); break;
-		case ewBrang: ret = (trig.triggerflags[1]&combotriggerEWBRANG); break;
-		case ewSword: ret = (trig.triggerflags[1]&combotriggerEWSWORD); break;
-		case ewRock: ret = (trig.triggerflags[1]&combotriggerEWROCK); break;
-		case ewMagic: ret = (trig.triggerflags[2]&combotriggerEWMAGIC); break;
-		case ewBomb: ret = (trig.triggerflags[2]&combotriggerEWBBLAST); break;
-		case ewSBomb: ret = (trig.triggerflags[2]&combotriggerEWSBBLAST); break;
-		case ewLitBomb: ret = (trig.triggerflags[2]&combotriggerEWLITBOMB); break;
-		case ewLitSBomb: ret = (trig.triggerflags[2]&combotriggerEWLITSBOMB); break;
-		case ewFireTrail: ret = (trig.triggerflags[2]&combotriggerEWFIRETRAIL); break;
-		case ewFlame: ret = (trig.triggerflags[2]&combotriggerEWFLAME); break;
-		case ewWind: ret = (trig.triggerflags[2]&combotriggerEWWIND); break;
-		case ewFlame2: ret = (trig.triggerflags[2]&combotriggerEWFLAME2); break;
-		case wRefArrow: ret = (trig.triggerflags[3]&combotriggerLWREFARROW); break;
-		case wRefFire: ret = (trig.triggerflags[3]&combotriggerLWREFFIRE); break;
-		case wRefFire2: ret = (trig.triggerflags[3]&combotriggerLWREFFIRE2); break;
+		case wSword: trigflag = TRIGFLAG_SWORD; break;
+		case wBeam: trigflag = TRIGFLAG_SWORDBEAM; break;
+		case wBrang: trigflag = TRIGFLAG_BRANG; break;
+		case wBomb: trigflag = TRIGFLAG_BOMB; break;
+		case wSBomb: trigflag = TRIGFLAG_SBOMB; break;
+		case wLitBomb: trigflag = TRIGFLAG_LITBOMB; break;
+		case wLitSBomb: trigflag = TRIGFLAG_LITSBOMB; break;
+		case wArrow: trigflag = TRIGFLAG_ARROW; break;
+		case wFire: trigflag = TRIGFLAG_FIRE; break;
+		case wWhistle: trigflag = TRIGFLAG_WHISTLE; break;
+		case wBait: trigflag = TRIGFLAG_BAIT; break;
+		case wWand: trigflag = TRIGFLAG_WAND; break;
+		case wMagic: trigflag = TRIGFLAG_MAGIC; break;
+		case wWind: trigflag = TRIGFLAG_WIND; break;
+		case wRefMagic: trigflag = TRIGFLAG_REFMAGIC; break;
+		case wRefFireball: trigflag = TRIGFLAG_REFFIREBALL; break;
+		case wRefRock: trigflag = TRIGFLAG_REFROCK; break;
+		case wHammer: trigflag = TRIGFLAG_HAMMER; break;
+		case wHookshot: trigflag = TRIGFLAG_HOOKSHOT; break;
+		case wFSparkle: trigflag = TRIGFLAG_SPARKLE; break;
+		case wSSparkle: trigflag = TRIGFLAG_SPARKLE; break;
+		case wCByrna: trigflag = TRIGFLAG_BYRNA; break;
+		case wRefBeam: trigflag = TRIGFLAG_REFBEAM; break;
+		case wStomp: trigflag = TRIGFLAG_STOMP; break;
+		case wThrown: trigflag = TRIGFLAG_THROWN; break;
+		case wScript1: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT01 : TRIGFLAG_EWSCRIPT01; break;
+		case wScript2: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT02 : TRIGFLAG_EWSCRIPT02; break;
+		case wScript3: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT03 : TRIGFLAG_EWSCRIPT03; break;
+		case wScript4: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT04 : TRIGFLAG_EWSCRIPT04; break;
+		case wScript5: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT05 : TRIGFLAG_EWSCRIPT05; break;
+		case wScript6: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT06 : TRIGFLAG_EWSCRIPT06; break;
+		case wScript7: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT07 : TRIGFLAG_EWSCRIPT07; break;
+		case wScript8: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT08 : TRIGFLAG_EWSCRIPT08; break;
+		case wScript9: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT09 : TRIGFLAG_EWSCRIPT09; break;
+		case wScript10: trigflag = w->isLWeapon ? TRIGFLAG_SCRIPT10 : TRIGFLAG_EWSCRIPT10; break;
+		case ewFireball: case ewFireball2: trigflag = TRIGFLAG_EWFIREBALL; break;
+		case ewArrow: trigflag = TRIGFLAG_EWARROW; break;
+		case ewBrang: trigflag = TRIGFLAG_EWBRANG; break;
+		case ewSword: trigflag = TRIGFLAG_EWSWORD; break;
+		case ewRock: trigflag = TRIGFLAG_EWROCK; break;
+		case ewMagic: trigflag = TRIGFLAG_EWMAGIC; break;
+		case ewBomb: trigflag = TRIGFLAG_EWBBLAST; break;
+		case ewSBomb: trigflag = TRIGFLAG_EWSBBLAST; break;
+		case ewLitBomb: trigflag = TRIGFLAG_EWLITBOMB; break;
+		case ewLitSBomb: trigflag = TRIGFLAG_EWLITSBOMB; break;
+		case ewFireTrail: trigflag = TRIGFLAG_EWFIRETRAIL; break;
+		case ewFlame: trigflag = TRIGFLAG_EWFLAME; break;
+		case ewWind: trigflag = TRIGFLAG_EWWIND; break;
+		case ewFlame2: trigflag = TRIGFLAG_EWFLAME2; break;
+		case wRefArrow: trigflag = TRIGFLAG_LWREFARROW; break;
+		case wRefFire: trigflag = TRIGFLAG_LWREFFIRE; break;
+		case wRefFire2: trigflag = TRIGFLAG_LWREFFIRE2; break;
+		default: return false;
 	}
-	return ret;
+	if(trigflag > -1)
+		return trig.trigger_flags.get(trigflag);
+	return false;
 }
 
 int FindComboTriggerMatch(weapon *w, int combo_id, int start_idx)
@@ -249,7 +252,7 @@ void do_generic_combo(const rpos_handle_t& rpos_handle, weapon *w, int32_t wid,
 		if ( (combobuf[cid].usrflags&cflag6) && !getmapflag(scr, mSPECIALITEM))
 		{
 			items.add(new item(x, y, 0,
-				scr->catchall,ipONETIME2|ipBIGRANGE|((itemsbuf[scr->catchall].family==itype_triforcepiece ||
+				scr->catchall,ipONETIME2|ipBIGRANGE|((itemsbuf[scr->catchall].type==itype_triforcepiece ||
 				(scr->flags3&fHOLDITEM)) ? ipHOLDUP : 0) | ((scr->flags8&fITEMSECRET) ? ipSECRETS : 0),0));
 		}
 		//screen secrets
@@ -261,7 +264,7 @@ void do_generic_combo(const rpos_handle_t& rpos_handle, weapon *w, int32_t wid,
 			scr->sflag[pos] = scr->secretflag[ft];
 			screen_combo_modify_postroutine(rpos_handle);
 			if ( combobuf[cid].attribytes[2] > 0 )
-				sfx(combobuf[cid].attribytes[2],x);
+				sfx(combobuf[cid].attribytes[2],pan(x));
 		}
 		
 		//loop next combo
@@ -307,7 +310,7 @@ void do_generic_combo(const rpos_handle_t& rpos_handle, weapon *w, int32_t wid,
 				if ( (combobuf[cid].usrflags&cflag5) ) cid = ( layer ) ? MAPCOMBO2(layer,x,y) : MAPCOMBO(x,y);
 			} while((combobuf[cid].usrflags&cflag5) && (combobuf[cid].type == cTRIGGERGENERIC) && (cid < (MAXCOMBOS-1)));
 			if ( (combobuf[cid].attribytes[2]) > 0 )
-				sfx(combobuf[cid].attribytes[2],x);
+				sfx(combobuf[cid].attribytes[2],pan(x));
 			
 			
 		}
@@ -378,7 +381,7 @@ void do_generic_combo_ffc(weapon *w, const ffc_handle_t& ffc_handle, int32_t cid
 		{
 			items.add(new item(ffc->x, ffc->y,
 				(zfix)0,
-				ffc_handle.scr->catchall,ipONETIME2|ipBIGRANGE|((itemsbuf[ffc_handle.scr->catchall].family==itype_triforcepiece ||
+				ffc_handle.scr->catchall,ipONETIME2|ipBIGRANGE|((itemsbuf[ffc_handle.scr->catchall].type==itype_triforcepiece ||
 				(ffc_handle.scr->flags3&fHOLDITEM)) ? ipHOLDUP : 0) | ((ffc_handle.scr->flags8&fITEMSECRET) ? ipSECRETS : 0),0));
 		}
 		//screen secrets
@@ -389,7 +392,7 @@ void do_generic_combo_ffc(weapon *w, const ffc_handle_t& ffc_handle, int32_t cid
 			ffc->cset = ffc_handle.scr->secretcset[ft];
 			screen_ffc_modify_postroutine(ffc_handle);
 			if ( combobuf[cid].attribytes[2] > 0 )
-				sfx(combobuf[cid].attribytes[2],int32_t(ffc->x));
+				sfx(combobuf[cid].attribytes[2],pan(ffc->x));
 		}
 		
 		//loop next combo
@@ -416,7 +419,7 @@ void do_generic_combo_ffc(weapon *w, const ffc_handle_t& ffc_handle, int32_t cid
 				
 			} while((combobuf[cid].usrflags&cflag5) && (combobuf[cid].type == cTRIGGERGENERIC) && (cid < (MAXCOMBOS-1)));
 			if ( (combobuf[cid].attribytes[2]) > 0 )
-				sfx(combobuf[cid].attribytes[2],int32_t(ffc->x));
+				sfx(combobuf[cid].attribytes[2],pan(ffc->x));
 		}
 
 		if((combobuf[cid].usrflags&cflag14)) //drop enemy
@@ -449,7 +452,9 @@ static void MatchComboTrigger2(weapon *w, int32_t bx, int32_t by, int32_t layer 
 					{
 						trig_idx = FindComboTriggerMatch(w, cid, trig_idx + 1);
 						if(trig_idx >= 0)
-							do_trigger_combo(ffc_handle, trig_idx, 0, w);
+							if(do_trigger_combo(ffc_handle, trig_idx, 0, w))
+								if(combobuf[cid].triggers[trig_idx].trigger_flags.get(TRIGFLAG_CANCEL_TRIGGER))
+									break;
 					} while(ffc_handle.data() == cid && trig_idx >= 0);
 				}
 			});
@@ -468,18 +473,23 @@ static void MatchComboTrigger2(weapon *w, int32_t bx, int32_t by, int32_t layer 
 	{
 		trig_idx = FindComboTriggerMatch(w, cid, trig_idx + 1);
 		if(trig_idx >= 0)
-			do_trigger_combo(rpos_handle, trig_idx, 0, w);
+		{
+			if(do_trigger_combo(rpos_handle, trig_idx, 0, w))
+				if(combobuf[cid].triggers[trig_idx].trigger_flags.get(TRIGFLAG_CANCEL_TRIGGER))
+					break;
+		}
 	} while(rpos_handle.data() == cid && trig_idx >= 0);
 }
 
 static bool triggerfire(int x, int y, weapon* w, bool setflag, bool any, bool strong, bool magic, bool divine)
 {
 	if(w->no_triggers()) return false;
-	int trigflags = (any?combotriggerANYFIRE:0)
-		| (strong?combotriggerSTRONGFIRE:0)
-		| (magic?combotriggerMAGICFIRE:0)
-		| (divine?combotriggerDIVINEFIRE:0);
-	if(!trigflags) return false;
+	vector<int> trigflags;
+	if(any) trigflags.push_back(TRIGFLAG_ANYFIRE);
+	if(strong) trigflags.push_back(TRIGFLAG_STRONGFIRE);
+	if(magic) trigflags.push_back(TRIGFLAG_MAGICFIRE);
+	if(divine) trigflags.push_back(TRIGFLAG_DIVINEFIRE);
+	if(trigflags.empty()) return false;
 	weapon* wptr = get_qr(qr_FIRE_LEVEL_TRIGGERS_ARENT_WEAPONS) ? nullptr : w;
 	bool ret = false;
 	if(any)
@@ -492,6 +502,14 @@ static bool triggerfire(int x, int y, weapon* w, bool setflag, bool any, bool st
 		ret = ret||trigger_secrets_if_flag(x,y,mfDIVINEFIRE,setflag);
 
 	std::set<rpos_t> rposes({COMBOPOS_REGION_B(x,y),COMBOPOS_REGION_B(x,y+15),COMBOPOS_REGION_B(x+15,y),COMBOPOS_REGION_B(x+15,y+15)});
+	auto _burn_cond_proc = [&](combo_trigger const& trig){
+		if (w->z > 0 && trig.trigger_flags.get(TRIGFLAG_ONLY_GROUND_WPN))
+			return false; // Air based weapon shouldn't trigger ground-only combo
+		for(auto flag : trigflags)
+			if(trig.trigger_flags.get(flag))
+				return true;
+		return false;
+	};
 	for(int q = 0; q < 7; ++q)
 	{
 		for (rpos_t rpos : rposes)
@@ -500,42 +518,14 @@ static bool triggerfire(int x, int y, weapon* w, bool setflag, bool any, bool st
 				continue;
 
 			auto rpos_handle = get_rpos_handle(rpos, q);
-			auto& cmb = rpos_handle.combo();
-
-			for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-			{
-				auto& trig = cmb.triggers[idx];
-				if (w->z > 0 && (trig.triggerflags[3] & combotriggerONLY_GROUND_WPN))
-					continue; // Air based weapon shouldn't trigger ground-only combo
-
-				if (trig.triggerflags[2] & trigflags)
-				{
-					auto oldcombo = rpos_handle.data();
-					do_trigger_combo(rpos_handle, idx, 0, wptr);
-					ret = true;
-					if(rpos_handle.data() != oldcombo) break;
-				}
-			}
+			trig_each_combo_trigger(rpos_handle, _burn_cond_proc, 0, wptr);
 		}
 	}
 
 	for_every_ffc([&](const ffc_handle_t& ffc_handle) {
 		ffcdata& ffc = *ffc_handle.ffc;
-		auto& cmb = ffc_handle.combo();
-		for(size_t idx = 0; idx < cmb.triggers.size(); ++idx)
-		{
-			auto& trig = cmb.triggers[idx];
-			if (w->z > 0 && (trig.triggerflags[3] & combotriggerONLY_GROUND_WPN))
-				return; // Air based weapon shouldn't trigger ground-only combo
-
-			if((trig.triggerflags[2] & trigflags) && ffc.collide(x,y,16,16))
-			{
-				auto oldcombo = ffc_handle.data();
-				do_trigger_combo(ffc_handle, idx, 0, wptr);
-				ret = true;
-				if(ffc_handle.data() != oldcombo) break;
-			}
-		}
+		if(!ffc.collide(x,y,16,16)) return;
+		trig_each_combo_trigger(ffc_handle, _burn_cond_proc, 0, wptr);
 	});
 
 	return ret;
@@ -711,6 +701,7 @@ int32_t weapon::seekEnemy2(int32_t j)
 void weapon::convertType(bool toLW)
 {
 	if(XOR(isLWeapon, toLW)) return; //Already the right type
+	isLWeapon = toLW;
 	script = 0;
 	for(int32_t q = 0; q < 8; ++q)
 		initD[q] = 0;
@@ -720,7 +711,7 @@ weapon::weapon(weapon const & other):
      //Struct Element			Type		Purpose
     sprite(other),
     power(other.power), 		//int32_t
-    type(other.type), 			//int32_t
+    level(other.level), 			//int32_t
     dead(other.dead),			//int32_t
     clk2(other.clk2),			//int32_t
     misc2(other.misc2),			//int32_t
@@ -743,7 +734,6 @@ weapon::weapon(weapon const & other):
     ref_o_tile(other.ref_o_tile),	//int32_t
 	script_wrote_otile(other.script_wrote_otile),
     temp1(other.temp1),			//int32_t		Misc var.
-    behind(other.behind),		//bool		Should it be drawn behind Hero, NPC, and other sprites?
 	autorotate(other.autorotate),
     linked_parent(other.linked_parent),	//int32_t		A flagset that determines of the weapon can collect an item.
 	unblockable(other.unblockable),
@@ -878,7 +868,7 @@ void weapon::cleanup_sfx()
 			break;
 		case wSSparkle:
 		case wFSparkle:
-			if(parentitem>=0 && itemsbuf[parentitem].family==itype_cbyrna)
+			if(parentitem>=0 && itemsbuf[parentitem].type==itype_cbyrna)
 				break;
 			return;
 		default: return; //No repeating sfx
@@ -898,7 +888,7 @@ void weapon::cleanup_sfx()
     
     // Check each Lwpn to see if this weapon's sound is also allocated by it.
 	int32_t use_sfx = 0;
-	if(parentitem >= 0 && (itemsbuf[parentitem].family != itype_whistle || id != wWind)) use_sfx = itemsbuf[parentitem].usesound;
+	if(parentitem >= 0 && (itemsbuf[parentitem].type != itype_whistle || id != wWind)) use_sfx = itemsbuf[parentitem].usesound;
 	else switch(id)
 	{
 		case ewBrang:
@@ -930,8 +920,8 @@ void weapon::cleanup_sfx()
             
             int32_t wparent = w->parentitem;
             
-            if(wparent>=0 && (itemsbuf[wparent].family == itype_brang || itemsbuf[wparent].family == itype_divineprotection
-                              || itemsbuf[wparent].family == itype_hookshot || itemsbuf[wparent].family == itype_cbyrna))
+            if(wparent>=0 && (itemsbuf[wparent].type == itype_brang || itemsbuf[wparent].type == itype_divineprotection
+                              || itemsbuf[wparent].type == itype_hookshot || itemsbuf[wparent].type == itype_cbyrna))
             {
                 if(itemsbuf[wparent].usesound == use_sfx)
                     return;
@@ -983,7 +973,7 @@ weapon::~weapon()
 		if(dragItem)
 			dragItem->is_dragged = false;
 	}
-	FFCore.destroyScriptableObject(isLWeapon ? ScriptType::Lwpn : ScriptType::Ewpn, getUID());
+	FFCore.destroySprite(this);
 	cleanup_sfx();
 }
 
@@ -998,7 +988,7 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 	z=Z;
 	screen_spawned=get_screen_for_world_xy(x.getInt(), y.getInt());
 	id=Id;
-	type=Type;
+	level=Type;
 	isolated_freeze_viewport = true;
 	power=pow;
 	parentitem=Parentitem;
@@ -1010,7 +1000,18 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 	step=0;
 	dead=-1;
 	specialinfo = special;
-	bounce=ignoreHero=false;
+	switch(id)
+	{
+		case wRefFireball: case wRefMagic: case wRefBeam:
+		case wRefRock: case wRefArrow: case wRefFire:
+		case wRefFire2:
+			ignoreHero = false;
+			break;
+		default:
+			ignoreHero = isLW;
+			break;
+	}
+	bounce=false;
 	yofs=(get_qr(qr_OLD_DRAWOFFSET)?playing_field_offset:original_playing_field_offset) - 2;
 	dragging=-1;
 	hit_width=15;
@@ -1040,9 +1041,9 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 	has_shadow = true;
 	if ( Parentitem > -1 )
 	{
-		quantity_iterator = type; //wCByrna uses this for positioning.
+		quantity_iterator = level; //wCByrna uses this for positioning.
 		if ( id != wPhantom /*&& (id != wWind && !specialinfo)*/ && /*id != wFSparkle && id != wSSparkle &&*/ ( id < wEnemyWeapons || ( id >= wScript1 && id <= wScript10) ) )
-			type = itemsbuf[Parentitem].fam_type; //the weapon level for real lweapons.
+			level = itemsbuf[Parentitem].level; //the weapon level for real lweapons.
 			//Note: eweapons use this for boss weapon block flags
 			// Note: wInd uses type for special properties.
 			//Note: wFire is bonkers. If it writes this, then red candle and above use the wrong sprites. 
@@ -1098,7 +1099,7 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 			if(Type&2)
 			{
 				misc=(Type>>3)-1;
-				type &= ~2;
+				level &= ~2;
 			}
 			else
 				misc=-1;
@@ -1225,7 +1226,7 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 			glowRad = game->get_light_rad(); //Default light radius for fires
 			if ( parentitem > -1 )
 			{
-				switch(parent.family)
+				switch(parent.type)
 				{
 					case itype_divinefire: // Divine Fire. This uses magicitem rather than itemid
 						step = 0; 
@@ -1706,23 +1707,23 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 		}
 		case wPhantom:
 		{
-			switch(type)
+			switch(level)
 			{
 				case pDIVINEFIREROCKET:
 					if(get_qr(qr_MORESOUNDS))
-						sfx(WAV_ZN1ROCKETUP,(int32_t)x);
+						sfx(WAV_ZN1ROCKETUP,pan(x));
 					step = 4;
 					break;
 					
 				case pDIVINEFIREROCKETRETURN:
 					if(get_qr(qr_MORESOUNDS))
-						sfx(WAV_ZN1ROCKETDOWN,(int32_t)x);
+						sfx(WAV_ZN1ROCKETDOWN,pan(x));
 					step = 4;
 					break;
 					
 				case pDIVINEPROTECTIONROCKET1:
 					if(get_qr(qr_MORESOUNDS))
-						sfx(WAV_ZN1ROCKETUP,(int32_t)x);
+						sfx(WAV_ZN1ROCKETUP,pan(x));
 						
 					step = 4;
 					drawstyle=parent.flags & item_flag2 ? 1 : 0;
@@ -1730,7 +1731,7 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t 
 					
 				case pDIVINEPROTECTIONROCKETRETURN1:
 					if(get_qr(qr_MORESOUNDS))
-						sfx(WAV_ZN1ROCKETDOWN,(int32_t)x);
+						sfx(WAV_ZN1ROCKETDOWN,pan(x));
 						
 					step = 4;
 					drawstyle=parent.flags & item_flag2 ? 1 : 0;
@@ -2075,7 +2076,7 @@ optional<byte> weapon::_handle_loadsprite(optional<byte> spr, bool isDummy, bool
 				ret = *spr;
 			else if ( parentitem > -1 )
 			{
-				switch(parent.family)
+				switch(parent.type)
 				{
 					case itype_divinefire: // Divine Fire. This uses magicitem rather than itemid
 						if(magicitem >-1 && !isDummy)
@@ -2653,7 +2654,7 @@ optional<byte> weapon::_handle_loadsprite(optional<byte> spr, bool isDummy, bool
 				ret = *spr;
 			else
 			{
-				switch(type)
+				switch(level)
 				{
 					case pDIVINEFIREROCKET:
 					case pDIVINEPROTECTIONROCKET1:
@@ -2771,6 +2772,8 @@ void weapon::load_weap_data(weapon_data const& data, optional<byte>* out_wpnspr)
 		case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
 		case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
 		case wIce:
+			if(!get_qr(qr_CUSTOM_WEAPON_BROKEN_SIZE))
+				do_extend = do_size;
 			break;
 		default:
 			if(isLWeapon)
@@ -2840,7 +2843,7 @@ void weapon::load_weap_data(weapon_data const& data, optional<byte>* out_wpnspr)
 		{
 			if(id == ewFlame || id == ewFlame2)
 			{
-				switch (e->family)
+				switch (e->type)
 				{
 					case eeGLEEOK:
 						if (e->dmisc3 == 1) step = data.step * 2;
@@ -2904,7 +2907,7 @@ bool weapon::isHeroWeapon()
 }
 bool weapon::isHeroMelee()
 {
-	int32_t family = itemsbuf[parentitem].family;
+	int32_t family = itemsbuf[parentitem].type;
 	if ( family == itype_sword && id != wBeam ) return true;
 	//if ( id == wBeam )  return true;
 	return false;
@@ -3088,7 +3091,7 @@ bool weapon::blocked(int32_t xOffset, int32_t yOffset)
     {
 	    //Add lw->Level check here. -Z
         if(parentitem<0 || (combo_class_buf[COMBOTYPE(wx,wy)].block_weapon_lvl >=
-                            itemsbuf[parentitem].fam_type))
+                            itemsbuf[parentitem].level))
         {
             return true;
         }
@@ -3117,7 +3120,7 @@ bool weapon::blocked(int32_t xOffset, int32_t yOffset)
             || get_bit(combo_class_buf[FFCOMBOTYPE(wx,wy)].block_weapon, id))
     {
         if(parentitem<0 || (combo_class_buf[COMBOTYPE(wx,wy)].block_weapon_lvl >=
-                            itemsbuf[parentitem].fam_type))
+                            itemsbuf[parentitem].level))
         {
             return true;
         }
@@ -3208,7 +3211,7 @@ void weapon::limited_animate()
 			bool canboom = (fixboom || step==0);
 			if(clk==(misc-2) && canboom)
 			{
-				id = parentitem>-1 ? ((itemsbuf[parentitem].family==itype_sbomb) ? wSBomb:wBomb)
+				id = parentitem>-1 ? ((itemsbuf[parentitem].type==itype_sbomb) ? wSBomb:wBomb)
 						  : (id==wLitSBomb||id==wSBomb ? wSBomb : wBomb);
 				hxofs=2000;
 				step = 0;
@@ -3216,7 +3219,7 @@ void weapon::limited_animate()
 				if(script && clear_boom_script)
 				{
 					script = 0;
-					FFCore.destroyScriptableObject(isLWeapon ? ScriptType::Lwpn : ScriptType::Ewpn, getUID());
+					FFCore.destroySprite(this);
 				}
 				rundeath = true;
 				if(fixboom) moveflags &= ~move_obeys_grav;
@@ -3224,7 +3227,7 @@ void weapon::limited_animate()
 			
 			if(clk==(misc-1) && canboom)
 			{
-				sfx(parentitem<0 ? WAV_BOMB : itemsbuf[parentitem].usesound,pan(int32_t(x)));
+				sfx(parentitem<0 ? WAV_BOMB : itemsbuf[parentitem].usesound,pan(x));
 				
 				if(id==wSBomb || id==wLitSBomb || id==ewSBomb || id==ewLitSBomb)
 				{
@@ -3244,7 +3247,7 @@ void weapon::limited_animate()
 				if(script && clear_boom_script)
 				{
 					script = 0;
-					FFCore.destroyScriptableObject(isLWeapon ? ScriptType::Lwpn : ScriptType::Ewpn, getUID());
+					FFCore.destroySprite(this);
 				}
 				if(fixboom) moveflags &= ~move_obeys_grav;
 			}
@@ -3259,7 +3262,7 @@ void weapon::limited_animate()
 				if(script && clear_boom_script)
 				{
 					script = 0;
-					FFCore.destroyScriptableObject(isLWeapon ? ScriptType::Lwpn : ScriptType::Ewpn, getUID());
+					FFCore.destroySprite(this);
 				}
 				if(fixboom) moveflags &= ~move_obeys_grav;
 			}
@@ -3360,6 +3363,7 @@ void weapon::limited_animate()
 }
 bool weapon::animate(int32_t index)
 {
+	update_current_screen();
 	if(weapon_start_frame)
 	{
 		if(get_qr(qr_WEAPONS_EXTRA_SPAWN_FRAME))
@@ -3383,7 +3387,7 @@ bool weapon::animate(int32_t index)
 	}
 	if(fallclk > 0)
 	{
-		if(fallclk == PITFALL_FALL_FRAMES && fallCombo) sfx(combobuf[fallCombo].attribytes[0], pan(x.getInt()));
+		if(fallclk == PITFALL_FALL_FRAMES && fallCombo) sfx(combobuf[fallCombo].attribytes[0], pan(x));
 		if(!--fallclk)
 		{
 			if(!weapon_dying_frame && get_qr(qr_WEAPONS_EXTRA_DEATH_FRAME))
@@ -3420,7 +3424,7 @@ bool weapon::animate(int32_t index)
 	}
 	if(drownclk > 0)
 	{
-		//if(drownclk == WATER_DROWN_FRAMES && drownCombo) sfx(combobuf[drownCombo].attribytes[0], pan(x.getInt()));
+		//if(drownclk == WATER_DROWN_FRAMES && drownCombo) sfx(combobuf[drownCombo].attribytes[0], pan(x));
 		//!TODO: Drown SFX
 		if(!--drownclk)
 		{
@@ -3478,12 +3482,12 @@ bool weapon::animate(int32_t index)
 		{
 			item* ptr = (item*)items.spr(j);
 			
-			if((itemsbuf[ptr->id].family == itype_bottlefill) && !game->canFillBottle())
+			if((itemsbuf[ptr->id].type == itype_bottlefill) && !game->canFillBottle())
 				continue; //No picking these up unless you have a bottle to fill!
 			int32_t pickup = ptr->pickup;
 			if((pickup & ipCANGRAB) || (pickup & ipTIMER))
 			{
-				if(((pickup & ipCANGRAB) || ptr->clk2 >= 32) && !ptr->fallclk && !ptr->drownclk)
+				if(((pickup & ipCANGRAB) || ptr->clk2 >= game->get_item_spawn_flicker()) && !ptr->fallclk && !ptr->drownclk)
 				{
 					if(ptr->hit(wx,wy,z,wxsz,wysz,1))
 					{
@@ -3690,6 +3694,7 @@ bool weapon::animate(int32_t index)
 	else findcombotriggers();
 	
 	// fall down
+	handle_termv();
 	if ( moveflags & move_obeys_grav ) // from above, or if scripted
 	{
 		if(isSideViewGravity())
@@ -3699,10 +3704,8 @@ bool weapon::animate(int32_t index)
 			{
 				y+=fall/100;
 				
-				if(fall <= (int32_t)zinit.terminalv)
-				{
-					fall += (zinit.gravity/100);
-				}
+				if(fall <= get_terminalv_fall())
+					fall += get_grav_fall();
 			}
 			else
 			{
@@ -3754,10 +3757,8 @@ bool weapon::animate(int32_t index)
 						}
 					}
 				}
-				else if(fakefall <= (int32_t)zinit.terminalv)
-				{
-					fakefall += (zinit.gravity/100);
-				}
+				else if(fakefall <= get_terminalv_fall())
+					fakefall += get_grav_fall();
 			}
 			if (!(moveflags & move_no_real_z))
 			{
@@ -3782,13 +3783,12 @@ bool weapon::animate(int32_t index)
 						}
 					}
 				}
-				else if(fall <= (int32_t)zinit.terminalv)
-				{
-					fall += (zinit.gravity/100);
-				}
+				else if(fall <= get_terminalv_fall())
+					fall += get_grav_fall();
 			}
 		}
 	}
+	handle_termv();
 	if(moveflags & move_can_pitfall)
 	{
 		switch(id)
@@ -3882,17 +3882,11 @@ bool weapon::animate(int32_t index)
 	
 	switch(id)
 	{
-		case wScript1:
-		case wScript2:
-		case wScript3:
-		case wScript4:
-		case wScript5:
-		case wScript6:
-		case wScript7:
-		case wScript8:
-		case wScript9:
-		case wScript10:
+		case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+		case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
 		{
+			if(!get_qr(qr_OLD_WEAPON_REFLECTION))
+				do_mirror();
 			if ( ScriptGenerated && !isLWeapon ) break; //Return early for eweapons. We handle those elsewhere. 
 			if ( parentitem > -1 || (isLWeapon && ScriptGenerated) )
 			{
@@ -3912,9 +3906,7 @@ bool weapon::animate(int32_t index)
 				if(runscript_do_earlyret(run_script(MODE_NORMAL))) return false;
 			}
 		[[fallthrough]];
-		case wWand:
-		case wHammer:
-		case wBugNet:
+		case wWand: case wHammer: case wBugNet:
 		{
 			if (HeroAction() != attacking && HeroAction() != sideswimattacking && HeroAction() != ischarging && !HeroCharged())
 			{
@@ -3964,17 +3956,16 @@ bool weapon::animate(int32_t index)
 			
 			if(parentitem>-1 && dead != 1) //Perhaps don't play the sound if the weapon is dead?
 			{
-				sfx(itemsbuf[parentitem].usesound,pan(int32_t(x)),true,false);
+				sfx(itemsbuf[parentitem].usesound,pan(x),true,false);
 			}
 			if(runscript_do_earlyret(run_script(MODE_NORMAL))) return false;
 
 			break;
 		}
 		
-		case wBeam:
-		case wRefBeam:
+		case wBeam: case wRefBeam:
 		{
-			for(int32_t i2=0; i2<=zc_min(type-1,3) && dead!=23; i2++)
+			for(int32_t i2=0; i2<=zc_min(level-1,3) && dead!=23; i2++)
 			{
 				if(trigger_secrets_if_flag(x,y,mfSWORDBEAM+i2,true)) dead=23;
 			}
@@ -3993,295 +3984,14 @@ bool weapon::animate(int32_t index)
 				dead = 0;
 			}
 
-			if (id == ewSword && get_qr(qr_SWORDMIRROR) || id != ewSword && (parentitem > -1 ? itemsbuf[parentitem].flags & item_flag9 : get_qr(qr_SWORDMIRROR))) //TODO: First qr_SWORDMIRROR port to enemy weapon flag, second qr_SWORDMIRROR port to script default flag -V
-			{
-				zfix checkx = 0, checky = 0;
-				int32_t check_x_ofs = 0, check_y_ofs = 0;
-
-				if (get_qr(qr_MIRRORS_USE_WEAPON_CENTER))
-				{
-					checkx = (x + hxofs + (hit_width * 0.5));
-					checky = (y + hyofs + (hit_height * 0.5) - fakez);
-					check_x_ofs = x - (checkx - 8);
-					check_y_ofs = y - (checky - 8);
-				}
-				else
-				{
-					switch (dir)
-					{
-					case up:
-						checkx = x + 7;
-						checky = y + 8;
-						break;
-
-					case down:
-						checkx = x + 7;
-						checky = y;
-						break;
-
-					case left:
-						checkx = x + 8;
-						checky = y + 7;
-						break;
-
-					case right:
-						checkx = x;
-						checky = y + 7;
-						break;
-					}
-					checky -= fakez;
-				}
-
-				if (ignorecombo != rpos_t::None && ignorecombo == COMBOPOS_REGION_B(checkx, checky))
+			if (id == ewSword && get_qr(qr_SWORDMIRROR) || id != ewSword && (parentitem > -1 ? itemsbuf[parentitem].flags & item_flag9 : get_qr(qr_SWORDMIRROR))) //TODO: First qr_SWORDMIRROR port to enemy weapon flag, second qr_SWORDMIRROR port to script default flag -Em
+				if(do_mirror())
 					break;
-
-				int32_t posx, posy;
-				if (get_qr(qr_OLDMIRRORCOMBOS))//Replace this conditional with an ER; true if the ER is checked. This will use the old (glitchy) behavior for sword beams.
-				{
-					posx = x;
-					posy = y;
-				}
-				else
-				{
-					posx = checkx;
-					posy = checky;
-				}
-				byte layers = get_qr(qr_MIRROR_PRISM_LAYERS) ? 0b1111111 : 0b0000001;
-				bool fix_mirror_anim = false;
-				if (hitcombo(checkx, checky, cMIRROR, layers))
-				{
-					id = wRefBeam;
-					dir ^= 1;
-					if (dir & 2)
-						flip ^= 1;
-					else
-						flip ^= 2;
-						
-					ignoreHero = false;
-					ignorecombo = COMBOPOS_REGION_B(checkx, checky);
-					x = (int32_t)TRUNCATE_TILE(posx) + check_x_ofs;
-					y = (int32_t)TRUNCATE_TILE(posy) + check_y_ofs;
-				}
-
-				if (hitcombo(checkx, checky, cMIRRORSLASH, layers))
-				{
-					id = wRefBeam;
-					doAutoRotate(true);
-					dir = 3 - dir;
-					fix_mirror_anim = true;
-					ignoreHero = false;
-					ignorecombo = COMBOPOS_REGION_B(checkx, checky);
-					x = (int32_t)TRUNCATE_TILE(posx) + check_x_ofs;
-					y = (int32_t)TRUNCATE_TILE(posy) + check_y_ofs;
-				}
-
-				if (hitcombo(checkx, checky, cMIRRORBACKSLASH, layers))
-				{
-					id = wRefBeam;
-					dir ^= 2;
-					fix_mirror_anim = true;
-					ignoreHero = false;
-					ignorecombo = COMBOPOS_REGION_B(checkx, checky);
-					x = (int32_t)TRUNCATE_TILE(posx) + check_x_ofs;
-					y = (int32_t)TRUNCATE_TILE(posy) + check_y_ofs;
-				}
-
-				if (hitcombo(checkx, checky, cMAGICPRISM, layers))
-				{
-					int32_t newx, newy;
-					newx = (int32_t)TRUNCATE_TILE(posx) + check_x_ofs;
-					newy = (int32_t)TRUNCATE_TILE(posy) + check_y_ofs;
-					
-					for (int32_t tdir = 0; tdir < 4; tdir++)
-					{
-						//AngleToDir(double ddir)
-						//This didn't check for these before with the angle reflect rule... -Deedee
-						if ((dir != (tdir ^ 1) && !AngleReflect) || (tdir != 2 && AngleReflect))
-						{
-							weapon* w = new weapon(*this);
-							w->dir = tdir;
-							w->doAutoRotate(true);
-							//jesus fuck Zoria, this is blatantly wrong...
-							//In your next job, don't code while drunk you dumbass. -Deedee
-							if (this->angular && get_qr(qr_ANGULAR_REFLECTED_WEAPONS))
-							{
-								double newangle = this->angle + DegreesToRadians(90 * tdir);
-								w->angle = WrapAngle(newangle);
-								if (AngleReflect)
-								{
-									//Zoria, you need to turn on angular.
-									w->angular = true;
-									//Zoria, you need to set the dir... *sigh*
-									w->dir = AngleToDir(WrapAngle(newangle));
-									w->doAutoRotate();
-									//That's not to mention that the scope above checked for direction... on an angular weapon. Come on, that'll result in buggy behavior.
-									//Did you even fucking test this?
-									//No, of course you didn't. -Deedee
-								}
-							}
-							w->o_tile = ref_o_tile;
-							w->tile = ref_o_tile;
-							w->x = newx;
-							w->y = newy;
-							w->fakez = fakez;
-							w->z = z;
-							w->id = wRefBeam;
-							w->parentid = parentid;
-							w->parentitem = parentitem;
-							w->ignorecombo = COMBOPOS_REGION_B(checkx, checky);
-							w->hyofs = w->hxofs = 0;
-							//also set up the magic's correct animation -DD
-							w->flip = 0;
-							if (do_animation)
-							{
-								switch (w->dir)
-								{
-								case down:
-									w->flip = 2;
-
-								case up:
-									w->tile = w->o_tile;
-									w->hyofs = 2;
-									w->hit_height = 12;
-									break;
-
-								case left:
-									w->flip = 1;
-
-								case right:
-									w->tile = w->o_tile + ((w->frames > 1) ? w->frames : 1);
-									w->hxofs = 2;
-									w->hit_width = 12;
-									break;
-
-								default: break;
-								}
-							}
-							Lwpns.add(w);
-						}
-					}
-
-					dead = 0;
-				}
-
-				if (hitcombo(checkx, checky, cMAGICPRISM4, layers))
-				{
-					int32_t newx, newy;
-					newx = (int32_t)TRUNCATE_TILE(posx) + check_x_ofs;
-					newy = (int32_t)TRUNCATE_TILE(posy) + check_y_ofs;
-					
-					for (int32_t tdir = 0; tdir < 4; tdir++)
-					{
-						weapon* w = new weapon(*this);
-						w->dir = tdir;
-						w->doAutoRotate(true);
-						if (this->angular && get_qr(qr_ANGULAR_REFLECTED_WEAPONS))
-						{
-							double newangle = this->angle + DegreesToRadians(90 * tdir);
-							w->angle = WrapAngle(newangle);
-							if (AngleReflect)
-							{
-								w->angular = true;
-								w->doAutoRotate();
-								w->dir = AngleToDir(WrapAngle(newangle));
-							}
-						}
-						w->o_tile = ref_o_tile;
-						w->tile = ref_o_tile;
-						w->x = newx;
-						w->y = newy;
-						w->z = z;
-						w->fakez = fakez;
-						w->id = wRefBeam;
-						w->parentid = parentid;
-						w->parentitem = parentitem;
-						w->hyofs = w->hxofs = 0;
-						w->ignorecombo = COMBOPOS_REGION_B(checkx, checky);
-						//also set up the magic's correct animation -DD
-						w->flip = 0;
-						if (do_animation)
-						{
-							switch (w->dir)
-							{
-							case down:
-								w->flip = 2;
-
-							case up:
-								w->tile = w->o_tile;
-								w->hyofs = 2;
-								w->hit_height = 12;
-								break;
-
-							case left:
-								w->flip = 1;
-
-							case right:
-								w->tile = w->o_tile + ((w->frames > 1) ? w->frames : 1);
-								w->hxofs = 2;
-								w->hit_width = 12;
-								break;
-
-							default: break;
-							}
-						}
-						Lwpns.add(w);
-					}
-
-					dead = 0;
-				}
-
-				auto newmirror = gethitcombo(checkx, checky, cMIRRORNEW, layers);
-				if (newmirror > -1)
-				{
-					newcombo const& cmb = combobuf[newmirror];
-					id = wRefBeam;
-					byte newdir = cmb.attribytes[NORMAL_DIR(dir)];
-					if (newdir > 7)
-					{
-						dead = 0;
-						break;
-					}
-					dir = newdir;
-					fix_mirror_anim = true;
-					ignoreHero = false;
-					ignorecombo = COMBOPOS_REGION_B(checkx, checky);
-					
-					x = TRUNCATE_TILE(posx) + check_x_ofs;
-					y = TRUNCATE_TILE(posy) + check_y_ofs;
-				}
-
-				if (fix_mirror_anim)
-				{
-					if (dir == right)
-						flip &= ~1; // not horiz
-					else if (dir == left)
-						flip |= 1;  // horiz
-					else if (dir == up)
-						flip &= ~2; // not vert
-					else if (dir == down)
-						flip |= 2;  // vert
-					tile = ref_o_tile;
-
-					if (dir & 2)
-					{
-						if (frames > 1)
-							tile += frames;
-						else ++tile;
-					}
-				}
-			}
-
-
+			
 			if ((id == wRefBeam && ScriptGenerated) || id == wBeam)
 			{
 				if (runscript_do_earlyret(run_script(MODE_NORMAL))) return false;
 			}
-			if (id == ewSword)
-			{
-				//eweqapon script here, later
-
-			}
-
 			break;
 		}
 		
@@ -4327,19 +4037,25 @@ bool weapon::animate(int32_t index)
 				dead=1;
 			}
 			else if(get_qr(qr_MORESOUNDS) && dead < 1)
-				sfx(WAV_ZN1WHIRLWIND,pan(int32_t(x)),true,false);
+				sfx(WAV_ZN1WHIRLWIND,pan(x),true,false);
 				
 			if((parentitem==-1 && get_qr(qr_WHIRLWINDMIRROR)) || (parentitem > -1 && itemsbuf[parentitem].flags & item_flag3))
-				goto mirrors;
+			{
+				do_mirror();
+				break;
+			}
 				
 			if(runscript_do_earlyret(run_script(MODE_NORMAL))) return false;
 			break;
 		}
-		
-		case wFire:
-		case wRefFire:
-		case wRefFire2:
+		case ewWind: case ewRock: case wRefRock: case ewArrow: case ewFlame2:
+			if(!get_qr(qr_OLD_WEAPON_REFLECTION))
+				do_mirror();
+			break;
+		case wFire: case wRefFire: case wRefFire2:
 		{
+			if(!get_qr(qr_OLD_WEAPON_REFLECTION))
+				do_mirror();
 			if(blocked())
 			{
 				dead=1;
@@ -4375,7 +4091,7 @@ bool weapon::animate(int32_t index)
 					triggerfire(x,y,this,true,true,false,false,false);
 				}
 			}
-			else if(parentitem<0 || (parentitem>-1 && parent.family!=itype_book))
+			else if(parentitem<0 || (parentitem>-1 && parent.type!=itype_book))
 			{
 				if(clk==32)
 				{
@@ -4412,7 +4128,7 @@ bool weapon::animate(int32_t index)
 				if(clk==94 || get_qr(qr_INSTABURNFLAGS))
 				{
 					triggerfire(x,y,this,true,
-						true,parentitem < 0 ? type > 1 : (parent.flags & item_flag9),
+						true,parentitem < 0 ? level > 1 : (parent.flags & item_flag9),
 						parent.flags & item_flag10,parent.flags & item_flag11);
 				}
 			}
@@ -4491,7 +4207,7 @@ bool weapon::animate(int32_t index)
 			
 			if(clk==(misc-1) && step==0)
 			{
-				sfx(specialsfx,pan(int32_t(x)));
+				sfx(specialsfx,pan(x));
 					
 				if(id==wSBomb || id==wLitSBomb || id==ewSBomb || id==ewLitSBomb)
 				{
@@ -4527,6 +4243,8 @@ bool weapon::animate(int32_t index)
 		case wArrow:
 		case wRefArrow:
 		{
+			if(!get_qr(qr_OLD_WEAPON_REFLECTION))
+				do_mirror();
 			if(runscript_do_earlyret(run_script(MODE_NORMAL))) return false;
 			if(weapon_dying_frame)
 			{
@@ -4670,7 +4388,7 @@ bool weapon::animate(int32_t index)
 				}
 			*/
 			
-			int32_t branglevel = itemsbuf[parentitem>-1 ? parentitem : current_item_id(itype_brang)].fam_type;
+			int32_t branglevel = itemsbuf[parentitem>-1 ? parentitem : current_item_id(itype_brang)].level;
 			
 			switch ( branglevel )
 			{
@@ -4746,33 +4464,33 @@ bool weapon::animate(int32_t index)
 			if(clk==0)                                            // delay a frame
 			{
 				++clk;
-				sfx(itemsbuf[parentitem>-1 ? parentitem : current_item_id(itype_brang)].usesound,pan(int32_t(x)),true);
+				sfx(itemsbuf[parentitem>-1 ? parentitem : current_item_id(itype_brang)].usesound,pan(x),true);
 				return false;
 			}
 			
 			if(clk==1)                                            // then check directional input
 			{
-				if(Up())
+				if(getInput(btnUp, INPUT_HERO_ACTION))
 				{
 					dir=up;
 					
-					if(Left())  dir=l_up;
+					if(getInput(btnLeft, INPUT_HERO_ACTION))  dir=l_up;
 					
-					if(Right()) dir=r_up;
+					if(getInput(btnRight, INPUT_HERO_ACTION)) dir=r_up;
 				}
-				else if(Down())
+				else if(getInput(btnDown, INPUT_HERO_ACTION))
 				{
 					dir=down;
 					
-					if(Left())  dir=l_down;
+					if(getInput(btnLeft, INPUT_HERO_ACTION))  dir=l_down;
 					
-					if(Right()) dir=r_down;
+					if(getInput(btnRight, INPUT_HERO_ACTION)) dir=r_down;
 				}
-				else if(Left())
+				else if(getInput(btnLeft, INPUT_HERO_ACTION))
 				{
 					dir=left;
 				}
-				else if(Right())
+				else if(getInput(btnRight, INPUT_HERO_ACTION))
 				{
 					dir=right;
 				}
@@ -4817,7 +4535,7 @@ bool weapon::animate(int32_t index)
 				
 				seekHero();
 			}
-			sfx(itemsbuf[parentitem>-1 ? parentitem : current_item_id(itype_brang)].usesound,pan(int32_t(x)),true,false);
+			sfx(itemsbuf[parentitem>-1 ? parentitem : current_item_id(itype_brang)].usesound,pan(x),true,false);
 			
 			break;
 		}
@@ -4850,9 +4568,9 @@ bool weapon::animate(int32_t index)
 			//This sets the direction for digaonals based on controller input. 
 			if(clk==1 && allow_diagonal)    
 			{
-				if(Up())
+				if(getInput(btnUp, INPUT_HERO_ACTION))
 				{
-					if(Left() )  
+					if(getInput(btnLeft, INPUT_HERO_ACTION) )  
 					{
 						LOADGFX(hshot.wpn5);
 						dir=l_up;
@@ -4873,7 +4591,7 @@ bool weapon::animate(int32_t index)
 						
 					}
 					
-					else if(Right() ) 
+					else if(getInput(btnRight, INPUT_HERO_ACTION) ) 
 					{
 						LOADGFX(hshot.wpn5);
 						dir=r_up;
@@ -4897,11 +4615,11 @@ bool weapon::animate(int32_t index)
 					}
 					misc2 = 1; //to prevent wagging it all over the screen, we set it once. 
 				}
-				else if(Down())
+				else if(getInput(btnDown, INPUT_HERO_ACTION))
 				{
 					//dir=down; //Up would already have been set if facing down.
 					
-					if(Left() )  
+					if(getInput(btnLeft, INPUT_HERO_ACTION) )  
 					{
 						LOADGFX(hshot.wpn5);
 						dir=l_down;
@@ -4922,7 +4640,7 @@ bool weapon::animate(int32_t index)
 						
 					}
 					
-					else if(Right() ) 
+					else if(getInput(btnRight, INPUT_HERO_ACTION) ) 
 					{
 						LOADGFX(hshot.wpn5);
 						dir=r_down;
@@ -5044,7 +4762,7 @@ bool weapon::animate(int32_t index)
 						switching_object = ffc;
 					}
 					Hero.doSwitchHook(hshot.misc5);
-					sfx(hshot.usesound2,pan(int32_t(x)));
+					sfx(hshot.usesound2,pan(x));
 					stop_sfx(hshot.usesound);
 					hs_switcher = true;
 				}
@@ -5063,7 +4781,7 @@ bool weapon::animate(int32_t index)
 			{
 				++clk;
 				
-				if(misc < 2) sfx(hshot.usesound,pan(int32_t(x)),true);
+				if(misc < 2) sfx(hshot.usesound,pan(x),true);
 				if(runscript_do_earlyret(run_script(MODE_NORMAL))) return false;
 				return false;
 			}
@@ -5105,7 +4823,7 @@ bool weapon::animate(int32_t index)
 				}
 			}
 			
-			if(misc < 2) sfx(hshot.usesound,pan(int32_t(x)),true,false);
+			if(misc < 2) sfx(hshot.usesound,pan(x),true,false);
 			
 			if(blocked())
 			{
@@ -5141,9 +4859,9 @@ bool weapon::animate(int32_t index)
 			//This sets the direction for digaonals based on controller input. 
 			if(clk==1 && allow_diagonal)    
 			{
-				if(Up())
+				if(getInput(btnUp, INPUT_HERO_ACTION))
 				{
-					if(Left() )  
+					if(getInput(btnLeft, INPUT_HERO_ACTION) )  
 					{
 						LOADGFX(hshot.wpn6);
 						dir=l_up;
@@ -5164,7 +4882,7 @@ bool weapon::animate(int32_t index)
 						
 					}
 					
-					else if(Right() ) 
+					else if(getInput(btnRight, INPUT_HERO_ACTION) ) 
 					{
 						LOADGFX(hshot.wpn6);
 						dir=r_up;
@@ -5189,11 +4907,11 @@ bool weapon::animate(int32_t index)
 					misc2 = 1; //to prevent wagging it all over the screen, we set it once. 
 				}
 			
-				else if(Down())
+				else if(getInput(btnDown, INPUT_HERO_ACTION))
 				{
 					//dir=down; //Up would already have been set if facing down.
 					
-					if(Left() )  
+					if(getInput(btnLeft, INPUT_HERO_ACTION) )  
 					{
 						LOADGFX(hshot.wpn6);
 						dir=l_down;
@@ -5214,7 +4932,7 @@ bool weapon::animate(int32_t index)
 						
 					}
 					
-					else if(Right() ) 
+					else if(getInput(btnRight, INPUT_HERO_ACTION) ) 
 					{
 						LOADGFX(hshot.wpn6);
 						dir=r_down;
@@ -5256,9 +4974,9 @@ bool weapon::animate(int32_t index)
 			//This sets the direction for digaonals based on controller input. 
 			if(clk==1 && allow_diagonal)    
 			{
-				if(Up())
+				if(getInput(btnUp, INPUT_HERO_ACTION))
 				{
-					if(Left() )  
+					if(getInput(btnLeft, INPUT_HERO_ACTION) )  
 					{
 						LOADGFX(hshot.wpn7);
 						dir=l_up;
@@ -5279,7 +4997,7 @@ bool weapon::animate(int32_t index)
 						
 					}
 					
-					else if(Right() ) 
+					else if(getInput(btnRight, INPUT_HERO_ACTION) ) 
 					{
 						LOADGFX(hshot.wpn7);
 						dir=r_up;
@@ -5304,11 +5022,11 @@ bool weapon::animate(int32_t index)
 					misc2 = 1; //to prevent wagging it all over the screen, we set it once. 
 				}
 			
-				else if(Down())
+				else if(getInput(btnDown, INPUT_HERO_ACTION))
 				{
 					//dir=down; //Up would already have been set if facing down.
 					
-					if(Left() )  
+					if(getInput(btnLeft, INPUT_HERO_ACTION) )  
 					{
 						LOADGFX(hshot.wpn7);
 						dir=l_down;
@@ -5329,7 +5047,7 @@ bool weapon::animate(int32_t index)
 						
 					}
 					
-					else if(Right() ) 
+					else if(getInput(btnRight, INPUT_HERO_ACTION) ) 
 					{
 						LOADGFX(hshot.wpn7);
 						dir=r_down;
@@ -5357,7 +5075,7 @@ bool weapon::animate(int32_t index)
 		
 		case wPhantom:
 		{
-			switch(type)
+			switch(level)
 			{
 				case pDIVINEFIREROCKET:
 					if(y <= -200)
@@ -5468,7 +5186,7 @@ bool weapon::animate(int32_t index)
 		   
 			bool brokebook = get_qr(qr_BROKENBOOKCOST);
 			itemdata const& book = itemsbuf[brokebook ? (parentitem>-1 ? parentitem : current_item_id(itype_book)) : linkedItem];
-			if((id==wMagic && (brokebook ? current_item(itype_book) : (linkedItem && book.family == itype_book)) &&
+			if((id==wMagic && (brokebook ? current_item(itype_book) : (linkedItem && book.type == itype_book)) &&
 				book.flags&item_flag1) && get_qr(qr_INSTABURNFLAGS))
 			{
 				triggerfire(x,y,this,true,
@@ -5476,801 +5194,13 @@ bool weapon::animate(int32_t index)
 					book.flags & item_flag10,book.flags & item_flag11);
 			}
 			
-			
-			//mirrors: //the latter instance should suffice
-			zfix checkx=0, checky=0;
-			int32_t check_x_ofs=0, check_y_ofs=0;
-			if (get_qr(qr_MIRRORS_USE_WEAPON_CENTER))
-			{
-				checkx = (x+hxofs+(hit_width*0.5));
-				checky = (y+hyofs+(hit_height*0.5)-fakez);
-				check_x_ofs = x - (checkx-8);
-				check_y_ofs = y - (checky-8);
-			}
-			else
-			{
-				switch(dir)
-				{
-					case up:
-						checkx=x+7;
-						checky=y+8;
-						break;
-						
-					case down:
-						checkx=x+7;
-						checky=y;
-						break;
-						
-					case left:
-						checkx=x+8;
-						checky=y+7;
-						break;
-						
-					case right:
-						checkx=x;
-						checky=y+7;
-						break;
-				}
-				checky-=fakez;
-			}
-			
-			if (ignorecombo == rpos_t::None || ignorecombo != COMBOPOS_REGION_B(checkx, checky))
-			{
-				byte layers = get_qr(qr_MIRROR_PRISM_LAYERS) ? 0b1111111 : 0b0000001;
-				if(hitcombo(checkx, checky, cMIRROR, layers))
-				{
-					weapon *w=NULL;
-					
-					if(id==ewMagic)
-					{
-						w=new weapon(*this);
-						dead=0;
-						if (!Lwpns.add(w)) break;
-					}
-					else
-					{
-						w=this;
-					}
-					
-					w->dir ^= 1;
-					
-					if(w->id != wWind)
-					{
-						w->id = wRefMagic; w->convertType(true);
-						
-						if(w->dir&2)
-							w->flip ^= 1;
-						else
-							w->flip ^= 2;
-					}
-					
-					w->ignoreHero=false;
-					w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-					w->x=TRUNCATE_TILE(checkx.getInt())+check_x_ofs;
-					w->y=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-				}
-				
-				if(hitcombo(checkx, checky, cMIRRORSLASH, layers))
-				{
-					weapon *w=NULL;
-					
-					if(id==ewMagic)
-					{
-						w=new weapon(*this);
-						dead=0;
-						if (!Lwpns.add(w)) break;
-					}
-					else
-					{
-						w=this; //Oh, look, a memory leak. The new instruction is making something on the heap, but this circumvents removing it. 
-					}
-					
-					w->o_tile = ref_o_tile;
-					w->tile = ref_o_tile;
-					w->dir = 3-w->dir;
-					w->doAutoRotate(true);
-					
-					if(w->id != wWind)
-					{
-						w->id = wRefMagic; w->convertType(true);
-						if ( do_animation ) 
-						{
-							if((w->dir==1)||(w->dir==2))
-							w->flip ^= 3;
-						}
-					}
-					if ( do_animation ) 
-					{
-						w->tile=w->o_tile;
-						
-						if(w->dir&2)
-						{
-							if(w->frames>1)
-							{
-							w->tile+=w->frames;
-							}
-							else
-							{
-							++w->tile;
-							}
-						}
-					}
-					w->ignoreHero=false;
-					w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-					w->x=TRUNCATE_TILE(checkx.getInt())+check_x_ofs;
-					w->y=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-				}
-				
-				if(hitcombo(checkx, checky, cMIRRORBACKSLASH, layers))
-				{
-					weapon *w = NULL;
-					
-					if(id==ewMagic)
-					{
-						w=new weapon(*this);
-						dead=0;
-						if (!Lwpns.add(w)) break;
-					}
-					else
-					{
-						w=this;
-					}
-					
-					w->o_tile = ref_o_tile;
-					w->tile = ref_o_tile;
-					w->dir ^= 2;
-					w->doAutoRotate(true);
-					
-					if(w->id != wWind)
-					{
-						w->id = wRefMagic; w->convertType(true);
-						if ( do_animation ) 
-						{
-							if(w->dir&1)
-								w->flip ^= 2;
-							else
-								w->flip ^= 1;
-						}
-					}
-					if ( do_animation ) 
-					{
-						w->tile=w->o_tile;
-						
-						if(w->dir&2)
-						{
-							if(w->frames>1)
-							{
-							w->tile+=w->frames;
-							}
-							else
-							{
-							++w->tile;
-							}
-						}
-					}
-					
-					w->ignoreHero=false;
-					w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-					w->x=TRUNCATE_TILE(checkx.getInt())+check_x_ofs;
-					w->y=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-				}
-				
-				if(hitcombo(checkx, checky, cMAGICPRISM, layers) && (id != wWind))
-				{
-					int32_t newx, newy;
-					newy=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-					newx=(int32_t(checkx)&0xF0)+check_x_ofs;
-					
-					for(int32_t tdir=0; tdir<4; tdir++)
-					{
-						if((dir!=(tdir^1) && !AngleReflect) || (tdir != 2 && AngleReflect))
-						{
-							weapon *w=new weapon(*this);
-							w->dir=tdir;
-							w->doAutoRotate(true);
-							if ( this->angular && get_qr(qr_ANGULAR_REFLECTED_WEAPONS) )
-							{
-								double newangle = this->angle + DegreesToRadians(90*tdir);
-								w->angle = WrapAngle(newangle);
-								if (AngleReflect)
-								{
-									w->angular = true;
-									w->doAutoRotate();
-									w->dir = AngleToDir(WrapAngle(newangle));
-								}
-							}
-							w->o_tile = ref_o_tile;
-							w->tile = ref_o_tile;
-							w->x=newx;
-							w->y=newy;
-							w->fakez=fakez;
-							w->z=z;
-							w->id=wRefMagic; w->convertType(true);
-							w->parentid=parentid;
-							w->parentitem=parentitem;
-							w->flip = 0;
-							w->ignoreHero = false;
-							w->hyofs = w->hxofs = 0;
-							w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-							if ( do_animation ) 
-							{
-								//also set up the magic's correct animation -DD
-								switch(w->dir)
-								{
-									case down:
-										w->flip=2;
-										
-									case up:
-										w->tile = w->o_tile;
-										w->hyofs=2;
-										w->hit_height=12;
-										break;
-										
-									case left:
-										w->flip=1;
-										
-									case right:
-										w->tile=w->o_tile+((w->frames>1)?w->frames:1);
-										w->hxofs=2;
-										w->hit_width=12;
-										break;
-									
-									default: break;
-								}
-							}
-							Lwpns.add(w);
-						}
-					}
-					
-					dead=0;
-				}
-				
-				if(hitcombo(checkx, checky, cMAGICPRISM4, layers) && (id != wWind))
-				{
-					int32_t newx, newy;
-					newy=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-					newx=(int32_t(checkx)&0xF0)+check_x_ofs;
-					
-					for(int32_t tdir=0; tdir<4; tdir++)
-					{
-						weapon *w=new weapon(*this);
-						w->dir=tdir;
-						w->doAutoRotate(true);
-						if ( this->angular && get_qr(qr_ANGULAR_REFLECTED_WEAPONS) )
-						{
-							double newangle = this->angle + DegreesToRadians(90*tdir);
-							w->angle = WrapAngle(newangle);
-							if (AngleReflect)
-							{
-								w->angular = true;
-								w->doAutoRotate();
-								w->dir = AngleToDir(WrapAngle(newangle));
-							}
-						}
-						w->o_tile = ref_o_tile;
-						w->tile = ref_o_tile;
-						w->x=newx;
-						w->y=newy;
-						w->fakez=fakez;
-						w->z=z;
-						w->id=wRefMagic; w->convertType(true);
-						w->parentid=parentid;
-						w->parentitem=parentitem;
-						w->flip = 0;
-						w->ignoreHero = false;
-						w->hyofs = w->hxofs = 0;
-						w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-						
-						if ( do_animation ) 
-						{
-							//also set up the magic's correct animation -DD
-							switch(w->dir)
-							{
-								case down:
-									w->flip=2;
-								
-								case up:
-									w->tile = w->o_tile;
-									w->hyofs=2;
-									w->hit_height=12;
-									break;
-								
-								case left:
-									w->flip=1;
-								
-								case right:
-									w->tile=w->o_tile+((w->frames>1)?w->frames:1);
-									w->hxofs=2;
-									w->hit_width=12;
-									break;
-								
-								default: break;
-							}
-						}
-						Lwpns.add(w);
-					}
-					
-					dead=0;
-				}
-				
-				auto newmirror = gethitcombo(checkx, checky, cMIRRORNEW, layers);
-				if(newmirror > -1)
-				{
-					newcombo const& cmb = combobuf[newmirror];
-					weapon *w=NULL;
-					
-					if(id==ewMagic)
-					{
-						w=new weapon(*this);
-						dead=0;
-						if (!Lwpns.add(w)) break;
-					}
-					else
-					{
-						w=this;
-					}
-					
-					byte newdir = cmb.attribytes[NORMAL_DIR(w->dir)];
-					if(newdir > 7)
-					{
-						dead = 0;
-						break;
-					}
-					w->dir = newdir;
-					
-					if(w->id != wWind)
-					{
-						w->id = wRefMagic; w->convertType(true);
-						
-						tile = ref_o_tile;
-						int tile_inc = zc_max(frames,1);
-						switch(dir)
-						{
-							case up:
-								flip = 0;
-								break;
-							case right:
-								flip = 0;
-								tile += tile_inc;
-								break;
-							case left:
-								flip = 1; //horz
-								tile += tile_inc;
-								break;
-							case down:
-								flip = 2; //vert
-								break;
-							case l_up:
-								flip = 0;
-								tile += tile_inc*2;
-								break;
-							case l_down:
-								flip = 2; //vert
-								tile += tile_inc*2;
-								break;
-							case r_up:
-								flip = 1; //horz
-								tile += tile_inc*2;
-								break;
-							case r_down:
-								flip = 3; //horz+vert
-								tile += tile_inc*2;
-								break;
-						}
-						o_tile = tile;
-					}
-					
-					w->ignoreHero=false;
-					w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-					w->x=TRUNCATE_TILE(checkx.getInt())+check_x_ofs;
-					w->y=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-				}
-				
-				if(blocked(0, 0))
-				{
-					dead=0;
-				}
-			}
+			if(do_mirror()) break;
 			if(runscript_do_earlyret(run_script(MODE_NORMAL))) return false;
 		}
 		break;
 		
 		case ewMagic:
-		{
-		mirrors: //jumped to by wWind
-			zfix checkx=0, checky=0;
-			int32_t check_x_ofs=0, check_y_ofs=0;
-			
-			if (get_qr(qr_MIRRORS_USE_WEAPON_CENTER))
-			{
-				checkx = (x+hxofs+(hit_width*0.5));
-				checky = (y+hyofs+(hit_height*0.5)-fakez);
-				check_x_ofs = x - (checkx-8);
-				check_y_ofs = y - (checky-8);
-			}
-			else
-			{
-				switch(dir)
-				{
-					case up:
-						checkx=x+7;
-						checky=y+8;
-						break;
-						
-					case down:
-						checkx=x+7;
-						checky=y;
-						break;
-						
-					case left:
-						checkx=x+8;
-						checky=y+7;
-						break;
-						
-					case right:
-						checkx=x;
-						checky=y+7;
-						break;
-				}
-				checky-=fakez;
-			}
-			
-			if (ignorecombo == rpos_t::None || ignorecombo != COMBOPOS_REGION_B(checkx, checky))
-			{
-				byte layers = get_qr(qr_MIRROR_PRISM_LAYERS) ? 0b1111111 : 0b0000001;
-				if(hitcombo(checkx, checky, cMIRROR, layers))
-				{
-					weapon *w=NULL;
-					
-					if(id==ewMagic)
-					{
-						w=new weapon(*this);
-						dead=0;
-						if (!Lwpns.add(w)) break;
-					}
-					else
-					{
-						w=this;
-					}
-					
-					
-					w->dir ^= 1;
-					
-					if(w->id != wWind)
-					{
-						w->id = wRefMagic; w->convertType(true);
-						
-						if(w->dir&2)
-							w->flip ^= 1;
-						else
-							w->flip ^= 2;
-					}
-					
-					w->ignoreHero=false;
-					w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-					w->x=TRUNCATE_TILE(checkx.getInt())+check_x_ofs;
-					w->y=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-				}
-				
-				if(hitcombo(checkx, checky, cMIRRORSLASH, layers))
-				{
-					weapon *w=NULL;
-					
-					if(id==ewMagic)
-					{
-						w=new weapon(*this);
-						dead=0;
-						if (!Lwpns.add(w)) break;
-					}
-					else
-					{
-						w=this;
-					}
-					
-					w->o_tile = ref_o_tile;
-					w->tile = ref_o_tile;
-					w->dir = 3-w->dir;
-					w->doAutoRotate(true);
-					
-					if(w->id != wWind)
-					{
-						w->id = wRefMagic; w->convertType(true);
-						if ( do_animation ) 
-						{
-							if((w->dir==1)||(w->dir==2))
-							w->flip ^= 3;
-						}
-					}
-					if ( do_animation ) 
-					{
-						w->tile=w->o_tile;
-						
-						if(w->dir&2)
-						{
-							if(w->frames>1)
-							{
-								w->tile+=w->frames;
-							}
-							else
-							{
-								++w->tile;
-							}
-						}
-					}
-					w->ignoreHero=false;
-					w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-					w->x=TRUNCATE_TILE(checkx.getInt())+check_x_ofs;
-					w->y=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-				}
-				
-				if(hitcombo(checkx, checky, cMIRRORBACKSLASH, layers))
-				{
-					weapon *w=NULL;
-					
-					if(id==ewMagic)
-					{
-						w=new weapon(*this);
-						dead=0;
-						if (!Lwpns.add(w)) break;
-					}
-					else
-					{
-						w=this;
-					}
-					
-					w->o_tile = ref_o_tile;
-					w->tile = ref_o_tile;
-					w->dir ^= 2;
-					w->doAutoRotate(true);
-					
-					if(w->id != wWind)
-					{
-						w->id = wRefMagic; w->convertType(true);
-						if ( do_animation ) 
-						{
-							if(w->dir&1)
-								w->flip ^= 2;
-							else
-								w->flip ^= 1;
-						}
-					}
-					if ( do_animation ) 
-					{
-						w->tile=w->o_tile;
-						
-						if(w->dir&2)
-						{
-							if(w->frames>1)
-							{
-								w->tile+=w->frames;
-							}
-							else
-							{
-								++w->tile;
-							}
-						}
-					}
-					
-					w->ignoreHero=false;
-					w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-					w->x=TRUNCATE_TILE(checkx.getInt())+check_x_ofs;
-					w->y=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-				}
-				
-				if(hitcombo(checkx, checky, cMAGICPRISM, layers) && (id != wWind))
-				{
-					int32_t newx, newy;
-					newy=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-					newx=(int32_t(checkx)&0xF0)+check_x_ofs;
-					
-					for(int32_t tdir=0; tdir<4; tdir++)
-					{
-						if((dir!=(tdir^1) && !AngleReflect) || (tdir != 2 && AngleReflect))
-						{
-							weapon *w=new weapon(*this);
-							w->dir=tdir;
-							w->doAutoRotate(true);
-							if ( this->angular && get_qr(qr_ANGULAR_REFLECTED_WEAPONS) )
-							{
-								double newangle = this->angle + DegreesToRadians(90*tdir);
-								w->angle = WrapAngle(newangle);
-								if (AngleReflect)
-								{
-									w->angular = true;
-									w->doAutoRotate();
-									w->dir = AngleToDir(WrapAngle(newangle));
-								}
-							}
-							w->o_tile = ref_o_tile;
-							w->tile = ref_o_tile;
-							w->x=newx;
-							w->y=newy;
-							w->fakez=fakez;
-							w->z=z;
-							w->id=wRefMagic; w->convertType(true);
-							w->parentid=parentid;
-							w->parentitem=parentitem;
-							w->flip = 0;
-							w->ignoreHero = false;
-							w->hyofs = w->hxofs = 0;
-							w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-							if ( do_animation ) 
-							{
-								//also set up the magic's correct animation -DD
-								switch(w->dir)
-								{
-									case down:
-										w->flip=2;
-										
-									case up:
-										w->tile = w->o_tile;
-										w->hyofs=2;
-										w->hit_height=12;
-										break;
-										
-									case left:
-										w->flip=1;
-										
-									case right:
-										w->tile=w->o_tile+((w->frames>1)?w->frames:1);
-										w->hxofs=2;
-										w->hit_width=12;
-										break;
-									
-									default: break;
-								}
-							}
-							Lwpns.add(w);
-						}
-					}
-					
-					dead=0;
-				}
-				
-				if(hitcombo(checkx, checky, cMAGICPRISM4, layers) && (id != wWind))
-				{
-					int32_t newx, newy;
-					newy=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-					newx=(int32_t(checkx)&0xF0)+check_x_ofs;
-					
-					for(int32_t tdir=0; tdir<4; tdir++)
-					{
-						weapon *w=new weapon(*this);
-						w->dir=tdir;
-						w->doAutoRotate(true);
-						if ( this->angular && get_qr(qr_ANGULAR_REFLECTED_WEAPONS) )
-						{
-							double newangle = this->angle + DegreesToRadians(90*tdir);
-							w->angle = WrapAngle(newangle);
-							if (AngleReflect)
-							{
-								w->angular = true;
-								w->doAutoRotate();
-								w->dir = AngleToDir(WrapAngle(newangle));
-							}
-						}
-						w->o_tile = ref_o_tile;
-						w->tile = ref_o_tile;
-						w->x=newx;
-						w->y=newy;
-						w->fakez=fakez;
-						w->z=z;
-						w->id=wRefMagic; w->convertType(true);
-						w->parentid=parentid;
-						w->parentitem=parentitem;
-						w->flip = 0;
-						w->ignoreHero = false;
-						w->hyofs = w->hxofs = 0;
-						w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-						
-						if ( do_animation ) 
-						{
-							//also set up the magic's correct animation -DD
-							switch(w->dir)
-							{
-								case down:
-									w->flip=2;
-								
-								case up:
-									w->tile = w->o_tile;
-									w->hyofs=2;
-									w->hit_height=12;
-									break;
-								
-								case left:
-									w->flip=1;
-								
-								case right:
-									w->tile=w->o_tile+((w->frames>1)?w->frames:1);
-									w->hxofs=2;
-									w->hit_width=12;
-									break;
-								
-								default: break;
-							}
-						}
-						Lwpns.add(w);
-					}
-					
-					dead=0;
-				}
-				
-				auto newmirror = gethitcombo(checkx, checky, cMIRRORNEW, layers);
-				if(newmirror > -1)
-				{
-					newcombo const& cmb = combobuf[newmirror];
-					weapon *w = this;
-					
-					byte newdir = cmb.attribytes[NORMAL_DIR(w->dir)];
-					if(newdir > 7)
-					{
-						dead = 0;
-						break;
-					}
-
-					if (id == ewMagic)
-					{
-						w = new weapon(*this);
-						dead = 0;
-						if (!Lwpns.add(w)) break;
-					}
-
-					w->dir = newdir;
-					
-					if(w->id != wWind)
-					{
-						w->id = wRefMagic; w->convertType(true);
-						
-						tile = ref_o_tile;
-						int tile_inc = zc_max(frames,1);
-						switch(dir)
-						{
-							case up:
-								flip = 0;
-								break;
-							case right:
-								flip = 0;
-								tile += tile_inc;
-								break;
-							case left:
-								flip = 1; //horz
-								tile += tile_inc;
-								break;
-							case down:
-								flip = 2; //vert
-								break;
-							case l_up:
-								flip = 0;
-								tile += tile_inc*2;
-								break;
-							case l_down:
-								flip = 2; //vert
-								tile += tile_inc*2;
-								break;
-							case r_up:
-								flip = 1; //horz
-								tile += tile_inc*2;
-								break;
-							case r_down:
-								flip = 3; //horz+vert
-								tile += tile_inc*2;
-								break;
-						}
-						o_tile = tile;
-					}
-					
-					w->ignoreHero=false;
-					w->ignorecombo=COMBOPOS_REGION_B(checkx, checky);
-					w->x=TRUNCATE_TILE(checkx.getInt())+check_x_ofs;
-					w->y=TRUNCATE_TILE(checky.getInt())+check_y_ofs;
-				}
-				
-				if(blocked(0, 0))
-				{
-					dead=0;
-				}
-			}
-		}
+			do_mirror();
 		break;
 		
 		//  enemy weapons
@@ -6318,6 +5248,8 @@ bool weapon::animate(int32_t index)
 		case wRefFireball:
 		case ewFireball:
 		{
+			if(!get_qr(qr_OLD_WEAPON_REFLECTION))
+				do_mirror();
 			if((id==wRefFireball)&&(trigger_secrets_if_flag(x,y,mfREFFIREBALL,true))) dead=0;
 			
 			if((id==wRefFireball)&&(trigger_secrets_if_flag(x,y,mfSTRIKE,true))) dead=0;
@@ -6351,6 +5283,8 @@ bool weapon::animate(int32_t index)
 		
 		case ewFlame:
 		{
+			if(!get_qr(qr_OLD_WEAPON_REFLECTION))
+				do_mirror();
 			if(clk==32)
 			{
 				step=0;
@@ -6442,7 +5376,7 @@ bool weapon::animate(int32_t index)
 				if(get_qr(qr_MORESOUNDS))
 				{
 					//if (step!=0)
-					sfx(specialsfx, pan(int32_t(x)), true);
+					sfx(specialsfx, pan(x), true);
 					//else
 					;//stop_sfx(WAV_BRANG);
 				}
@@ -6641,7 +5575,798 @@ bool weapon::animate(int32_t index)
 		}
 	}
 	if(ret || rundeath) do_death_fx();
+	if(!get_qr(qr_OLD_WEAPON_DRAW_ANIMATE_TIMING))
+		animate_graphics();
 	return ret;
+}
+
+static void _reflect_helper(weapon* w, zfix newx, zfix newy, rpos_t cpos)
+{
+	switch(w->id)
+	{
+		case ewMagic: case wMagic: case wRefMagic:
+		{
+			w->id = wRefMagic;
+			break;
+		}
+		case wBeam: case wRefBeam: case ewSword:
+		{
+			w->id = wRefBeam;
+			break;
+		}
+		case wRefRock: case ewRock:
+		{
+			w->id = wRefRock;
+			break;
+		}
+		case wArrow: case ewArrow: case wRefArrow:
+		{
+			w->id = wRefArrow;
+			break;
+		}
+		case ewFireball: case ewFireball2: case wRefFireball:
+		{
+			w->id = wRefFireball;
+			break;
+		}
+		case wFire: case ewFlame: case wRefFire:
+		{
+			w->id = wRefFire;
+			break;
+		}
+		case ewFlame2: case wRefFire2:
+		{
+			w->id = wRefFire2;
+			break;
+		}
+	}
+	
+	w->convertType(true);
+	w->ignoreHero = false;
+	w->ignorecombo = cpos;
+	w->x = newx;
+	w->y = newy;
+}
+bool weapon::_prism_dupe(zfix newx, zfix newy, rpos_t cpos, int tdir)
+{
+	bool AngleReflect = (this->angular && get_qr(qr_ANGULAR_REFLECTED_WEAPONS) && !get_qr(qr_ANGULAR_REFLECT_BROKEN));
+	weapon *w = nullptr;
+	switch(id)
+	{
+		case wBeam: case wRefBeam: case ewSword:
+		case wMagic: case wRefMagic: case ewMagic:
+		case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+		case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
+		case ewRock: case wRefRock:
+		case wArrow: case ewArrow: case wRefArrow:
+		case ewFireball: case ewFireball2: case wRefFireball:
+		case wFire: case ewFlame: case wRefFire:
+		case ewFlame2: case wRefFire2:
+		{
+			w = new weapon(*this);
+			if (!Lwpns.add(w))
+				return false;
+			break;
+		}
+	}
+	DCHECK(w);
+	
+	_reflect_helper(w, newx, newy, cpos);
+	w->dir = tdir;
+	w->doAutoRotate(true);
+	
+	if ( this->angular && get_qr(qr_ANGULAR_REFLECTED_WEAPONS) )
+	{
+		double newangle = this->angle + DegreesToRadians(90*tdir);
+		w->angle = WrapAngle(newangle);
+		if (AngleReflect)
+		{
+			w->angular = true;
+			w->dir = AngleToDir(WrapAngle(newangle));
+			w->doAutoRotate();
+		}
+	}
+	w->o_tile = w->tile = ref_o_tile;
+	w->fakez = this->fakez; w->z = this->z;
+	w->parentid = this->parentid;
+	w->parentitem = this->parentitem;
+	w->hyofs = w->hxofs = 0;
+	w->flip = 0;
+	switch(id)
+	{
+		case wBeam: case wRefBeam: case ewSword:
+		case ewMagic: case wMagic: case wRefMagic:
+		{
+			if ( do_animation )
+			{
+				switch(w->dir)
+				{
+					case down:
+						w->flip = 2;
+						
+					case up:
+						w->tile = w->o_tile;
+						w->hyofs = 2;
+						w->hit_height = 12;
+						break;
+						
+					case left:
+						w->flip = 1;
+						
+					case right:
+						w->tile = w->o_tile + ((w->frames > 1) ? w->frames : 1);
+						w->hxofs = 2;
+						w->hit_width = 12;
+						break;
+					
+					default: break;
+				}
+			}
+			break;
+		}
+		case wArrow: case ewArrow: case wRefArrow:
+		{
+			if ( do_animation )
+			{
+				switch(w->dir)
+				{
+					case down:
+						w->flip = 2;
+					[[fallthrough]];
+					case up:
+						w->tile = w->o_tile;
+						break;
+					case left:
+						w->flip = 1;
+					[[fallthrough]];
+					case right:
+						w->tile = w->o_tile + ((w->frames > 1) ? w->frames : 1);
+						break;
+					default: break;
+				}
+			}
+			break;
+		}
+		case wWind: case ewWind:
+		{
+			w->o_tile = w->tile = ref_o_tile;
+			if ( do_animation )
+			{
+				if(w->dir&2)
+				{
+					if(w->frames>1)
+						w->tile += w->frames;
+					else ++w->tile;
+				}
+			}
+			break;
+		}
+		case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+		case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
+		{
+			if(parentitem > -1)
+			{
+				if(!(itemsbuf[parentitem].flags & item_flag1))
+				{
+					switch(w->dir)
+					{
+						case up:
+						{
+							flip = 0; break;
+						}
+						case down:
+						{
+							flip = 2; break;
+						}
+						case left:
+						{
+							flip = 7; break;
+						}
+						case right:
+						{
+							flip = 4; break;
+						}
+						default: flip = 0; break;
+					}
+				}
+			}
+			break;
+		}
+		case ewRock: case wRefRock:
+		case ewFireball: case ewFireball2: case wRefFireball:
+		case wFire: case ewFlame: case wRefFire:
+		case ewFlame2: case wRefFire2:
+			break;
+	}
+	return true;
+}
+bool weapon::_mirror_refl(zfix newx, zfix newy, rpos_t cpos, newcombo const& mirror_cmb)
+{
+	bool AngleReflect = (this->angular && get_qr(qr_ANGULAR_REFLECTED_WEAPONS) && !get_qr(qr_ANGULAR_REFLECT_BROKEN));
+	switch(mirror_cmb.type) // handle prisms
+	{
+		case cMAGICPRISM:
+		{
+			for(int tdir = 0; tdir < 4; ++tdir)
+			{
+				if(AngleReflect ? (tdir == 2) : (dir == (tdir^1)))
+					continue; // 3-way skips one direction
+				if(!_prism_dupe(newx, newy, cpos, tdir))
+					break;
+			}
+			dead = 0;
+			return false;
+		}
+		case cMAGICPRISM4:
+		{
+			for(int tdir = 0; tdir < 4; ++tdir)
+			{
+				if(!_prism_dupe(newx, newy, cpos, tdir))
+					break;
+			}
+			dead = 0;
+			return false;
+		}
+	}
+	
+	weapon *w = nullptr;
+	switch(id)
+	{
+		case wBeam: case wRefBeam: case ewSword:
+		case wMagic: case wRefMagic:
+		case wWind:
+		case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+		case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
+		case ewRock: case wRefRock:
+		case wArrow: case ewArrow: case wRefArrow:
+		case ewFireball: case ewFireball2: case wRefFireball:
+		case wFire: case ewFlame: case wRefFire:
+		case ewFlame2: case wRefFire2:
+			w = this;
+			break;
+		case ewMagic:
+		{
+			if(!get_qr(qr_OLD_WEAPON_REFLECTION))
+			{
+				w = this;
+				break;
+			}
+			w = new weapon(*this);
+			w->convertType(true);
+			dead=0;
+			if (!Lwpns.add(w))
+				return false;
+			break;
+		}
+	}
+	DCHECK(w);
+	
+	bool was_lw = w->isLWeapon;
+	_reflect_helper(w, newx, newy, cpos);
+	if(!was_lw && w->isLWeapon)
+	{
+		Ewpns.remove(w);
+		if(!Lwpns.add(w))
+			return false;
+	}
+	
+	switch(mirror_cmb.type)
+	{
+		case cMIRROR:
+		{
+			w->dir ^= 1;
+			
+			//! TODO Check that angular reflections work on these combos -Em
+			
+			switch(id)
+			{
+				case ewMagic: case wMagic: case wRefMagic:
+				case wBeam: case wRefBeam: case ewSword:
+				case wArrow: case ewArrow: case wRefArrow:
+				{
+					if(w->dir&2)
+						w->flip ^= 1;
+					else
+						w->flip ^= 2;
+					break;
+				}
+				case wWind: case ewWind:
+					break;
+				case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+				case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
+				{
+					if(parentitem > -1)
+					{
+						if(!(itemsbuf[parentitem].flags & item_flag1))
+						{
+							switch(w->dir)
+							{
+								case up:
+								{
+									flip = 0; break;
+								}
+								case down:
+								{
+									flip = 2; break;
+								}
+								case left:
+								{
+									flip = 7; break;
+								}
+								case right:
+								{
+									flip = 4; break;
+								}
+								default: flip = 0; break;
+							}
+						}
+					}
+					break;
+				}
+				case ewRock: case wRefRock:
+				case ewFireball: case ewFireball2: case wRefFireball:
+				case wFire: case ewFlame: case wRefFire:
+				case ewFlame2: case wRefFire2:
+					break;
+			}
+			break;
+		}
+		case cMIRRORSLASH:
+		{
+			w->dir = 3 - w->dir;
+			w->doAutoRotate(true);
+			
+			switch(id)
+			{
+				case ewMagic: case wMagic: case wRefMagic:
+				case wArrow: case ewArrow: case wRefArrow:
+				{
+					w->o_tile = w->tile = ref_o_tile;
+					if ( do_animation )
+					{
+						if((w->dir==1)||(w->dir==2))
+							w->flip ^= 3;
+						if(w->dir&2)
+						{
+							if(w->frames>1)
+								w->tile += w->frames;
+							else ++w->tile;
+						}
+					}
+					break;
+				}
+				case wWind: case ewWind:
+				{
+					w->o_tile = w->tile = ref_o_tile;
+					if ( do_animation )
+					{
+						if(w->dir&2)
+						{
+							if(w->frames>1)
+								w->tile += w->frames;
+							else ++w->tile;
+						}
+					}
+				}
+				
+				case wBeam: case wRefBeam: case ewSword:
+				{
+					if (w->dir == right)
+						w->flip &= ~1; // not horiz
+					else if (w->dir == left)
+						w->flip |= 1;  // horiz
+					else if (w->dir == up)
+						w->flip &= ~2; // not vert
+					else if (w->dir == down)
+						w->flip |= 2;  // vert
+					w->tile = w->ref_o_tile;
+
+					if (w->dir & 2)
+					{
+						if (w->frames > 1)
+							w->tile += w->frames;
+						else ++w->tile;
+					}
+					break;
+				}
+				case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+				case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
+				{
+					if(parentitem > -1)
+					{
+						if(!(itemsbuf[parentitem].flags & item_flag1))
+						{
+							switch(w->dir)
+							{
+								case up:
+								{
+									flip = 0; break;
+								}
+								case down:
+								{
+									flip = 2; break;
+								}
+								case left:
+								{
+									flip = 7; break;
+								}
+								case right:
+								{
+									flip = 4; break;
+								}
+								default: flip = 0; break;
+							}
+						}
+					}
+					break;
+				}
+				case ewRock: case wRefRock:
+				case ewFireball: case ewFireball2: case wRefFireball:
+				case wFire: case ewFlame: case wRefFire:
+				case ewFlame2: case wRefFire2:
+					break;
+			}
+			break;
+		}
+		case cMIRRORBACKSLASH:
+		{
+			w->dir ^= 2;
+			w->doAutoRotate(true);
+			
+			switch(id)
+			{
+				case ewMagic: case wMagic: case wRefMagic:
+				case wArrow: case ewArrow: case wRefArrow:
+				{
+					w->o_tile = w->tile = ref_o_tile;
+					if ( do_animation )
+					{
+						if(w->dir&1)
+							w->flip ^= 2;
+						else
+							w->flip ^= 1;
+						
+						if(w->dir&2)
+						{
+							if(w->frames>1)
+								w->tile += w->frames;
+							else ++w->tile;
+						}
+					}
+					break;
+				}
+				case wWind: case ewWind:
+				{
+					w->o_tile = w->tile = ref_o_tile;
+					if ( do_animation )
+					{
+						if(w->dir&2)
+						{
+							if(w->frames>1)
+								w->tile += w->frames;
+							else ++w->tile;
+						}
+					}
+					break;
+				}
+				case wBeam: case wRefBeam: case ewSword:
+				{
+					if (w->dir == right)
+						w->flip &= ~1; // not horiz
+					else if (w->dir == left)
+						w->flip |= 1;  // horiz
+					else if (w->dir == up)
+						w->flip &= ~2; // not vert
+					else if (w->dir == down)
+						w->flip |= 2;  // vert
+					w->tile = w->ref_o_tile;
+
+					if (w->dir & 2)
+					{
+						if (w->frames > 1)
+							w->tile += w->frames;
+						else ++w->tile;
+					}
+					break;
+				}
+				case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+				case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
+				{
+					if(parentitem > -1)
+					{
+						if(!(itemsbuf[parentitem].flags & item_flag1))
+						{
+							switch(w->dir)
+							{
+								case up:
+								{
+									flip = 0; break;
+								}
+								case down:
+								{
+									flip = 2; break;
+								}
+								case left:
+								{
+									flip = 7; break;
+								}
+								case right:
+								{
+									flip = 4; break;
+								}
+								default: flip = 0; break;
+							}
+						}
+					}
+					break;
+				}
+				case ewRock: case wRefRock:
+				case ewFireball: case ewFireball2: case wRefFireball:
+				case wFire: case ewFlame: case wRefFire:
+				case ewFlame2: case wRefFire2:
+					break;
+			}
+			break;
+		}
+		case cMIRRORNEW:
+		{
+			byte newdir = mirror_cmb.attribytes[NORMAL_DIR(w->dir)];
+			if(newdir > 7)
+			{
+				dead = 0;
+				return true;
+			}
+
+			w->dir = newdir;
+			
+			switch(id)
+			{
+				case ewMagic: case wMagic: case wRefMagic:
+				case wArrow: case ewArrow: case wRefArrow:
+				{
+					w->tile = w->ref_o_tile;
+					int tile_inc = zc_max(w->frames,1);
+					switch(dir)
+					{
+						case up:
+							w->flip = 0;
+							break;
+						case right:
+							w->flip = 0;
+							w->tile += tile_inc;
+							break;
+						case left:
+							w->flip = 1; //horz
+							w->tile += tile_inc;
+							break;
+						case down:
+							w->flip = 2; //vert
+							break;
+						case l_up:
+							w->flip = 0;
+							w->tile += tile_inc*2;
+							break;
+						case l_down:
+							w->flip = 2; //vert
+							w->tile += tile_inc*2;
+							break;
+						case r_up:
+							w->flip = 1; //horz
+							w->tile += tile_inc*2;
+							break;
+						case r_down:
+							w->flip = 3; //horz+vert
+							w->tile += tile_inc*2;
+							break;
+					}
+					w->o_tile = w->tile;
+					break;
+				}
+				case wBeam: case wRefBeam: case ewSword:
+				{
+					if (w->dir == right)
+						w->flip &= ~1; // not horiz
+					else if (w->dir == left)
+						w->flip |= 1;  // horiz
+					else if (w->dir == up)
+						w->flip &= ~2; // not vert
+					else if (w->dir == down)
+						w->flip |= 2;  // vert
+					w->tile = w->ref_o_tile;
+
+					if (w->dir & 2)
+					{
+						if (w->frames > 1)
+							w->tile += w->frames;
+						else ++w->tile;
+					}
+					break;
+				}
+				case wWind: case ewWind:
+				{
+					w->o_tile = w->tile = ref_o_tile;
+					if ( do_animation )
+					{
+						if(w->dir&2)
+						{
+							if(w->frames>1)
+								w->tile += w->frames;
+							else ++w->tile;
+						}
+					}
+					break;
+				}
+				case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+				case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
+				{
+					if(parentitem > -1)
+					{
+						if(!(itemsbuf[parentitem].flags & item_flag1))
+						{
+							switch(w->dir)
+							{
+								case up:
+								{
+									flip = 0; break;
+								}
+								case down:
+								{
+									flip = 2; break;
+								}
+								case left:
+								{
+									flip = 7; break;
+								}
+								case right:
+								{
+									flip = 4; break;
+								}
+								default: flip = 0; break;
+							}
+						}
+					}
+					break;
+				}
+				case ewRock: case wRefRock:
+				case ewFireball: case ewFireball2: case wRefFireball:
+				case wFire: case ewFlame: case wRefFire:
+				case ewFlame2: case wRefFire2:
+					break;
+			}
+			break;
+		}
+	}
+	
+	return true;
+}
+bool weapon::do_mirror() // returns true if animate needs to early-break
+{
+	dword refl_flag = 0;
+	bool can_duplicate = true;
+	bool block_check = false;
+	bool ret_ignorecombo = false, ret_fail = false;
+	switch(id)
+	{
+		case wMagic: case wRefMagic: case ewMagic:
+			refl_flag = sh_magic;
+			block_check = true;
+			ret_fail = true;
+			break;
+		case wWind:
+			can_duplicate = false;
+			block_check = true;
+			refl_flag = sh_lw_wind;
+			ret_fail = true;
+			break;
+		case ewWind:
+			refl_flag = sh_ew_wind;
+			break;
+		case wBeam: case wRefBeam: case ewSword:
+			refl_flag = sh_sword;
+			ret_ignorecombo = true;
+			ret_fail = true;
+			break;
+		case wScript1: case wScript2: case wScript3: case wScript4: case wScript5:
+		case wScript6: case wScript7: case wScript8: case wScript9: case wScript10:
+			refl_flag = sh_script | (sh_script1 << (id-wScript1));
+			break;
+		case ewRock: case wRefRock:
+			refl_flag = sh_rock;
+			break;
+		case wArrow: case ewArrow: case wRefArrow:
+			refl_flag = sh_arrow;
+			break;
+		case ewFireball: case ewFireball2: case wRefFireball:
+			refl_flag = (level&1) ? sh_fireball2 : sh_fireball;
+			break;
+		case wFire: case ewFlame: case wRefFire:
+			refl_flag = sh_flame;
+			break;
+		case ewFlame2: case wRefFire2:
+			refl_flag = sh_flame2;
+			break;
+	}
+	
+	zfix checkx=0, checky=0;
+	int32_t check_x_ofs=0, check_y_ofs=0;
+	
+	if (get_qr(qr_MIRRORS_USE_WEAPON_CENTER))
+	{
+		checkx = (x+hxofs+(hit_width*0.5));
+		checky = (y+hyofs+(hit_height*0.5)-fakez);
+		check_x_ofs = x - (checkx-8);
+		check_y_ofs = y - (checky-8);
+	}
+	else
+	{
+		switch(dir)
+		{
+			case up:
+				checkx=x+7;
+				checky=y+8;
+				break;
+				
+			case down:
+				checkx=x+7;
+				checky=y;
+				break;
+				
+			case left:
+				checkx=x+8;
+				checky=y+7;
+				break;
+				
+			case right:
+				checkx=x;
+				checky=y+7;
+				break;
+		}
+		checky-=fakez;
+	}
+	
+	int posx = checkx.getInt(), posy = checky.getInt();
+	switch(id)
+	{
+		case wBeam: case wRefBeam: case ewSword:
+			if(get_qr(qr_OLDMIRRORCOMBOS))
+			{
+				posx = x;
+				posy = y;
+			}
+			break;
+	}
+	
+	if (ignorecombo != rpos_t::None && ignorecombo == COMBOPOS_REGION_B(checkx, checky))
+		return ret_ignorecombo;
+	
+	int32_t newx = TRUNCATE_TILE(posx) + check_x_ofs;
+	int32_t newy = TRUNCATE_TILE(posy) + check_y_ofs;
+	rpos_t cpos = COMBOPOS_REGION_B(checkx, checky);
+	
+	static const int refl_list[] = {cMIRROR, cMIRRORSLASH, cMIRRORBACKSLASH, cMAGICPRISM, cMAGICPRISM4, cMIRRORNEW};
+	
+	for(auto ctype : refl_list)
+	{
+		if(!can_duplicate && (ctype == cMAGICPRISM || ctype == cMAGICPRISM4))
+			continue;
+		auto layer_count = get_qr(qr_MIRROR_PRISM_LAYERS) ? 7 : 1;
+		for(int q = 0; q < layer_count; ++q)
+		{
+			int cid = MAPCOMBO2(q-1,checkx,checky);
+			auto const& cmb = combobuf[cid];
+			if(cmb.type != ctype) continue;
+			if(!cmb.attributes[0] || (cmb.attributes[0] & refl_flag))
+			{
+				if(!_mirror_refl(newx, newy, cpos, cmb))
+					return ret_fail;
+				break;
+			}
+		}
+	}
+
+	if(block_check && blocked(0, 0))
+		dead=0;
+	return false;
 }
 
 void weapon::do_death_fx()
@@ -6673,7 +6398,7 @@ void weapon::do_death_fx()
 			decorations.add(new comboSprite(x, y-(z+fakez), dCOMBOSPRITE, 0, death_sprite));
 	}
 	if(death_sfx > 0)
-		sfx(death_sfx, pan(int32_t(x)));
+		sfx(death_sfx, pan(x));
 	
 	death_spawnitem = -1;
 	death_item_pflags = 0;
@@ -6794,7 +6519,7 @@ void weapon::onhit(bool clipped, int32_t special, int32_t linkdir, enemy* e, int
 				reflect = true;
 				break;
 				
-			case ewRock:
+			case ewRock: case wRefRock:
 				id = wRefRock;
 				reflect = true;
 				break;
@@ -6811,9 +6536,8 @@ void weapon::onhit(bool clipped, int32_t special, int32_t linkdir, enemy* e, int
 			case wRefArrow:
 			case wRefFire:
 			case wRefFire2:
-				reflect = true;
-				break;
-				
+			case wWind:
+			case ewWind:
 			case wScript1:
 			case wScript2:
 			case wScript3:
@@ -6825,9 +6549,6 @@ void weapon::onhit(bool clipped, int32_t special, int32_t linkdir, enemy* e, int
 			case wScript9:
 			case wScript10:
 				reflect = true;
-				
-				//prevents the block below from moving it to 'Lwpns'... needed for compat -Em
-				isLWeapon = true;
 				break;
 		}
 		if(reflect)
@@ -6835,12 +6556,11 @@ void weapon::onhit(bool clipped, int32_t special, int32_t linkdir, enemy* e, int
 			ignoreHero = true;
 			if(!(replay_is_active()&&replay_get_meta_str("sav")=="link_to_the_heavens_16_of_17.sav"))
 				ignorecombo = rpos_t::None;
-			if(!isLWeapon)
-			{
-				if(Ewpns.remove(this))
-					Lwpns.add(this);
-				isLWeapon = true;
-			}
+
+			if(Ewpns.remove(this))
+				Lwpns.add(this);
+			isLWeapon = true;
+
 			if(angular)
 			{
 				switch(linkdir)
@@ -7032,7 +6752,7 @@ void weapon::onhit(bool clipped, int32_t special, int32_t linkdir, enemy* e, int
 			{
 				if(e && !switching_object && (ehitType < 0 || e->switch_hooked))
 				{
-					switch(e->family)
+					switch(e->type)
 					{
 						case eeAQUA: case eeMOLD: case eeDONGO: case eeMANHAN: case eeGLEEOK:
 						case eeDIG: case eeGHOMA: case eeLANM: case eePATRA: case eeGANON:
@@ -7051,13 +6771,13 @@ void weapon::onhit(bool clipped, int32_t special, int32_t linkdir, enemy* e, int
 						if(parentitem > -1)
 						{
 							if(itemsbuf[parentitem].usesound2)
-								sfx(itemsbuf[parentitem].usesound2,pan(int32_t(x)));
+								sfx(itemsbuf[parentitem].usesound2,pan(x));
 							else if(QMisc.miscsfx[sfxSWITCHED])
-								sfx(QMisc.miscsfx[sfxSWITCHED],int32_t(x));
+								sfx(QMisc.miscsfx[sfxSWITCHED],pan(x));
 							stop_sfx(itemsbuf[parentitem].usesound);
 						}
 						else if(QMisc.miscsfx[sfxSWITCHED])
-							sfx(QMisc.miscsfx[sfxSWITCHED],int32_t(x));
+							sfx(QMisc.miscsfx[sfxSWITCHED],pan(x));
 						break;
 					}
 				}
@@ -7104,7 +6824,7 @@ void weapon::onhit(bool clipped, int32_t special, int32_t linkdir, enemy* e, int
 		}
 		else
 		{
-			if(((id==wMagic && linkedItem && itemsbuf[linkedItem].family==itype_book &&
+			if(((id==wMagic && linkedItem && itemsbuf[linkedItem].type==itype_book &&
 				(itemsbuf[linkedItem].flags&item_flag1))) && Lwpns.idCount(wFire)<2)
 			{
 				Lwpns.add(new weapon(x,y-fakez,z,wFire,2,zc_max(1, itemsbuf[linkedItem].misc4)*game->get_hero_dmgmult(),0,linkedItem,-1,false,0,1));
@@ -7273,14 +6993,10 @@ void weapon::doAutoRotate(bool dodir, bool doboth)
 	}
 }
 
-void weapon::draw(BITMAP *dest)
+void weapon::animate_graphics()
 {
 	if(weapon_dying_frame) return;
-	if(fallclk || drownclk)
-	{
-		sprite::draw(dest);
-		return;
-	}
+	if(fallclk || drownclk) return;
 	bool suspt = (FFCore.system_suspend[susptLWEAPONS] && this->isLWeapon) || (FFCore.system_suspend[susptEWEAPONS] && !this->isLWeapon);
 	if(!suspt)
 	{
@@ -7351,58 +7067,30 @@ void weapon::draw(BITMAP *dest)
 		}
 	}
 	
-	
 	// do special case stuff
 	switch(id)
 	{
-		case wSword:
-		case wHammer:
-			if(Hero.is_hitflickerframe() ||
-					Hero.getDontDraw() || hero_scr->flags3&fINVISHERO)
-				return;
-				
-		case wBeam:
-		case wRefBeam:
+		case wBeam: case wRefBeam:
 		{
-			if(dead==-1) break;
-			if ( !FFCore.system_suspend[susptLWEAPONS] && this->isLWeapon || !FFCore.system_suspend[susptEWEAPONS] && !this->isLWeapon)
+			if(dead == -1) break;
+			int32_t f = frame&3;
+			update_weapon_frame(((frames?frames:1)*2),ref_o_tile);
+			
+			if(o_type)
+				cs = o_cset>>4;
+			if ( do_animation ) 
 			{
-				// draw the beam shards
-				int32_t ofs=23-dead;
-				int32_t f = frame&3;
-				int32_t type2 = o_type;
-				//tile = o_tile+((frames?frames:1)*2);
-				update_weapon_frame(((frames?frames:1)*2),ref_o_tile);
-				
-				if(type2)
-					cs = o_cset>>4;
-				if ( do_animation ) 
-				{
-					if(type2==3 || type2 == 4 && (f&2))
-						++tile;
-				}
-				
-				int beam_x = x - viewport.x;
-				int beam_y = y + playing_field_offset - viewport.y;
-				if(!type2 || type2 == 4 || f==0 || (type2>1 && f==3)) overtile16(dest,tile,beam_x-2-ofs,beam_y-2-ofs-(z+zofs)-fakez,cs,0);
-				
-				if(!type2 || type2 == 4 || f==2 || (type2>1 && f==1)) overtile16(dest,tile,beam_x+2+ofs,beam_y-2-ofs-(z+zofs)-fakez,cs,1);
-				
-				if(!type2 || type2 == 4 || f==1 || (type2>1 && f==2)) overtile16(dest,tile,beam_x-2-ofs,beam_y+2+ofs-(z+zofs)-fakez,cs,2);
-				
-				if(!type2 || type2 == 4 || f==3 || (type2>1 && f==0)) overtile16(dest,tile,beam_x+2+ofs,beam_y+2+ofs-(z+zofs)-fakez,cs,3);
+				if(o_type==3 || o_type == 4 && (f&2))
+					++tile;
 			}
+			break;
 		}
 		
-		return;											   // don't draw sword
-		
-		case wBomb:
-		case wSBomb:
-		case ewBomb:
-		case ewSBomb:
+		case wBomb: case wSBomb:
+		case ewBomb: case ewSBomb:
 		{
 			if(!misc || clk<misc-2) break;
-			if ( !FFCore.system_suspend[susptLWEAPONS] && this->isLWeapon || !FFCore.system_suspend[susptEWEAPONS] && !this->isLWeapon)
+			if (!suspt)
 			{
 				// draw the explosion
 				int32_t id2=0;
@@ -7464,69 +7152,34 @@ void weapon::draw(BITMAP *dest)
 					//update_weapon_frame(1,tile);
 				}
 			}
-			
-			int x0 = x - viewport.x;
-			int y0 = y - viewport.y;
-			overtile16(dest,tile,x0+((clk&1)?7:-7),y0+yofs-fakez-13-(z+zofs),cs,0);
-			overtile16(dest,tile,x0,y0+yofs-fakez-(z+zofs),cs,0);
-			overtile16(dest,tile,x0+((clk&1)?-14:14),y0+yofs-fakez-(z+zofs),cs,0);
-			overtile16(dest,tile,x0+((clk&1)?-7:7),y0+yofs+14-fakez-(z+zofs),cs,0);
-			
-			if(id==wSBomb||id==ewSBomb)
-			{
-				overtile16(dest,tile,x0+((clk&1)?7:-7),y0+yofs-27-fakez-(z+zofs),cs,0);
-				overtile16(dest,tile,x0+((clk&1)?-21:21),y0+yofs-13-fakez-(z+zofs),cs,0);
-				overtile16(dest,tile,x0+((clk&1)?-28:28),y0+yofs-fakez-(z+zofs),cs,0);
-				overtile16(dest,tile,x0+((clk&1)?21:-21),y0+yofs+14-fakez-(z+zofs),cs,0);
-				overtile16(dest,tile,x0+((clk&1)?-7:7),y0+yofs+28-fakez-(z+zofs),cs,0);
-			}
-			else
-			{
-				;
-			}
-			
-			if(get_debug() && zc_getkey(KEY_O))
-				rectfill(dest,x0+hxofs,y0+hyofs+yofs-(z+zofs)-fakez,
-						 x0+hxofs+hit_width-1,y0+hyofs+hit_height-1+yofs-fakez,vc(id));
-			
-			if(show_hitboxes)
-				draw_hitbox();
-			return;											   // don't draw bomb
+			break;
 		}
 		
-		case wArrow:
-		case wRefArrow:
-		case ewArrow:
-			if(dead>0 && !bounce)
+		case wArrow: case ewArrow: case wRefArrow:
+		{
+			if(dead>0 && !bounce && do_animation && !suspt)
 			{
-				if ( do_animation ) 
-				{
-					if ( !FFCore.system_suspend[susptLWEAPONS] && this->isLWeapon || !FFCore.system_suspend[susptEWEAPONS] && !this->isLWeapon)
-					{
-						cs=7;
-						tile=54;
-						flip=0;
-					}
-				}
+				cs=7;
+				tile=54;
+				flip=0;
 			}
-			
 			break;
-			
-		case ewFireTrail:
-		case ewFlame:
-		case wFire:
+		}
 		
+		case ewFireTrail: case ewFlame: case wFire:
+		{
 			//if no animation, flip tile
-			if ( !FFCore.system_suspend[susptLWEAPONS] && this->isLWeapon || !FFCore.system_suspend[susptEWEAPONS] && !this->isLWeapon)
+			if (!suspt)
 			{
 				if(frames==0 && do_animation ) //do_animation is a ZScript setting. -Z
 					flip = o_flip & (clk>>2);
 			}
 			break;
-			
-		case ewBrang:
-		case wBrang:
-			if ( !FFCore.system_suspend[susptLWEAPONS] && this->isLWeapon || !FFCore.system_suspend[susptEWEAPONS] && !this->isLWeapon)
+		}
+		
+		case wBrang: case ewBrang:
+		{
+			if (!suspt)
 			{
 				cs = o_cset&15;
 				
@@ -7557,7 +7210,7 @@ void weapon::draw(BITMAP *dest)
 						
 						if(parentitem>=0 && itemsbuf[parentitem].flags & item_flag2)
 						{
-						update_weapon_frame((BSZ?1:4)*dir,tile);
+							update_weapon_frame((BSZ?1:4)*dir,tile);
 						}
 					}
 				}
@@ -7589,14 +7242,12 @@ void weapon::draw(BITMAP *dest)
 					}
 				}
 			}
-			
 			break;
-			
-		case wHookshot:
-			break;
-			
+		}
+		
 		case wWind:
-			if ( !FFCore.system_suspend[susptLWEAPONS] && this->isLWeapon || !FFCore.system_suspend[susptEWEAPONS] && !this->isLWeapon)
+		{
+			if (!suspt)
 			{
 				if(frames==0 && do_animation)
 					flip ^= o_flip;
@@ -7604,87 +7255,11 @@ void weapon::draw(BITMAP *dest)
 				if(Dead() && !BSZ && do_animation)
 					tile = temp1;//wpnsbuf[wFIRE].tile;
 			}
-				
 			break;
-			
-		case ewWind:
-			/*
-			  if(wpnsbuf[wid].frames==0)
-			  flip ^= (wpnsbuf[wid].misc>>2)&3;
-			  */
-			break;
-			
-		case wPhantom:
-			switch(type)
-			{
-			case pDIVINEPROTECTIONROCKET1:
-			case pDIVINEPROTECTIONROCKETRETURN1:
-			case pDIVINEPROTECTIONROCKETTRAIL1:
-			case pDIVINEPROTECTIONROCKETTRAILRETURN1:
-			case pDIVINEPROTECTIONROCKET2:
-			case pDIVINEPROTECTIONROCKETRETURN2:
-			case pDIVINEPROTECTIONROCKETTRAIL2:
-			case pDIVINEPROTECTIONROCKETTRAILRETURN2:
-				if(parentitem>=0 && (itemsbuf[parentitem].flags & item_flag1 ? 1 : 0)&&!(frame&1))
-				{
-					return;
-				}
-				
-				break;
-			}
-			
-		case wScript1:
-		case wScript2:
-		case wScript3:
-		case wScript4:
-		case wScript5:
-		case wScript6:
-		case wScript7:
-		case wScript8:
-		case wScript9:
-		case wScript10:
-		{
-			if ( do_animation )
-			{
-				//Bugfix script weapons not animating:
-				//Let's see if this works, and failstobreakanything. -Z
-				//This also will need a QR, if it works!
-				/* Bugged, disabling.
-				if ( FFCore.getQuestHeaderInfo(vZelda) >= 0x255 && get_qr(qr_ANIMATECUSTOMWEAPONS) )
-				{
-					if(frames>1 && ++aframe >= frames)
-					{
-						aframe = 0;
-					}
-					//update_weapon_frame(aframe,o_tile);
-					update_weapon_frame(aframe,o_tile);
-				}
-				*/
-				//if ( ScriptGenerated && script_wrote_otile && aframe > 0 ) 
-				//{ 
-				//	script_wrote_otile = 0; // NOTES and ISSUES
-								// I honestly do not recall when or why I added this. I think that it was
-								// in an attempt to fix Tile not being reset when writing to OTile. 
-								// 
-								// PROBLEM
-								// Doing any of this on the first frame of a weapon will overwrite a script-set
-								// tile with the original tile if the scripter does this in a script:
-								//
-								// this->OriginalTile = 6;
-								// this->Tile = 12345; 	// will be overwritten by o_tile because of the 
-								//			// script_wrote_otile FLAG being checked by the engine
-								//			// after the script writes to tile! -Z 26th October, 2019
-					
-					//tile = o_tile; //This will overwrite the tile on the calls above, so we can't do it. Fuck it. 
-				//}
-			}
 		}
-		break;
 	}
 	
-	// draw it
-	
-	if (has_shadow && (z > 0||fakez > 0) && get_qr(qr_WEAPONSHADOWS) )
+	if (can_drawshadow())
 	{
 		wpndata const& spr = wpnsbuf[spr_shadow];
 		if(!suspt)
@@ -7699,9 +7274,124 @@ void weapon::draw(BITMAP *dest)
 			}
 		}
 		shadowtile = spr.tile+shd_aframe;
-		sprite::drawshadow(dest,get_qr(qr_TRANSSHADOWS) != 0);
 	}
+}
+
+bool weapon::can_drawshadow() const
+{
+	return (has_shadow && (z > 0||fakez > 0) && get_qr(qr_WEAPONSHADOWS));
+}
+void weapon::draw(BITMAP *dest)
+{
+	if(weapon_dying_frame) return;
+	if(fallclk || drownclk)
+	{
+		sprite::draw(dest);
+		return;
+	}
+	bool suspt = (FFCore.system_suspend[susptLWEAPONS] && this->isLWeapon) || (FFCore.system_suspend[susptEWEAPONS] && !this->isLWeapon);
+	
+	if(get_qr(qr_OLD_WEAPON_DRAW_ANIMATE_TIMING))
+		animate_graphics();
+	
+	// do special case stuff
+	switch(id)
+	{
+		case wSword:
+		case wHammer:
+			if(Hero.is_hitflickerframe() ||
+					Hero.getDontDraw() || hero_scr->flags3&fINVISHERO)
+				return;
+				
+		case wBeam:
+		case wRefBeam:
+		{
+			if(dead == -1) break;
+			if(!suspt)
+			{
+				// draw the beam shards
+				int32_t ofs=23-dead;
+				int32_t f = frame&3;
+				
+				int beam_x = x - viewport.x;
+				int beam_y = y + playing_field_offset - viewport.y;
+				if(!o_type || o_type == 4 || f==0 || (o_type>1 && f==3)) overtile16(dest,tile,beam_x-2-ofs,beam_y-2-ofs-(z+zofs)-fakez,cs,0);
+				
+				if(!o_type || o_type == 4 || f==2 || (o_type>1 && f==1)) overtile16(dest,tile,beam_x+2+ofs,beam_y-2-ofs-(z+zofs)-fakez,cs,1);
+				
+				if(!o_type || o_type == 4 || f==1 || (o_type>1 && f==2)) overtile16(dest,tile,beam_x-2-ofs,beam_y+2+ofs-(z+zofs)-fakez,cs,2);
+				
+				if(!o_type || o_type == 4 || f==3 || (o_type>1 && f==0)) overtile16(dest,tile,beam_x+2+ofs,beam_y+2+ofs-(z+zofs)-fakez,cs,3);
+			}
+			return; // don't draw sword
+		}
+		
+		case wBomb:
+		case wSBomb:
+		case ewBomb:
+		case ewSBomb:
+		{
+			if(!misc || clk<misc-2) break;
+			int x0 = x - viewport.x;
+			int y0 = y - viewport.y;
+			overtile16(dest,tile,x0+((clk&1)?7:-7),y0+yofs-fakez-13-(z+zofs),cs,0);
+			overtile16(dest,tile,x0,y0+yofs-fakez-(z+zofs),cs,0);
+			overtile16(dest,tile,x0+((clk&1)?-14:14),y0+yofs-fakez-(z+zofs),cs,0);
+			overtile16(dest,tile,x0+((clk&1)?-7:7),y0+yofs+14-fakez-(z+zofs),cs,0);
+			
+			if(id==wSBomb||id==ewSBomb)
+			{
+				overtile16(dest,tile,x0+((clk&1)?7:-7),y0+yofs-27-fakez-(z+zofs),cs,0);
+				overtile16(dest,tile,x0+((clk&1)?-21:21),y0+yofs-13-fakez-(z+zofs),cs,0);
+				overtile16(dest,tile,x0+((clk&1)?-28:28),y0+yofs-fakez-(z+zofs),cs,0);
+				overtile16(dest,tile,x0+((clk&1)?21:-21),y0+yofs+14-fakez-(z+zofs),cs,0);
+				overtile16(dest,tile,x0+((clk&1)?-7:7),y0+yofs+28-fakez-(z+zofs),cs,0);
+			}
+			else
+			{
+				;
+			}
+			
+			if(get_debug() && zc_getkey(KEY_O))
+				rectfill(dest,x0+hxofs,y0+hyofs+yofs-(z+zofs)-fakez,
+						 x0+hxofs+hit_width-1,y0+hyofs+hit_height-1+yofs-fakez,vc(id));
+			
+			if(show_hitboxes)
+				draw_hitbox();
+			return;											   // don't draw bomb
+		}
+		
+		case wPhantom:
+		{
+			switch(level)
+			{
+				case pDIVINEPROTECTIONROCKET1:
+				case pDIVINEPROTECTIONROCKETRETURN1:
+				case pDIVINEPROTECTIONROCKETTRAIL1:
+				case pDIVINEPROTECTIONROCKETTRAILRETURN1:
+				case pDIVINEPROTECTIONROCKET2:
+				case pDIVINEPROTECTIONROCKETRETURN2:
+				case pDIVINEPROTECTIONROCKETTRAIL2:
+				case pDIVINEPROTECTIONROCKETTRAILRETURN2:
+					if(parentitem>=0 && (itemsbuf[parentitem].flags & item_flag1 ? 1 : 0)&&!(frame&1))
+						return;
+					break;
+			}
+			break;
+		}
+	}
+	
+	// draw it
+	
+	if (get_qr(qr_OLD_WEAPON_DRAW_ANIMATE_TIMING) && can_drawshadow())
+		sprite::drawshadow(dest, get_qr(qr_TRANSSHADOWS) != 0);
 	sprite::draw(dest);
+}
+void weapon::drawshadow(BITMAP* dest, bool translucent)
+{
+	if(get_qr(qr_OLD_WEAPON_DRAW_ANIMATE_TIMING) || !can_drawshadow())
+		return;
+	sprite::drawshadow(dest, translucent);
 }
 
 void putweapon(BITMAP *dest,int32_t x,int32_t y,int32_t weapon_id, int32_t type, int32_t dir, int32_t &aclk, int32_t &aframe, int32_t parentid)
@@ -7846,7 +7536,7 @@ weapon::weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t usesprite, int32_t Dir, i
 	txsz = width > 0 ? width : 1;
 	tysz = height > 0 ? height : 1;
     id=Id;
-    type=0;
+    level=0;
     power=0;
     specialinfo = 0;
     parentitem=-1;

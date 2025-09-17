@@ -33,18 +33,22 @@ void displayinfo(string const& title, vector<string> const& lines, optional<stri
 	InfoDialog(title,lines,subtext).show();
 }
 
-InfoDialog::InfoDialog(string const& title, string const& text, optional<string> subtext):
+InfoDialog::InfoDialog(string const& title, string const& text,
+	optional<string> subtext, byte* dest_qrs, int text_align):
 	d_title(title),
 	d_text(text), d_subtext(subtext),
-	dest_qrs(nullptr)
+	dest_qrs(dest_qrs),
+	_text_align(text_align)
 {
 	postinit();
 }
 
-InfoDialog::InfoDialog(string const& title, vector<string> const& lines, optional<string> subtext):
+InfoDialog::InfoDialog(string const& title, vector<string> const& lines,
+	optional<string> subtext, byte* dest_qrs, int text_align):
 	d_title(title),
 	d_text(), d_subtext(subtext),
-	dest_qrs(nullptr)
+	dest_qrs(dest_qrs),
+	_text_align(text_align)
 {
 	size_t size = 0;
 
@@ -67,8 +71,7 @@ InfoDialog::InfoDialog(string const& title, vector<string> const& lines, optiona
 static byte* next_dest_qr = nullptr;
 void InfoDialog::postinit()
 {
-	if(!next_dest_qr)
-		next_dest_qr = quest_rules;
+	old_dest_qrs = next_dest_qr;
 	while(true)
 	{
 		size_t pos = d_text.find_first_of("$");
@@ -125,10 +128,10 @@ void InfoDialog::postinit()
 	
 	if(qrs.size() || ruleTemplates.size())
 	{
-		dest_qrs = next_dest_qr;
+		if(!dest_qrs)
+			dest_qrs = next_dest_qr ? next_dest_qr : quest_rules;
 		next_dest_qr = local_qrs;
 		memcpy(local_qrs, dest_qrs, sizeof(local_qrs));
-		unpack_qrs();
 	}
 }
 
@@ -159,7 +162,7 @@ std::shared_ptr<GUI::Widget> InfoDialog::view()
 					padding = 3_px,
 					onToggle = message::TOGGLE_QR,
 					onCloseInfo = message::REFR_INFO,
-					initializer = local_qrs,
+					qr_ptr = local_qrs,
 					count = 0,
 					data = tosearch
 				)
@@ -240,12 +243,13 @@ std::shared_ptr<GUI::Grid> InfoDialog::build_text()
 	std::shared_ptr<GUI::Grid> col = Column(padding = 0_px);
 	Size maxw = Size::pixels(zq_screen_w)-12_px-5_em;
 	Size maxh = (DEFAULT_PADDING*20)+20_em;
+	double hal = _text_align / 2.0;
 	if(d_subtext)
 		col->add(Label(noHLine = true, hPadding = 2_em,
-			maxwidth = maxw, textAlign = 1, text = *d_subtext));
+			maxwidth = maxw, hAlign = hal, textAlign = _text_align, text = *d_subtext));
 	std::shared_ptr<GUI::Label> main_label =
 		Label(noHLine = true, hPadding = 2_em,
-			maxwidth = maxw, textAlign = 1, text = d_text);
+			maxwidth = maxw, hAlign = hal, textAlign = _text_align, text = d_text);
 	main_label->calculateSize();
 	if(main_label->getHeight() > maxh)
 	{
@@ -284,10 +288,7 @@ bool InfoDialog::handleMessage(const GUI::DialogMessage<message>& msg)
 			#endif
 		[[fallthrough]];
 		case message::CANCEL:
-			if(dest_qrs)
-			{
-				next_dest_qr = dest_qrs;
-			}
+			next_dest_qr = old_dest_qrs;
 			return true;
 		case message::REFR_INFO:
 			rerun_dlg = true;

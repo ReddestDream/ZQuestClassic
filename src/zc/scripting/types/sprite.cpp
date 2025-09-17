@@ -33,7 +33,7 @@ static bool enemy_has_hero(sprite* s)
 {
 	if (auto e = dynamic_cast<enemy*>(s); e)
 	{
-		if (e->family == eeWALLM || e->family == eeWALK)
+		if (e->type == eeWALLM || e->type == eeWALK)
 			return e->hashero;
 	}
 
@@ -61,6 +61,12 @@ std::optional<int32_t> sprite_get_register(int32_t reg)
 
 			if (auto s = get_sprite(ri->spriteref))
 				return s->screen_spawned * 10000;
+			break;
+		}
+		case SPRITE_CURRENT_SCREEN:
+		{
+			if (auto s = get_sprite(ri->spriteref))
+				return s->current_screen * 10000;
 			break;
 		}
 		case SPRITE_X:
@@ -207,6 +213,30 @@ std::optional<int32_t> sprite_get_register(int32_t reg)
 		{
 			if (auto s = get_sprite(ri->spriteref))
 				return (s->moveflags & move_obeys_grav) ? 10000 : 0;
+			return 0;
+		}
+		case SPRITE_GRAVITY_STRENGTH:
+		{
+			if (auto s = get_sprite(ri->spriteref))
+				return s->get_gravity(true).getZLong();
+			return 0;
+		}
+		case SPRITE_TERMINAL_VELOCITY:
+		{
+			if (auto s = get_sprite(ri->spriteref))
+				return s->get_terminalv(true).getZLong();
+			return 0;
+		}
+		case SPRITE_CUSTOM_GRAVITY_STRENGTH:
+		{
+			if (auto s = get_sprite(ri->spriteref))
+				return s->custom_gravity.getZLong();
+			return 0;
+		}
+		case SPRITE_CUSTOM_TERMINAL_VELOCITY:
+		{
+			if (auto s = get_sprite(ri->spriteref))
+				return s->custom_terminal_v.getZLong();
 			return 0;
 		}
 		case SPRITE_FLIP:
@@ -542,7 +572,7 @@ bool sprite_set_register(int32_t reg, int32_t value)
 
 				s->cs = (value / 10000) & 0xF;
 				if (auto e = dynamic_cast<enemy*>(s))
-					if (e->family == eeLEV)
+					if (e->type == eeLEV)
 						e->dcset = e->cs;
 			}
 			break;
@@ -615,6 +645,18 @@ bool sprite_set_register(int32_t reg, int32_t value)
 		{
 			if (auto s = get_sprite(ri->spriteref))
 				SETFLAG(s->moveflags, move_obeys_grav, value);
+			break;
+		}
+		case SPRITE_CUSTOM_GRAVITY_STRENGTH:
+		{
+			if (auto s = get_sprite(ri->spriteref))
+				s->custom_gravity = zslongToFix(value);
+			break;
+		}
+		case SPRITE_CUSTOM_TERMINAL_VELOCITY:
+		{
+			if (auto s = get_sprite(ri->spriteref))
+				s->custom_terminal_v = zslongToFix(value);
 			break;
 		}
 		case SPRITE_FLIP:
@@ -816,7 +858,6 @@ static ArrayRegistrar SPRITE_MISCD_registrar(SPRITE_MISCD, []{
 			sprite->miscellaneous[index] = value;
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(false);
 	return &impl;
 }());
@@ -832,7 +873,6 @@ static ArrayRegistrar SPRITE_MOVE_FLAGS_registrar(SPRITE_MOVE_FLAGS, []{
 			SETFLAG(sprite->moveflags, bit, value);
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());

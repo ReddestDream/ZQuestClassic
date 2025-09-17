@@ -31,6 +31,8 @@ enum ComboGeneralFlag
 {
 	GENFLAG_HOOKSHOTTABLE,
 	GENFLAG_SWITCHHOOKABLE,
+	GENFLAG_WALK_ON_TOP,
+	GENFLAG_WALK_ON_TOP_DRAW_OFFSET,
 	GENFLAG_MAX
 };
 
@@ -386,6 +388,24 @@ class combodata {
 	//
 	// @zasm_var COMBODONLYGEN
 	internal bool OnlyGenTriggers;
+	
+	// The Z-height of the combo for [GENFLAG_WALK_ON_TOP]. A value of '0' represents infinite height.
+	//
+	// @zasm_var COMBOD_Z_HEIGHT
+	internal int ZHeight;
+	
+	// The amount below the [ZHeight] that can still reach it to walk atop it via [GENFLAG_WALK_ON_TOP].
+	// Designed for 'walking up stairs' type effects.
+	// Can't be negative.
+	//
+	// @zasm_var COMBOD_Z_STEP_HEIGHT
+	internal int ZStepHeight;
+	
+	// If >0 and the player is diving with flippers of at least this level,
+	// the player will ignore the solidity of this combo.
+	//
+	// @zasm_var COMBOD_DIVE_UNDER_LEVEL
+	internal int DiveUnderLevel;
 
 	// Gets the first trigger of this combo whose name exactly matches 'buf'.
 	//

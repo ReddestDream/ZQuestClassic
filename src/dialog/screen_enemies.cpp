@@ -24,7 +24,7 @@ void call_screenenemies_dialog()
 
 ScreenEnemiesDialog::ScreenEnemiesDialog() :
 	thescr(Map.CurrScr()),
-	last_enemy(0),
+	last_enemy(0), focus_list(false),
 	copied_enemy_id(-1),
 	list_patterns(GUI::ZCListData::patterntypes())
 {
@@ -64,7 +64,7 @@ void ScreenEnemiesDialog::UpdatePreview()
 			"\neTile: {}\nHP: {}\nDamage: {}\nW. Damage: {}\nFamily: {}\nDrop: {}\nScript: {}\nW Script: {}"
 			"\n\nCopied:\n{}",
 			enemyID, enemy.tile, enemy.s_tile, enemy.e_tile, enemy.hp, enemy.dp,
-			enemy.wdp, enemy.family, enemy.item_set, enemy.script, enemy.weap_data.script, copied_name));
+			enemy.wdp, enemy.type, enemy.item_set, enemy.script, enemy.weap_data.script, copied_name));
 		if (enemyID > 0)
 		{
 			widgPrev->setDisabled(false);
@@ -124,7 +124,8 @@ std::shared_ptr<GUI::Widget> ScreenEnemiesDialog::view()
 						selectedIndex = val;
 						UpdatePreview();
 					},
-					onDClick = message::EDIT
+					onDClick = message::EDIT,
+					focused = focus_list
 				),
 				Label(text = fmt::format("Pattern: {}", list_patterns.getText(thescr->pattern)), minwidth = 400_px),
 				Row(hAlign = 1.0,vAlign = 1.0,topPadding = 0.5_em,spacing = 1_em,
@@ -172,6 +173,7 @@ std::shared_ptr<GUI::Widget> ScreenEnemiesDialog::view()
 			)
 		)
 	);	
+	focus_list = false;
 	RebuildList();
 	UpdatePreview();
 	return window;
@@ -186,6 +188,7 @@ bool ScreenEnemiesDialog::handleMessage(const GUI::DialogMessage<message>& msg)
 		copied_enemy_id = thescr->enemy[scr_enemies->getSelectedIndex()];
 		UpdatePreview();
 		refresh = true;
+		focus_list = true;
 		break;
 	case message::PASTE:
 		if (copied_enemy_id > -1 && copied_enemy_id < eMAXGUYS)
@@ -193,6 +196,7 @@ bool ScreenEnemiesDialog::handleMessage(const GUI::DialogMessage<message>& msg)
 		RebuildList();
 		UpdatePreview();
 		refresh = true;
+		focus_list = true;
 		break;
 	case message::EDIT:
 	{
@@ -205,6 +209,7 @@ bool ScreenEnemiesDialog::handleMessage(const GUI::DialogMessage<message>& msg)
 			UpdatePreview();
 		}
 		refresh = true;
+		focus_list = true;
 		break;
 	}
 	case message::CLEAR:
@@ -212,6 +217,7 @@ bool ScreenEnemiesDialog::handleMessage(const GUI::DialogMessage<message>& msg)
 		RebuildList();
 		UpdatePreview();
 		refresh = true;
+		focus_list = true;
 		break;
 	case message::PASTEFROMSCREEN:
 		Map.DoPasteScreenCommand(PasteCommandType::ScreenEnemies);

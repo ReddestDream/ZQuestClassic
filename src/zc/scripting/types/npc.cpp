@@ -87,10 +87,10 @@ int32_t GuyH::getNPCDMisc(const byte a)
 
 bool GuyH::hasHero()
 {
-	if(tempenemy->family == eeWALLM)
+	if(tempenemy->type == eeWALLM)
 		return ((eWallM *) tempenemy)->hashero;
 		
-	if(tempenemy->family == eeWALK)
+	if(tempenemy->type == eeWALK)
 		return ((eStalfos *) tempenemy)->hashero;
 		
 	return false;
@@ -783,7 +783,7 @@ std::optional<int32_t> npc_get_register(int32_t reg)
 			GET_NPC_VAR_INT(wpnsprite) break;
 			
 		case NPCTYPE:
-			GET_NPC_VAR_INT(family) break;
+			GET_NPC_VAR_INT(type) break;
 			
 		case NPCDP:
 			GET_NPC_VAR_INT(dp) break;
@@ -1604,7 +1604,7 @@ bool npc_set_register(int32_t reg, int32_t value)
 			
 		case NPCTYPE:
 		{
-			SET_NPC_VAR_INT(family) break;
+			SET_NPC_VAR_INT(type) break;
 		}
 		
 		case NPCWDP:
@@ -1671,7 +1671,7 @@ bool npc_set_register(int32_t reg, int32_t value)
 			if(GuyH::loadNPC(ri->guyref) == SH::_NoError)
 			{
 				GuyH::getNPC()->cs = (value / 10000) & 0xF;
-				if(GuyH::getNPC()->family == eeLEV) GuyH::getNPC()->dcset = (value / 10000) & 0xF;
+				if(GuyH::getNPC()->type == eeLEV) GuyH::getNPC()->dcset = (value / 10000) & 0xF;
 			}
 		}
 		break;
@@ -2169,14 +2169,14 @@ std::optional<int32_t> npc_run_command(word command)
 
 static ArrayRegistrar NPCINITD_registrar(NPCINITD, []{
 	static ScriptingArray_ObjectMemberCArray<enemy, &enemy::initD> impl;
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(false);
 	return &impl;
 }());
 
 static ArrayRegistrar NPCMISCD_registrar(NPCMISCD, []{
 	static ScriptingArray_ObjectMemberCArray<enemy, &enemy::miscellaneous> impl;
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(false);
 	return &impl;
 }());
@@ -2187,7 +2187,7 @@ static ArrayRegistrar NPCDD_registrar(NPCDD, []{
 		[](enemy* enemy, int index){ return enemy->get_dmisc(index); },
 		[](enemy* enemy, int index, int value){ enemy->set_dmisc(index, value); }
 	);
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(true);
 	return &impl;
 }());
@@ -2198,14 +2198,14 @@ static ArrayRegistrar NPCSCRDEFENSED_registrar(NPCSCRDEFENSED, []{
 		[](enemy* enemy, int index){ return enemy->defense[index + edefSCRIPT01]; },
 		[](enemy* enemy, int index, byte value){ enemy->defense[index + edefSCRIPT01] = value; }
 	);
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(true);
 	return &impl;
 }());
 
 static ArrayRegistrar NPCDEFENSED_registrar(NPCDEFENSED, []{
 	static ScriptingArray_ObjectMemberCArray<enemy, &enemy::defense> impl;
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(true);
 	impl.setValueTransform(transforms::vboundByte);
 	impl.setSideEffect([](enemy* enemy, int index, int value){
@@ -2284,21 +2284,19 @@ static ArrayRegistrar NPCHITBY_registrar(NPCHITBY, []{
 			}
 		}
 	);
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(false);
 	return &impl;
 }());
 
 static ArrayRegistrar NPCMOVEFLAGS_registrar(NPCMOVEFLAGS, []{
 	static ScriptingArray_ObjectMemberBitwiseFlags<enemy, &enemy::moveflags, 16> impl;
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
 
 static ArrayRegistrar NPCBEHAVIOUR_registrar(NPCBEHAVIOUR, []{
 	static ScriptingArray_ObjectMemberBitwiseFlags<enemy, &enemy::editorflags, 16> impl;
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
@@ -2329,7 +2327,7 @@ static ArrayRegistrar NPCSHIELD_registrar(NPCSHIELD, []{
 			}
 		}
 	);
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(true);
 	return &impl;
 }());

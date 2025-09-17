@@ -184,7 +184,6 @@ class HeroClass : public sprite
 	
 	void execute(WalkflagInfo info);
 	
-	
 public:
 	std::map<int16_t, int32_t> usecounts;
 	bool autostep,superman,inwallm,tapping,stomping,last_hurrah,onpassivedmg,inair;
@@ -223,7 +222,6 @@ public:
 	//spacing so no confusion between byte and int32_t
 	byte skipstep,lstep, 
 		hopclk, // hopping into water timeout.
-		diveclk, // diving timeout.
 		whirlwind, // is Hero inside an arriving whirlwind? (yes = 255)
 		specialcave, // is Hero inside a special cave?
 		hitdir, // direction from which damage was taken.
@@ -241,6 +239,7 @@ public:
 		lbunnyclock,
 		sdir, // scrolling direction
 		sideswimdir,  //for forcing hero to face left or right in sideview
+		diveclk, // diving timeout.
 		immortal; //Timer for being unable to die
 	int32_t hammer_swim_up_offset,
 		hammer_swim_down_offset,
@@ -304,15 +303,21 @@ public:
 	int32_t walkspeed; //Hero's walking speed.
 	int32_t lastHitBy[NUM_HIT_TYPES_USED][2]; //[enemy, eweapon, combo, flag
 	
-	int32_t last_lens_id;// The item ID of the last Lens of Truth type item used
+	// most recently used items of specific types that need to be stored after initial use
+	int32_t last_lens_id; // active lens of truth
+	int32_t last_grav_boots_id; // active gravity (up/down/passive) boots
+	int32_t last_rocs_id; // active roc item
+	int32_t current_rocs_jump_id; // roc item responsible for the current jump, waiting to have a delayed effect
+	bool released_jump_button; // if jump was released after it was pressed
+	
 	int currentscroll; //currently active spin/quake scroll
 	word last_savepoint_id; //combo id of save point
 	
 	int32_t misc_internal_hero_flags;// Flags to hold data temporarily for misc handling
 	int32_t last_cane_of_byrna_item_id;
 	bool on_sideview_ladder;
-	zfix switchblock_z;
-	bool switchblock_offset;
+	zfix standing_on_z;
+	bool standing_z_offset;
 	byte hoverflags;
 	int32_t extra_jump_count;
 	
@@ -328,23 +333,35 @@ public:
 	int32_t script_ice_combo;
 	int sliding;
 	byte ice_entry_count, ice_entry_mcount;
-
+	
+	zfix autowalk_dest_x, autowalk_dest_y;
+	int32_t autowalk_combo_id = -1;
+	combined_handle_t autowalk_handle;
+	
+	std::array<int32_t, MAXITEMS> item_cooldown;
 private:
 	ffcdata const* platform_ffc;
 	bool lamp_paid;
 public:
 	
 	// Methods below here.
+	zfix get_standing_z_state() const;
 	void clear_ice();
+	void force_ice_velocity(optional<zfix> vx, optional<zfix> vy);
 	bool isLifting();
 	void set_liftflags(int liftid);
 	void doSwitchHook(byte style);
 	bool isStanding(bool forJump = false);
+	std::pair<int32_t,int32_t> get_grav_vars() const;
+	zfix get_gravity(bool skip_custom = false) const;
+	zfix get_terminalv(bool skip_custom = false) const;
+	void update_current_screen();
 	void explode(int32_t type);
 	int32_t getTileModifier();
 	void setTileModifier(int32_t ntemod);
 	void setImmortal(int32_t nimmortal);
 	void kill(bool bypassFairy);
+	bool tick_hover();
 	bool try_hover();
 	int32_t check_pitslide(bool ignore_hover = false);
 	bool pitslide();
@@ -403,10 +420,13 @@ public:
 	void checklocked();
 	void deselectbombs(int32_t super); // switch Hero's weapon if his current weapon (bombs) was depleted.
 	bool startwpn(int32_t itemid);
-	bool onWater(bool drownonly);
+	bool on_cooldown(int32_t itemid);
+	void start_cooldown(int32_t itemid);
+	int onWater(bool drownonly);
 	bool mirrorBonk();
 	void doMirror(int32_t mirrorid);
 	void handle_passive_buttons();
+	void for_each_rpos_stood_on(std::function<void(const rpos_handle_t&)> proc);
 	void land_on_ground();
 	bool do_jump(int32_t jumpid, bool passive);
 	void drop_liftwpn();
@@ -477,7 +497,6 @@ private:
 	void addsparkle(int32_t wpn);
 	void addsparkle2(int32_t type1, int32_t type2);
 	void PhantomsCleanup();
-	
 public:
 	int32_t ringpower(int32_t dmg, bool noPeril = false, bool noRing = false);
 	void ganon_intro();
@@ -576,6 +595,8 @@ public:
 	int32_t  getPushing();
 	void reset_swordcharge();
 	void reset_hookshot();
+	void set_dive(int32_t newdive);
+	void tick_diving();
 	bool can_deploy_ladder();
 	void reset_ladder();
 	bool refill();
@@ -647,6 +668,12 @@ public:
 	bool on_ffc_platform();
 	void check_platform_ffc();
 	void clear_platform_ffc();
+	
+	void start_auto_walk(const combined_handle_t& target);
+	void finish_auto_walk();
+	void autowalk_move();
+	bool is_autowalking() const;
+	bool no_control() const;
 };
 
 bool usingActiveShield(int32_t itmid = -1);
@@ -654,7 +681,6 @@ int32_t getCurrentShield(bool requireActive = true);
 bool isRaftFlag(int32_t flag);
 void do_lens();
 void do_210_lens();
-int32_t touchcombo(int32_t x,int32_t y);
 extern bool did_secret;
 int32_t selectWlevel(int32_t d);
 void computeMaxArrows();

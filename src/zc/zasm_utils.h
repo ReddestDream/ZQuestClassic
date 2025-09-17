@@ -14,7 +14,7 @@ typedef uint32_t pc_t;
 struct ZasmFunction
 {
 	pc_t id;
-	std::string name;
+	std::string _name;
 	pc_t start_pc;
 	pc_t final_pc;
 	bool may_yield;
@@ -22,6 +22,15 @@ struct ZasmFunction
 	std::set<pc_t> called_by_functions;
 	// Currently nothing needs this.
 	// std::set<pc_t> calls_functions;
+
+	const std::string& name() const
+	{
+		static std::string empty = "<empty>";
+		if (_name.empty())
+			return empty;
+		else
+			return _name;
+	}
 };
 
 struct StructuredZasm
@@ -35,14 +44,18 @@ struct StructuredZasm
 		CALLING_MODE_GOTO_RETURN,
 		CALLING_MODE_CALLFUNC_RETURNFUNC,
 	} calling_mode;
+
+	bool is_modern_function_calling();
 };
 
 struct ZasmCFG
 {
-	std::set<pc_t> block_starts;
-	std::map<pc_t, pc_t> start_pc_to_block_id;
+	std::vector<pc_t> block_starts;
 	// Block id => vec of block ids it can go to
 	std::vector<std::vector<pc_t>> block_edges;
+
+	bool contains_block_start(pc_t pc) const;
+	pc_t block_id_from_start_pc(pc_t pc) const;
 };
 
 // Given a ZASM script, discover all functions within (including function names, start/end pcs,
@@ -80,6 +93,8 @@ ZasmCFG zasm_construct_cfg(const zasm_script* script, std::vector<std::pair<pc_t
 
 std::string zasm_to_string(const zasm_script* script, bool top_functions = false, bool generate_yielder = false);
 
+// For older quests, this runs over multiple threads if `parallel` is true.
+// Work is never parallelized for newer quests (3.0+) since they have just a single zasm_script.
 void zasm_for_every_script(bool parallel, std::function<void(zasm_script*)> zasm_script);
 
 std::pair<bool, bool> get_command_rw(int command, int arg);

@@ -964,11 +964,14 @@ void resetItems(gamedata *game2, zinitdata *zinit2, bool freshquest)
 {
 	game2->set_maxlife(zinit2->mcounter[crLIFE]);
 	game2->set_maxbombs(zinit2->mcounter[crBOMBS]);
-	game2->set_maxcounter(zinit2->mcounter[crBOMBS]/zc_max(1,zinit2->bomb_ratio), 6);
+	game2->set_maxcounter(zinit2->mcounter[crBOMBS]/zc_max(1,zinit2->bomb_ratio), crSBOMBS);
 	game2->set_maxmagic(zinit2->mcounter[crMAGIC]);
 	game2->set_maxarrows(zinit2->mcounter[crARROWS]);
-	game2->set_maxcounter(zinit2->mcounter[crMONEY], 1);
-	game2->set_maxcounter(zinit2->mcounter[crKEYS], 5);
+	game2->set_maxcounter(zinit2->mcounter[crMONEY], crMONEY);
+	game2->set_maxcounter(zinit2->mcounter[crKEYS], crKEYS);
+	
+	for(int32_t q = 0; q < 100; ++q)
+		game2->set_maxcounter(zinit2->mcounter[q+crCUSTOM1], q+crCUSTOM1);
 	
 	//set up the items
 	for(int32_t i=0; i<MAXITEMS; i++)
@@ -1015,6 +1018,10 @@ void resetItems(gamedata *game2, zinitdata *zinit2, bool freshquest)
 	game2->set_mp_per_block(zinit2->magic_per_block);
 	game2->set_hero_dmgmult(zinit2->hero_damage_multiplier);
 	game2->set_regionmapping(zinit2->region_mapping);
+	game2->set_item_spawn_flicker(zinit2->item_spawn_flicker);
+	game2->set_item_timeout_dur(zinit2->item_timeout_dur);
+	game2->set_item_timeout_flicker(zinit2->item_timeout_flicker);
+	game2->set_item_flicker_speed(zinit2->item_flicker_speed);
 	game2->set_ene_dmgmult(zinit2->ene_damage_multiplier);
 	game2->set_dither_type(zinit2->dither_type);
 	game2->set_dither_arg(zinit2->dither_arg);
@@ -1037,6 +1044,7 @@ void resetItems(gamedata *game2, zinitdata *zinit2, bool freshquest)
 	
 	for(int32_t i=0; i<MAXLEVELS; i++)
 		game2->lvlitems[i] = zinit2->litems[i];
+	game2->lvlswitches = zinit2->lvlswitches;
 	game2->lvlkeys = zinit2->level_keys;
 	for(uint q = 0; q < NUM_BOTTLE_SLOTS; ++q)
 		game2->bottleSlots[q] = zinit2->bottle_slot[q];
@@ -1048,10 +1056,7 @@ void resetItems(gamedata *game2, zinitdata *zinit2, bool freshquest)
 	game2->set_arrows(zinit2->counter[crARROWS]);
 	
 	for(int32_t q = 0; q < 100; ++q)
-	{
 		game2->set_counter(zinit2->counter[q+crCUSTOM1], q+ crCUSTOM1);
-		game2->set_maxcounter(zinit2->mcounter[q+crCUSTOM1], q+crCUSTOM1);
-	}
 	
 	if(freshquest)
 	{
@@ -1099,6 +1104,10 @@ constexpr std::size_t countof(T(&)[N]) { return N; }
 	PROP(heroSideswimUpStep) \
 	PROP(heroStep) \
 	PROP(hp_per_heart) \
+	PROP(item_spawn_flicker) \
+	PROP(item_timeout_dur) \
+	PROP(item_timeout_flicker) \
+	PROP(item_flicker_speed) \
 	PROP(jump_hero_layer_threshold) \
 	PROP(last_map) \
 	PROP(last_screen) \
@@ -1141,8 +1150,10 @@ constexpr std::size_t countof(T(&)[N]) { return N; }
 	VEC_PROP_2D(gen_data) \
 	ARRAY_PROP(items) \
 	VEC_PROP(level_keys) \
+	VEC_PROP(lvlswitches) \
 	ARRAY_PROP(litems) \
 	ARRAY_PROP(mcounter) \
+	ARRAY_PROP(sprite_z_thresholds) \
 	BITSTR_PROP(flags)
 
 static int DELTA_VERSION = 2;
@@ -1299,7 +1310,7 @@ zinitdata *apply_init_data_delta(zinitdata *base, string delta, string& out_erro
 					if (key == "triforce")
 					{
 						for(int q = 0; q < 8; ++q)
-							SETFLAG(result->litems[q+1], liTRIFORCE, get_bitl(as_int,q));
+							SETFLAG(result->litems[q+1], (1 << li_mcguffin), get_bitl(as_int,q));
 						continue;
 					}
 					DEPRPROP(rupies,counter[crMONEY]);
@@ -1323,10 +1334,10 @@ zinitdata *apply_init_data_delta(zinitdata *base, string delta, string& out_erro
 			}
 			if(delta_version < 2)
 			{
-				DEPRPROP_LITEM_BIT(map, liMAP)
-				DEPRPROP_LITEM_BIT(compass, liCOMPASS)
-				DEPRPROP_LITEM_BIT(boss_key, liBOSSKEY)
-				DEPRPROP_LITEM_BIT(mcguffin, liTRIFORCE)
+				DEPRPROP_LITEM_BIT(map, (1 << li_map))
+				DEPRPROP_LITEM_BIT(compass, (1 << li_compass))
+				DEPRPROP_LITEM_BIT(boss_key, (1 << li_boss_key))
+				DEPRPROP_LITEM_BIT(mcguffin, (1 << li_mcguffin))
 			}
 			#undef DEPRPROP_LITEM_BIT
 			#undef DEPRPROP_OFFS

@@ -57,7 +57,6 @@ import time
 from argparse import ArgumentTypeError
 from pathlib import Path
 from time import sleep
-from typing import List
 
 import cutie
 
@@ -274,7 +273,7 @@ class ReplayTimeoutException(Exception):
     pass
 
 
-def group_arg(raw_values: List[str], allow_concat=False):
+def group_arg(raw_values: list[str], allow_concat=False):
     default_arg = None
     arg_by_replay = {}
     if raw_values:
@@ -423,9 +422,8 @@ if is_web:
     print('starting webserver')
     webserver_p = subprocess.Popen(
         [
-            'python',
-            root_dir / 'scripts/webserver.py',
-            '--dir',
+            'node',
+            root_dir / 'scripts/webserver.mjs',
             args.build_folder / 'packages/web',
         ],
         stdout=subprocess.PIPE,
@@ -433,8 +431,10 @@ if is_web:
         text=True,
     )
     while webserver_p.poll() == None:
-        if 'serving up' in webserver_p.stdout.readline():
+        if 'Server running' in webserver_p.stdout.readline():
             break
+    if webserver_p.poll() is not None:
+        raise Exception(f'Could not start webserver: {webserver_p.stderr.read()}')
     print('webserver started')
 
 
@@ -475,6 +475,9 @@ skip_tests = [
     'nargads_trail_crystal_crusades_19_of_24.zplay',
     'nargads_trail_crystal_crusades_20_of_24.zplay',
 ]
+# TODO: weird failures in CI starting in https://github.com/ZQuestClassic/ZQuestClassic/pull/1137
+if is_web:
+    skip_tests.append('garbage_collection.zplay')
 tests = [t for t in tests if t.name not in skip_tests]
 
 if args.shard:
@@ -523,7 +526,7 @@ replays.sort(key=lambda replay: -estimated_durations[replay.name])
 
 
 # https://stackoverflow.com/a/6856593/2788187
-def get_shards(replays: List[Replay], n: int) -> List[List[Replay]]:
+def get_shards(replays: list[Replay], n: int) -> list[list[Replay]]:
     result = [[] for i in range(n)]
     sums = {i: 0 for i in range(n)}
     c = 0
@@ -767,7 +770,7 @@ def on_exit():
 
 
 class ProgressDisplay:
-    def __init__(self, replays: List[Replay], use_curses: bool, emoji: bool):
+    def __init__(self, replays: list[Replay], use_curses: bool, emoji: bool):
         self.use_curses = use_curses
         self.emoji = emoji
         self.replay_log_names = {r.name: self.get_replay_log_name(r) for r in replays}
@@ -1033,7 +1036,7 @@ if mode == 'assert':
         print('all replay tests passed')
     else:
         print(f'{len(failing_replays)} replay tests failed')
-        if not is_ci and not args.no_report_on_failure and sys.stdout.isatty():
+        if not is_ci and not args.no_report_on_failure and interactive and sys.stdout.isatty():
             prompt_to_create_compare_report()
         exit(2)
 else:

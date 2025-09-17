@@ -4,8 +4,6 @@
 
 JIT compilation is off by default. It can be enabled by setting the `[ZSCRIPT] jit = 1` config option, found in the launcher. There is also the `-jit` command line switch, or `--(no-)jit` for `run_replay_tests.py`.
 
-`[ZSCRIPT] jit_precompile = 1` can be set to compile all scripts on quest load, instead of as they are encountered.
-
 `[ZSCRIPT] jit_threads = -2` controls how many threads to use for compilation. See the note in `base_config/zc.cfg` for more.
 
 ## How it works
@@ -16,7 +14,7 @@ First, details on how ZASM is normally interpreted:
 
 A "z-register" (in the code, `ffscript.cpp` calls them registers, but the AST parser code calls them Vars) is set/read via `set_register`/`get_register`. A handful of general purposes z-registers exist called `D` and `G` (global). All other z-registers connect some state of the game engine to ZASM - for example, `Link->X = 123` would become the ZASM instruction `SETV LINKX 123`, so `set_register` would get called to set the player's position to the given value.
 
-Function calls are implemented with `PUSHR/PUSHV <thispc>; GOTO <destpc>` (pushing current pc onto stack and go to destination function). If there are parameters, they get pushed too. There's additional details for the `SP` z-register that I'm brushing over. When the function wants to return, a `RETURN` statement will pop pc to jump to from the stack.
+Function calls are implemented with `PUSHR/PUSHV <thispc>; GOTO <destpc>` (pushing current pc onto stack and go to destination function). If there are parameters, they get pushed too. There's additional details for the `SP` z-register that I'm brushing over. When the function wants to return, a `RETURNFUNC` statement will pop pc to jump to from the stack.
 
 The ZASM bytecode interpreter will execute instructions until it encounters either 1) some `WaitX` command or 2) a `QUIT` command. If it somehow gets past the end of the instructions, that is treated as a `QUIT` (although, I think this should never happen). Some examples of `WaitX` are: `WaitFrame` (yield and resume on the next frame) and `WaitEvent` (wait for some game event to occur before continuing). In any case, whenever a script resumes it picks up from that last `WaitX` call with all its state and registers intact. The `refInfo` and `stack` will continue to exist for this script instance (until cleared, like for FFCs when leaving the screen).
 
@@ -73,9 +71,32 @@ This can result in ~20x better performance for scripts that are just pure math. 
 
 `GOTO` commands will emit a `jmp` to a label that is placed at the correct place in the generated assembly.
 
-Function calls are tricky. They work by pushing the current pc onto the stack, and recalling that pc on `RETURN`. The JIT compilation turns the function call into a `jmp`, and stores on a stack a _function call return address_ (defined by generating a label just after the function call). On `RETURN` code is emitted to pop from this stack and `jmp` to the location. Given these are arbitary jumps and not `call` ops, the assembler is also told where a `RETURN` `jmp` can possibly return to, which helps asmjit with register allocation. In the future, these may be compiled into actual function calls on-demand.
+Scripts are compiled per-function. Once a function is run enough (lots of calls to it, or it loops a lot internally), it will be compiled. Compilation happens in a worker pool – the main thread does not wait for it to be compiled. Once the worker pool compiles a function, the main thread can then run it when executing that function. Until then, the interpreter handles executing that function.
 
-When a `WaitX` command is hit, the compiled function will save the location of that command and return. The next time it is called, it will jump straight to the next instruction after that `WaitX` command. This is tracked via `ri->wait_index`.
+If precompiling is enabled, all functions are compiled on quest load, before the game starts.
+
+When a `WaitX` command is hit, the compiled function will save the location of that command and return. The next time it is called, it will jump straight to the next instruction after that `WaitX` command. This is tracked via `JittedScript::pc_to_address`.
+
+## Configuration
+
+```ini
+# in zc.cfg ...
+
+# Enable for JIT-compilation of ZASM scripts.
+jit = 1
+# Number of background threads for compiling scripts.
+# -1 to set to number of available CPU threads
+# -x to set to (number of available CPU threads) / x
+# 0 to only compile on the main thread
+jit_threads = -2
+# When a function is called this many times, it is deemed "hot" and will be compiled by the JIT.
+jit_hot_function_call_count = 10
+# When a function loops this many times, it is deemed "hot" and will be compiled by the JIT.
+jit_hot_function_loop_count = 1000
+# Compile all scripts on quest load, and wait for it to finish before starting the game.
+# Note that this totally ignores the above two "hot" thresholds.
+jit_precompile = 0
+```
 
 ## Debugging
 
@@ -93,12 +114,12 @@ And some CLI options:
 
 Given a replay that fails only when using JIT, this is how you can debug what's wrong with the compiled code:
 
-1. Have a failing replay, for example: `tests/replays/playground_maths.zplay`
-1. Run `python scripts/jit_runtime_debug.py --replay_path tests/replays/playground_maths.zplay`
+1. Have a failing replay, for example: `tests/replays/playground/maths.zplay`
+1. Run `python scripts/jit_runtime_debug.py --replay_path tests/replays/playground/maths.zplay`
 1. The script will run that replay w/ JIT, then w/o JIT, then show you where the registers/stack/pc first differ
 1. Hopefully, you'll now see the exact instruction that results in a problem. If a fix seems non-trivial, it may be best to figure out how to create similar ZASM using a much smaller script, so you don't have to wait however long the replay is when iterating on a fix.
 
-It can also be useful to compile only the script you're debugging in `jit_create_script_handle`: `if (script->id != {ScriptType::Player, 1}) return nullptr;`
+It can also be useful to compile only the script you're debugging in `jit_create_script_impl`: `if (script->id != {ScriptType::Player, 1}) return nullptr;`
 
 ## WASM backend
 

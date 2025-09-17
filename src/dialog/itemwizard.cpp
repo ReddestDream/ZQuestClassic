@@ -73,7 +73,7 @@ size_t ItemWizardDialog::getRadio(size_t rs)
 #define RESET_ZERO(member,flag) (local_ref.member = (flag ? 0 : src_ref.member))
 void ItemWizardDialog::update(bool first)
 {
-	switch(local_ref.family)
+	switch(local_ref.type)
 	{
 		case itype_shield:
 		{
@@ -92,7 +92,7 @@ void ItemWizardDialog::update(bool first)
 void ItemWizardDialog::endUpdate()
 {
 	update();
-	switch(local_ref.family)
+	switch(local_ref.type)
 	{
 		case itype_shield:
 		{
@@ -139,10 +139,10 @@ void ItemWizardDialog::endUpdate()
 
 void ItemWizardDialog::updateTitle()
 {
-	switch(local_ref.family)
+	switch(local_ref.type)
 	{
 		default:
-			ityname = ZI.getItemClassName(local_ref.family);
+			ityname = ZI.getItemClassName(local_ref.type);
 			break;
 	}
 	window->setTitle("Item Wizard (" + ityname + ")");
@@ -163,7 +163,7 @@ void item_default(itemdata& ref)
 		item_flag5|item_flag6|item_flag7|item_flag8|
 		item_flag9|item_flag10|item_flag11|item_flag12|
 		item_flag13|item_flag14|item_flag15);
-	switch(ref.family)
+	switch(ref.type)
 	{
 		case itype_shield:
 			ref.flags |= item_flag1; //protects front
@@ -239,7 +239,7 @@ std::shared_ptr<GUI::Widget> ItemWizardDialog::view()
 	);
 	
 	bool wip = false;
-	switch(local_ref.family)
+	switch(local_ref.type)
 	{
 		case itype_shield:
 		{
@@ -270,7 +270,9 @@ std::shared_ptr<GUI::Widget> ItemWizardDialog::view()
 								CBOX_DI("Custom W. 8", misc1, sh_script8),
 								CBOX_DI("Custom W. 9", misc1, sh_script9),
 								CBOX_DI("Custom W. 10", misc1, sh_script10),
-								CBOX_DI("Light Beams", misc1, sh_lightbeam)
+								CBOX_DI("Light Beams", misc1, sh_lightbeam),
+								CBOX_DI("LW Wind", misc1, sh_lw_wind),
+								CBOX_DI("EW Wind", misc1, sh_ew_wind)
 							)
 						),
 						TabRef(name = "Reflect",
@@ -295,7 +297,9 @@ std::shared_ptr<GUI::Widget> ItemWizardDialog::view()
 								CBOX_DI("Custom W. 8", misc2, sh_script8),
 								CBOX_DI("Custom W. 9", misc2, sh_script9),
 								CBOX_DI("Custom W. 10", misc2, sh_script10),
-								CBOX_DI("Light Beams", misc2, sh_lightbeam)
+								CBOX_DI("Light Beams", misc2, sh_lightbeam),
+								CBOX_DI("LW Wind", misc2, sh_lw_wind),
+								CBOX_DI("EW Wind", misc2, sh_ew_wind)
 							)
 						)
 					)

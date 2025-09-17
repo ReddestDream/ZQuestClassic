@@ -206,7 +206,7 @@ static void cheats_execute(Cheat cheat, int arg1, int arg2, std::string arg3)
     {
         for (int32_t i = 0; i < MAXITEMS; i++)
         {
-            if (itemsbuf[i].family == itype_bomb || itemsbuf[i].family == itype_sbomb)
+            if (itemsbuf[i].type == itype_bomb || itemsbuf[i].type == itype_sbomb)
                 getitem(i, true);
         }
 
@@ -247,8 +247,8 @@ static void cheats_execute(Cheat cheat, int arg1, int arg2, std::string arg3)
 
     case Walls:
     {
-        toogam = !toogam;
-        if (toogam)
+        walk_through_walls = !walk_through_walls;
+        if (walk_through_walls)
         {
             cheat_superman = true;
             setClock(true);
@@ -328,12 +328,12 @@ static void cheats_execute(Cheat cheat, int arg1, int arg2, std::string arg3)
 	
 	case TrigSecrets:
 	{
-		trigger_secrets_for_screen(TriggerSource::CheatTemp, hero_screen);
+		trigger_secrets_for_screen(TriggerSource::CheatTemp, Hero.current_screen);
 	}
 	break;
 	case TrigSecretsPerm:
 	{
-		trigger_secrets_for_screen(TriggerSource::CheatPerm, hero_screen);
+		trigger_secrets_for_screen(TriggerSource::CheatPerm, Hero.current_screen);
 		setmapflag(hero_scr, mSECRET);
 	}
 	break;

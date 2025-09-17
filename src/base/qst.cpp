@@ -1276,7 +1276,7 @@ int32_t get_qst_buffers()
 {
     TheMaps.resize(MAPSCRS);
 	old_combo_pages.resize(MAPSCRS);
-	map_autolayers.resize(6);
+	map_infos.resize(1);
 
     Z_message("OK\n");
     
@@ -3545,6 +3545,32 @@ int32_t readrules(PACKFILE *f, zquestheader *Header)
 		set_qr(qr_EW_ROCKS_HARDCODED_BREAK_ON_SOLID, 1);
 		set_qr(qr_IMPRECISE_WEAPON_SOLIDITY_CHECKS, 1);
 	}
+	if (compatrule_version < 83 && (tempheader.version_major >= 3 || tempheader.compareVer(2, 55, 11) < 0))
+		set_qr(qr_BROKEN_BLOCKHOLE_PITFALLS, 1);
+	if (compatrule_version < 84 && (tempheader.version_major >= 3 || tempheader.compareVer(2, 55, 11) < 0))
+		set_qr(qr_CUSTOM_WEAPON_BROKEN_SIZE, 1);
+	if (compatrule_version < 85)
+		set_qr(qr_OLD_WEAPON_REFLECTION, 1);
+	if (compatrule_version < 86 && (tempheader.version_major >= 3 || tempheader.compareVer(2, 55, 11) < 0))
+		set_qr(qr_OLD_SPRITE_FALL_DROWN, 1);
+	if (compatrule_version < 87)
+		set_qr(qr_OLD_TERMINAL_VELOCITY, 1);
+	if (compatrule_version < 88)
+		set_qr(qr_OLD_SCRIPT_LEVEL_GLOBAL_STATES, 1);
+	if (compatrule_version < 89)
+		set_qr(qr_BROKEN_ARMOS_GRAVE_BIGHITBOX_COLLISION, 1);
+	
+	if (compatrule_version < 90)
+	{
+		set_qr(qr_CLASSIC_DRAWING_ORDER, 1);
+		set_qr(qr_OLD_WEAPON_DRAW_ANIMATE_TIMING, 1);
+	}
+
+	if (compatrule_version < 91)
+	{
+		set_qr(qr_OLD_SCRIPTS_INTERNAL_ARRAYS_BOUND_INDEX, 1);
+		set_qr(qr_OLD_SCRIPTS_ARRAYS_NON_ZERO_DEFAULT_VALUE, 1);
+	}
 
 	set_qr(qr_ANIMATECUSTOMWEAPONS,0);
 	if (s_version < 16)
@@ -5085,6 +5111,14 @@ int32_t readdmaps(PACKFILE *f, zquestheader *Header, word, word, word start_dmap
 			}
 		}
 
+		if (s_version > 22 && (tempDMap.flags & dmfCUSTOM_GRAVITY))
+		{
+			if (!p_igetzf(&tempDMap.dmap_gravity, f))
+				return qe_invalid;
+			if (!p_igetzf(&tempDMap.dmap_terminal_v, f))
+				return qe_invalid;
+		}
+
 		if (!should_skip)
 		{
 			if(loading_tileset_flags & TILESET_CLEARMAPS)
@@ -6370,7 +6404,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 				tempitem.flags=item_none;
                 tempitem.wpn=tempitem.wpn2=tempitem.wpn3=tempitem.wpn3=tempitem.pickup_hearts=
                                                 tempitem.misc1=tempitem.misc2=tempitem.usesound=0;
-                tempitem.family=0xFF;
+                tempitem.type=0xFF;
                 tempitem.playsound=WAV_SCALE;
                 reset_itembuf(&tempitem,i);
                 
@@ -6400,23 +6434,23 @@ int32_t readitems(PACKFILE *f, word version, word build)
         {
 			if ( s_version >= 31 )
 			{
-				if(!p_igetl(&tempitem.family,f))
+				if(!p_igetl(&tempitem.type,f))
 				{
 					return qe_invalid;
 				}    
 			}
             else
 			{		    
-				if(!p_getc(&tempitem.family,f))
+				if(!p_getc(&tempitem.type,f))
 				{
 					return qe_invalid;
 				}
             }
             if(s_version < 16)
-                if(tempitem.family == 0xFF)
-                    tempitem.family = itype_misc;
+                if(tempitem.type == 0xFF)
+                    tempitem.type = itype_misc;
                     
-            if(!p_getc(&tempitem.fam_type,f))
+            if(!p_getc(&tempitem.level,f))
             {
                 return qe_invalid;
             }
@@ -6628,7 +6662,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
                         // Version 24: sh_ice -> sh_script; previously, all shields could block script weapons
                         if(s_version<24)
                         {
-                            if(tempitem.family==itype_shield)
+                            if(tempitem.type==itype_shield)
                             {
                                 tempitem.misc1|=sh_script;
                             }
@@ -6743,7 +6777,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 					}
 					else tempitem.usesound2 = 0;
 					
-					if(s_version < 50 && tempitem.family == itype_mirror)
+					if(s_version < 50 && tempitem.type == itype_mirror)
 					{
 						//Split continue/dmap warp effect/sfx, port for old
 						tempitem.misc2 = tempitem.misc1;
@@ -6999,7 +7033,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
         else
         {
             tempitem.count=-1;
-            tempitem.family=itype_misc;
+            tempitem.type=itype_misc;
 			tempitem.flags=item_none;
             tempitem.wpn=tempitem.wpn2=tempitem.wpn3=tempitem.wpn3=tempitem.pickup_hearts=tempitem.misc1=tempitem.misc2=tempitem.usesound=0;
             tempitem.playsound=WAV_SCALE;
@@ -7020,8 +7054,17 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if ( s_version >= 60 )
 		{
-			if(!p_getc(&tempitem.pickup_litems,f))
-				return qe_invalid;
+			if ( s_version >= 65 )
+			{
+				if(!p_igetw(&tempitem.pickup_litems,f))
+					return qe_invalid;
+			}
+			else
+			{
+				if(!p_getc(&padding,f))
+					return qe_invalid;
+				tempitem.pickup_litems = word(padding);
+			}
 			if(!p_igetw(&tempitem.pickup_litem_level,f))
 				return qe_invalid;
 		}
@@ -7037,7 +7080,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		else
 		{
 			tempitem.moveflags = (move_obeys_grav | move_can_pitfall);
-			switch(tempitem.family)
+			switch(tempitem.type)
 			{
 				case itype_divinefire:
 					if(!(tempitem.flags & item_flag3))
@@ -7062,7 +7105,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		else
 		{
 			SETFLAG(tempitem.weap_data.wflags, WFLAG_UPDATE_IGNITE_SPRITE, tempitem.flags & item_burning_sprites);
-			switch(tempitem.family)
+			switch(tempitem.type)
 			{
 				case itype_liftglove:
 					tempitem.weap_data.wflags = WFLAG_BREAK_WHEN_LANDING;
@@ -7085,6 +7128,12 @@ int32_t readitems(PACKFILE *f, word version, word build)
 					}
 					break;
 			}
+		}
+		
+		if (s_version >= 64)
+		{
+			if (!p_igetl(&tempitem.cooldown, f))
+				return qe_invalid;
 		}
         
 		if (!should_skip)
@@ -7192,15 +7241,15 @@ int32_t readitems(PACKFILE *f, word version, word build)
 			switch(i)
 			{
 				case iTriforce:
-					tempitem.fam_type=1;
+					tempitem.level=1;
 					break;
 					
 				case iBigTri:
-					tempitem.fam_type=0;
+					tempitem.level=0;
 					break;
 					
 				case iBombs:
-					tempitem.fam_type=i_bomb;
+					tempitem.level=i_bomb;
 					tempitem.power=4;
 					tempitem.wpn=wBOMB;
 					tempitem.wpn2=wBOOM;
@@ -7211,7 +7260,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 					break;
 					
 				case iSBomb:
-					tempitem.fam_type=i_sbomb;
+					tempitem.level=i_sbomb;
 					tempitem.power=16;
 					tempitem.wpn=wSBOMB;
 					tempitem.wpn2=wSBOOM;
@@ -7426,8 +7475,8 @@ int32_t readitems(PACKFILE *f, word version, word build)
 					break;
 					
 				case iL2SpinScroll:
-					tempitem.family=itype_spinscroll2;
-					tempitem.fam_type=1;
+					tempitem.type=itype_spinscroll2;
+					tempitem.level=1;
 					tempitem.cost_amount[0]=8;
 					tempitem.power=2;
 					tempitem.misc1 = 20;
@@ -7439,8 +7488,8 @@ int32_t readitems(PACKFILE *f, word version, word build)
 					break;
 					
 				case iL2QuakeScroll:
-					tempitem.family=itype_quakescroll2;
-					tempitem.fam_type=1;
+					tempitem.type=itype_quakescroll2;
+					tempitem.level=1;
 					tempitem.power = 2;
 					tempitem.misc1=0x20;
 					tempitem.misc2=192;
@@ -7549,15 +7598,15 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		}
 		
 		//add the misc flag for bomb
-		if(s_version < 10 && tempitem.family == itype_bomb)
+		if(s_version < 10 && tempitem.type == itype_bomb)
 		{
 			tempitem.flags = (tempitem.flags & ~item_flag1) | (get_qr(qr_LONGBOMBBOOM_DEP) ? item_flag1 : item_none);
 		}
 		
-		if(s_version < 11 && tempitem.family == itype_triforcepiece)
+		if(s_version < 11 && tempitem.type == itype_triforcepiece)
 		{
-			tempitem.flags = (tempitem.fam_type ? item_gamedata : item_none);
-			tempitem.playsound = (tempitem.fam_type ? WAV_SCALE : WAV_CLEARED);
+			tempitem.flags = (tempitem.level ? item_gamedata : item_none);
+			tempitem.playsound = (tempitem.level ? WAV_SCALE : WAV_CLEARED);
 		}
 		
 		if(s_version < 12) // June 2007: More Misc. attributes.
@@ -7582,7 +7631,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 				break;
 			}
 			
-			switch(tempitem.family)
+			switch(tempitem.type)
 			{
 			case itype_hoverboots:
 				tempitem.usesound = WAV_ZN1HOVER;
@@ -7652,15 +7701,15 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if(s_version < 13) // July 2007
 		{
-			if(tempitem.family == itype_whistle)
+			if(tempitem.type == itype_whistle)
 			{
 				tempitem.misc1 = (tempitem.power==2 ? 4 : 3);
 				tempitem.power = 1;
 				tempitem.flags|=item_flag1;
 			}
-			else if(tempitem.family == itype_wand)
+			else if(tempitem.type == itype_wand)
 				tempitem.flags|=item_flag1;
-			else if(tempitem.family == itype_book)
+			else if(tempitem.type == itype_book)
 			{
 				tempitem.flags|=item_flag1;
 				tempitem.power = 2;
@@ -7669,14 +7718,14 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if(s_version < 14) // August 2007
 		{
-			if(tempitem.family == itype_fairy)
+			if(tempitem.type == itype_fairy)
 			{
 				tempitem.usesound = WAV_SCALE;
 				
-				if(tempitem.fam_type)
+				if(tempitem.level)
 					tempitem.misc3=50;
 			}
-			else if(tempitem.family == itype_potion)
+			else if(tempitem.type == itype_potion)
 			{
 				tempitem.flags |= item_gain_old;
 			}
@@ -7684,11 +7733,11 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if(s_version < 17) // November 2007
 		{
-			if(tempitem.family == itype_candle && !tempitem.wpn3)
+			if(tempitem.type == itype_candle && !tempitem.wpn3)
 			{
 				tempitem.wpn3 = wFIRE;
 			}
-			else if(tempitem.family == itype_arrow && tempitem.power>4)
+			else if(tempitem.type == itype_arrow && tempitem.power>4)
 			{
 				tempitem.flags|=item_flag1;
 			}
@@ -7696,11 +7745,11 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if(s_version < 18) // New Year's Eve 2007
 		{
-			if(tempitem.family == itype_whistle)
+			if(tempitem.type == itype_whistle)
 				tempitem.misc2 = 8; // Use the Whistle warp ring
-			else if(tempitem.family == itype_bait)
+			else if(tempitem.type == itype_bait)
 				tempitem.misc1 = 768; // Frames until it goes
-			else if(tempitem.family == itype_triforcepiece)
+			else if(tempitem.type == itype_triforcepiece)
 			{
 				if(tempitem.flags & item_gamedata)
 				{
@@ -7712,7 +7761,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if(s_version < 19)  // January 2008
 		{
-			if(tempitem.family == itype_divineprotection)
+			if(tempitem.type == itype_divineprotection)
 			{
 				if (get_bit(deprecated_rules,qr_NOBOMBPALFLASH+1)) tempitem.flags |= item_flag3;
 				if (get_bit(deprecated_rules,qr_NOBOMBPALFLASH+2)) tempitem.flags |= item_flag4;
@@ -7721,7 +7770,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if(s_version < 20)  // October 2008
 		{
-			if(tempitem.family == itype_divineprotection)
+			if(tempitem.type == itype_divineprotection)
 			{
 				tempitem.wpn6=wDIVINEPROTECTION2A;
 				tempitem.wpn7=wDIVINEPROTECTION2B;
@@ -7738,10 +7787,10 @@ int32_t readitems(PACKFILE *f, word version, word build)
 			{
 				tempitem.flags &= ~item_unused;
 				
-				if(tempitem.family == itype_sword ||
-						tempitem.family == itype_wand ||
-						tempitem.family == itype_candle ||
-						tempitem.family == itype_cbyrna)
+				if(tempitem.type == itype_sword ||
+						tempitem.type == itype_wand ||
+						tempitem.type == itype_candle ||
+						tempitem.type == itype_cbyrna)
 				{
 					tempitem.flags |= item_flag4;
 				}
@@ -7750,7 +7799,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if(s_version < 22)  // September 2009
 		{
-			if(tempitem.family == itype_sbomb || tempitem.family == itype_bomb)
+			if(tempitem.type == itype_sbomb || tempitem.type == itype_bomb)
 			{
 				tempitem.misc3 = tempitem.power/2;
 			}
@@ -7758,9 +7807,9 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if(s_version < 23)    // March 2011
 		{
-			if(tempitem.family == itype_divinefire)
+			if(tempitem.type == itype_divinefire)
 				tempitem.wpn5 = wFIRE;
-			else if(tempitem.family == itype_book)
+			else if(tempitem.type == itype_book)
 				tempitem.wpn2 = wFIRE;
 		}
 		
@@ -7769,16 +7818,16 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		// incorrect behavior.
 		if(s_version < 25)    // January 2012
 		{
-			if(tempitem.family == itype_bombbag)
+			if(tempitem.type == itype_bombbag)
 				tempitem.flags |= item_flag1;
 				
-			if(tempitem.family == itype_divinefire)
+			if(tempitem.type == itype_divinefire)
 				tempitem.flags |= item_flag3; // Sideview gravity flag
 		}
 		
 		if( version < 0x254) //Nuke greyed-out flags/values from <=2.53, in case they are used in 2.54/2.55
 		{
-			switch(tempitem.family)
+			switch(tempitem.type)
 			{
 				case itype_sword:
 				{
@@ -9151,23 +9200,23 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		//Port quest rules to items
 		if( s_version <= 31) 
 		{
-			if(tempitem.family == itype_bomb)
+			if(tempitem.type == itype_bomb)
 			{
 				if ( get_qr(qr_OUCHBOMBS) )  tempitem.flags |= item_flag2;
 				else tempitem.flags &= ~ item_flag2;
 			}
-			else if(tempitem.family == itype_sbomb)
+			else if(tempitem.type == itype_sbomb)
 			{
 				if ( get_qr(qr_OUCHBOMBS) )  tempitem.flags |= item_flag2;
 				else tempitem.flags &= ~ item_flag2;
 			}
 			
-			else if(tempitem.family == itype_brang)
+			else if(tempitem.type == itype_brang)
 			{
 				if ( get_qr(qr_BRANGPICKUP) )  tempitem.flags |= item_flag4;
 				else tempitem.flags &= ~ item_flag4;
 			}	
-			else if(tempitem.family == itype_wand)
+			else if(tempitem.type == itype_wand)
 			{
 				if ( get_qr(qr_NOWANDMELEE) )  tempitem.flags |= item_flag3;
 				else tempitem.flags &= ~ item_flag3;
@@ -9177,22 +9226,22 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		//Port quest rules to items
 		if( s_version <= 37) 
 		{
-			if(tempitem.family == itype_flippers)
+			if(tempitem.type == itype_flippers)
 			{
 				if ( (get_qr(qr_NODIVING)) ) tempitem.flags |= item_flag1;
 				else tempitem.flags &= ~ item_flag1;
 			}
-			else if(tempitem.family == itype_sword)
+			else if(tempitem.type == itype_sword)
 			{
 				if ( (get_qr(qr_QUICKSWORD)) ) tempitem.flags |= item_flag5;
 				else tempitem.flags &= ~ item_flag5;
 			}
-			else if(tempitem.family == itype_wand)
+			else if(tempitem.type == itype_wand)
 			{
 				if ( (get_qr(qr_QUICKSWORD)) ) tempitem.flags |= item_flag5;
 				else tempitem.flags &= ~ item_flag5;
 			}
-			else if(tempitem.family == itype_book || tempitem.family == itype_candle)
+			else if(tempitem.type == itype_book || tempitem.type == itype_candle)
 			{
 				//@Emily: What was qrFIREPROOFHERO2 again, and does that also need to enable this?
 				if ( (get_qr(qr_FIREPROOFHERO)) ) tempitem.flags |= item_flag3;
@@ -9202,7 +9251,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 38)
 		{
-			if(tempitem.family == itype_brang || tempitem.family == itype_hookshot)
+			if(tempitem.type == itype_brang || tempitem.type == itype_hookshot)
 			{
 				if(get_qr(qr_BRANGPICKUP)) tempitem.flags |= item_flag4;
 				else tempitem.flags &= ~item_flag4;
@@ -9210,7 +9259,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 				if(get_qr(qr_Z3BRANG_HSHOT)) tempitem.flags |= item_flag5 | item_flag6;
 				else tempitem.flags &= ~(item_flag5|item_flag6);
 			} 
-			else if(tempitem.family == itype_arrow)
+			else if(tempitem.type == itype_arrow)
 			{
 				if(get_qr(qr_BRANGPICKUP)) tempitem.flags |= item_flag4;
 				else tempitem.flags &= ~item_flag4;
@@ -9222,12 +9271,12 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 39)
 		{
-			if(tempitem.family == itype_divinefire || tempitem.family == itype_book || tempitem.family == itype_candle)
+			if(tempitem.type == itype_divinefire || tempitem.type == itype_book || tempitem.type == itype_candle)
 			{
 				if(get_qr(qr_TEMPCANDLELIGHT)) tempitem.flags |= item_flag5;
 				else tempitem.flags &= ~item_flag5;
 			}
-			else if(tempitem.family == itype_potion)
+			else if(tempitem.type == itype_potion)
 			{
 				if(get_qr(qr_NONBUBBLEMEDICINE))
 				{
@@ -9240,7 +9289,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 					else tempitem.flags &= ~item_flag4;
 				}
 			}
-			else if(tempitem.family == itype_triforcepiece)
+			else if(tempitem.type == itype_triforcepiece)
 			{
 				if(get_qr(qr_NONBUBBLETRIFORCE))
 				{
@@ -9257,22 +9306,22 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 40)
 		{
-			if(tempitem.family == itype_ring || tempitem.family == itype_perilring)
+			if(tempitem.type == itype_ring || tempitem.type == itype_perilring)
 			{
 				if(get_qr(qr_RINGAFFECTDAMAGE))tempitem.flags |= item_flag1;
 				else tempitem.flags &= ~item_flag1;
 			} 
-			else if(tempitem.family == itype_candle || tempitem.family == itype_sword || tempitem.family == itype_wand || tempitem.family == itype_cbyrna)
+			else if(tempitem.type == itype_candle || tempitem.type == itype_sword || tempitem.type == itype_wand || tempitem.type == itype_cbyrna)
 			{
 				if(get_qr(qr_SLASHFLIPFIX))tempitem.flags |= item_flag8;
 				else tempitem.flags &= ~item_flag8;
 			}
-			if(tempitem.family == itype_sword || tempitem.family == itype_wand || tempitem.family == itype_hammer)
+			if(tempitem.type == itype_sword || tempitem.type == itype_wand || tempitem.type == itype_hammer)
 			{
 				if(get_qr(qr_NOITEMMELEE))tempitem.flags |= item_flag7;
 				else tempitem.flags &= ~item_flag7;
 			} 
-			else if(tempitem.family == itype_cbyrna)
+			else if(tempitem.type == itype_cbyrna)
 			{
 				tempitem.flags |= item_flag7;
 			}
@@ -9280,7 +9329,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 41 )
 		{
-			if(tempitem.family == itype_sword)
+			if(tempitem.type == itype_sword)
 			{
 				if(get_qr(qr_SWORDMIRROR))tempitem.flags |= item_flag9;
 				else tempitem.flags &= ~item_flag9;
@@ -9292,24 +9341,24 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 42 )
 		{
-			if(tempitem.family == itype_wand)
+			if(tempitem.type == itype_wand)
 			{
 				if(get_qr(qr_NOWANDMELEE))tempitem.flags |= item_flag3;
 				else tempitem.flags &= ~item_flag3;
 				
 				tempitem.flags &= ~item_flag6;
 			} 
-			else if(tempitem.family == itype_hammer)
+			else if(tempitem.type == itype_hammer)
 			{
 				tempitem.flags &= ~item_flag3;
 			} 
-			else if(tempitem.family == itype_cbyrna)
+			else if(tempitem.type == itype_cbyrna)
 			{
 				tempitem.flags |= item_flag3;
 				
 				tempitem.flags &= ~item_flag6;
 			} 
-			else if(tempitem.family == itype_sword)
+			else if(tempitem.type == itype_sword)
 			{
 				if(get_qr(qr_MELEEMAGICCOST))tempitem.flags |= item_flag6;
 				else tempitem.flags &= ~item_flag6;
@@ -9318,7 +9367,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 43 )
 		{
-			if(tempitem.family == itype_whistle)
+			if(tempitem.type == itype_whistle)
 			{
 				if(get_qr(qr_WHIRLWINDMIRROR))tempitem.flags |= item_flag3;
 				else tempitem.flags &= ~item_flag3;
@@ -9327,7 +9376,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 45 )
 		{
-			if(tempitem.family == itype_flippers)
+			if(tempitem.type == itype_flippers)
 			{
 				tempitem.misc1 = 50; //Dive length, default 50 frames -V
 				tempitem.misc2 = 30; //Dive cooldown, default 30 frames -V
@@ -9336,7 +9385,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 46 )
 		{
-			if(tempitem.family == itype_raft)
+			if(tempitem.type == itype_raft)
 			{
 				tempitem.misc1 = 1; //Rafting speed modifier; default 1. Negative slows, positive speeds.
 			}
@@ -9361,7 +9410,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if ( s_version < 35 ) //new Lens of Truth flags		
 		{
-			if ( tempitem.family == itype_lens )
+			if ( tempitem.type == itype_lens )
 			{
 				if ( get_qr(qr_RAFTLENS) ) 
 				{
@@ -9394,7 +9443,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 51 )
 		{
-			if( tempitem.family == itype_candle )
+			if( tempitem.type == itype_candle )
 			{
 				tempitem.misc4 = 50; //Step speed
 			}
@@ -9402,12 +9451,12 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		
 		if( s_version < 52 )
 		{
-			if( tempitem.family == itype_shield )
+			if( tempitem.type == itype_shield )
 				tempitem.flags |= item_flag1; //'Block Front' flag
 		}
 		if(s_version < 53)
 		{
-			switch(tempitem.family)
+			switch(tempitem.type)
 			{
 				case itype_arrow:
 					tempitem.cost_counter[1] = crARROWS;
@@ -9429,12 +9478,12 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		}
 		if( s_version < 54 )
 		{
-			if( tempitem.family == itype_flippers )
+			if( tempitem.type == itype_flippers )
 				tempitem.misc3 = INT_BTN_A; //'Block Front' flag
 		}
 		if(s_version < 55)
 		{
-			switch(tempitem.family)
+			switch(tempitem.type)
 			{
 				case itype_spinscroll:
 				case itype_quakescroll:
@@ -9448,7 +9497,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		}
 		if(s_version < 56)
 		{
-			switch(tempitem.family)
+			switch(tempitem.type)
 			{
 				case itype_divinefire:
 					SETFLAG(tempitem.flags, item_flag9, version < 0x255); //Strong Fire
@@ -9456,7 +9505,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 					tempitem.flags |= item_flag11; //Divine Fire
 					break;
 				case itype_candle:
-					SETFLAG(tempitem.flags, item_flag9, tempitem.fam_type > 1); //Strong Fire
+					SETFLAG(tempitem.flags, item_flag9, tempitem.level > 1); //Strong Fire
 					tempitem.flags &= ~item_flag10; //Magic Fire
 					tempitem.flags &= ~item_flag11; //Divine Fire
 					break;
@@ -9469,7 +9518,7 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		}
 		if (s_version < 61)
 		{
-			switch (tempitem.family)
+			switch (tempitem.type)
 			{
 				case itype_sword:
 					tempitem.usesound2 = WAV_BEAM;
@@ -9478,8 +9527,8 @@ int32_t readitems(PACKFILE *f, word version, word build)
 		}
 
 		
-		if(tempitem.fam_type==0)  // Always do this
-			tempitem.fam_type=1;
+		if(tempitem.level==0)  // Always do this
+			tempitem.level=1;
 			
 		itemsbuf[i] = tempitem;
 	}
@@ -9737,7 +9786,7 @@ int32_t readweapons(PACKFILE *f, zquestheader *Header)
 static void guy_update_firesfx(guydata& tempguy)
 {
 	tempguy.firesfx = 0;
-	if (tempguy.family == eeWIZZ)
+	if (tempguy.type == eeWIZZ)
 	{
 		switch (tempguy.attributes[1])
 		{
@@ -9792,7 +9841,7 @@ static void guy_update_firesfx(guydata& tempguy)
 	}
 	else
 	{
-		if ((tempguy.family == eeWALK || tempguy.family == eePROJECTILE) && (tempguy.attributes[0] == e1tSUMMON || tempguy.attributes[0] == e1tSUMMONLAYER))
+		if ((tempguy.type == eeWALK || tempguy.type == eePROJECTILE) && (tempguy.attributes[0] == e1tSUMMON || tempguy.attributes[0] == e1tSUMMONLAYER))
 		{
 			tempguy.firesfx = get_qr(qr_MORESOUNDS) ? WAV_ZN1SUMMON : WAV_FIRE;
 		}
@@ -9902,7 +9951,7 @@ void init_guys(int32_t guyversion)
     for(int32_t i=0; i<OLDMAXGUYS; i++)
     {
         guysbuf[i] = default_guys[i];
-        guysbuf[i].spr_shadow = (guysbuf[i].family==eeROCK && guysbuf[i].attributes[9] == 1) ? iwLargeShadow : iwShadow;
+        guysbuf[i].spr_shadow = (guysbuf[i].type==eeROCK && guysbuf[i].attributes[9] == 1) ? iwLargeShadow : iwShadow;
 		guysbuf[i].spr_death = iwDeath;
 		guysbuf[i].spr_spawn = iwSpawn;
         // Patra fix: 2.10 BSPatras used spDIG. 2.50 Patras use CSet 7.
@@ -10006,18 +10055,18 @@ void init_item_drop_sets()
         {
             int32_t it = item_drop_sets[i].item[j];
             
-            if((itemsbuf[it].family == itype_rupee && ((itemsbuf[it].amount)&0xFFF) == 10)
+            if((itemsbuf[it].type == itype_rupee && ((itemsbuf[it].amount)&0xFFF) == 10)
                     && !get_bit(deprecated_rules, qr_ALLOW10RUPEEDROPS_DEP))
             {
                 item_drop_sets[i].chance[j+1]=0;
             }
-            else if(itemsbuf[it].family == itype_clock && get_bit(deprecated_rules, qr_NOCLOCKS_DEP))
+            else if(itemsbuf[it].type == itype_clock && get_bit(deprecated_rules, qr_NOCLOCKS_DEP))
             {
                 item_drop_sets[i].chance[j+1]=0;
             }
             
             // From Sept 2007 to Dec 2008, non-gameplay items were prohibited.
-            if(itemsbuf[it].family == itype_misc)
+            if(itemsbuf[it].type == itype_misc)
             {
                 // If a non-gameplay item was selected, then item drop was aborted.
                 // Reflect this by increasing the 'Nothing' chance accordingly.
@@ -10035,39 +10084,6 @@ void init_favorites()
         favorite_combos[i]=-1;
     }
 }
-
-const char *ctype_name[cMAX]=
-{
-    "cNONE", "cSTAIR", "cCAVE", "cWATER", "cARMOS", "cGRAVE", "cDOCK",
-    "cUNDEF", "cPUSH_WAIT", "cPUSH_HEAVY", "cPUSH_HW", "cL_STATUE", "cR_STATUE",
-    "cWALKSLOW", "cCVUP", "cCVDOWN", "cCVLEFT", "cCVRIGHT", "cSWIMWARP", "cDIVEWARP",
-    "cLADDERHOOKSHOT", "cTRIGNOFLAG", "cTRIGFLAG", "cZELDA", "cSLASH", "cSLASHITEM",
-    "cPUSH_HEAVY2", "cPUSH_HW2", "cPOUND", "cHSGRAB", "cHSBRIDGE", "cDAMAGE1",
-    "cDAMAGE2", "cDAMAGE3", "cDAMAGE4", "cC_STATUE", "cTRAP_H", "cTRAP_V", "cTRAP_4",
-    "cTRAP_LR", "cTRAP_UD", "cPIT", "cHOOKSHOTONLY", "cOVERHEAD", "cNOFLYZONE", "cMIRROR",
-    "cMIRRORSLASH", "cMIRRORBACKSLASH", "cMAGICPRISM", "cMAGICPRISM4",
-    "cMAGICSPONGE", "cCAVE2", "cEYEBALL_A", "cEYEBALL_B", "cNOJUMPZONE", "cBUSH",
-    "cFLOWERS", "cTALLGRASS", "cSHALLOWWATER", "cLOCKBLOCK", "cLOCKBLOCK2",
-    "cBOSSLOCKBLOCK", "cBOSSLOCKBLOCK2", "cLADDERONLY", "cBSGRAVE",
-    "cCHEST", "cCHEST2", "cLOCKEDCHEST", "cLOCKEDCHEST2", "cBOSSCHEST", "cBOSSCHEST2",
-    "cRESET", "cSAVE", "cSAVE2", "cCAVEB", "cCAVEC", "cCAVED",
-    "cSTAIRB", "cSTAIRC", "cSTAIRD", "cPITB", "cPITC", "cPITD",
-    "cCAVE2B", "cCAVE2C", "cCAVE2D", "cSWIMWARPB", "cSWIMWARPC", "cSWIMWARPD",
-    "cDIVEWARPB", "cDIVEWARPC", "cDIVEWARPD", "cSTAIRR", "cPITR",
-    "cAWARPA", "cAWARPB", "cAWARPC", "cAWARPD", "cAWARPR",
-    "cSWARPA", "cSWARPB", "cSWARPC", "cSWARPD", "cSWARPR", "cSTRIGNOFLAG", "cSTRIGFLAG",
-    "cSTEP", "cSTEPSAME", "cSTEPALL", "cSTEPCOPY", "cNOENEMY", "cBLOCKARROW1", "cBLOCKARROW2",
-    "cBLOCKARROW3", "cBLOCKBRANG1", "cBLOCKBRANG2", "cBLOCKBRANG3", "cBLOCKSBEAM", "cBLOCKALL",
-    "cBLOCKFIREBALL", "cDAMAGE5", "cDAMAGE6", "cDAMAGE7", "cCHANGE", "cSPINTILE1", "cSPINTILE2",
-    "cSCREENFREEZE", "cSCREENFREEZEFF", "cNOGROUNDENEMY", "cSLASHNEXT", "cSLASHNEXTITEM", "cBUSHNEXT"
-    "cSLASHTOUCHY", "cSLASHITEMTOUCHY", "cBUSHTOUCHY", "cFLOWERSTOUCHY", "cTALLGRASSTOUCHY",
-    "cSLASHNEXTTOUCHY", "cSLASHNEXTITEMTOUCHY", "cBUSHNEXTTOUCHY", "cEYEBALL_4", "cTALLGRASSNEXT",
-    "cSCRIPT1", "cSCRIPT2", "cSCRIPT3", "cSCRIPT4", "cSCRIPT5",
-    "cSCRIPT6", "cSCRIPT7", "cSCRIPT8", "cSCRIPT9", "cSCRIPT10",
-    "cSCRIPT11", "cSCRIPT12", "cSCRIPT13", "cSCRIPT14", "cSCRIPT15",
-    "cSCRIPT16", "cSCRIPT17", "cSCRIPT18", "cSCRIPT19", "cSCRIPT20"
-    
-};
 
 int32_t init_combo_classes()
 {
@@ -14033,7 +14049,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
                 return qe_invalid;
             }
             
-            if(!p_igetw(&(tempguy.family),f))
+            if(!p_igetw(&(tempguy.type),f))
             {
                 return qe_invalid;
             }
@@ -14175,7 +14191,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
             }
             
             // HIGHLY UNORTHODOX UPDATING THING, part 2
-            if(fixpolsvoice && tempguy.family==eePOLSV)
+            if(fixpolsvoice && tempguy.type==eePOLSV)
             {
                 tempguy.step /= 2;
             }
@@ -14220,7 +14236,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
                 
                 if(guyversion < 13)  // April 2009 - a tiny Wizzrobe update
                 {
-                    if(tempguy.family == eeWIZZ && !(tempguy.attributes[0]))
+                    if(tempguy.type == eeWIZZ && !(tempguy.attributes[0]))
                         tempguy.attributes[4] = 74;
                 }
 
@@ -14552,7 +14568,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 						return qe_invalid;
 		    if ( guy_cversion < 4 )
 		    {
-			if ( tempguy.family == eeKEESE )
+			if ( tempguy.type == eeKEESE )
 			{
 
 				if ( !tempguy.attributes[0] )
@@ -14562,13 +14578,13 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 					
 				}
 			}
-			if ( tempguy.family == eePEAHAT )
+			if ( tempguy.type == eePEAHAT )
 			{	
 				tempguy.attributes[15] = 80;
 				tempguy.attributes[16] = 16;
 			}
 
-			if ( tempguy.family == eeGHINI )
+			if ( tempguy.type == eeGHINI )
 			{	
 				tempguy.attributes[15] = 120;
 				tempguy.attributes[16] = 10;
@@ -14766,7 +14782,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 	    if ( guyversion < 42 && guy_cversion < 4  ) 
 	    {
 		    
-			if ( tempguy.family == eeKEESE )
+			if ( tempguy.type == eeKEESE )
 			{
 
 				if ( !tempguy.attributes[0] )
@@ -14776,12 +14792,12 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 					
 				}
 			}
-			if ( tempguy.family == eePEAHAT )
+			if ( tempguy.type == eePEAHAT )
 			{	
 				tempguy.attributes[15] = 80;
 				tempguy.attributes[16] = 16;
 			}
-			if ( tempguy.family == eeGHINI )
+			if ( tempguy.type == eeGHINI )
 			{	
 				tempguy.attributes[15] = 120;
 				tempguy.attributes[16] = 10;
@@ -14823,13 +14839,13 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
             
             if(guyversion < 10) // December 2007 - Dodongo CSet fix
             {
-                if(get_bit(deprecated_rules,46) && tempguy.family==eeDONGO && tempguy.attributes[0]==0)
+                if(get_bit(deprecated_rules,46) && tempguy.type==eeDONGO && tempguy.attributes[0]==0)
                     tempguy.bosspal = spDIG;
             }
             
             if(guyversion < 11) // December 2007 - Spinning Tile fix
             {
-                if(tempguy.family==eeSPINTILE)
+                if(tempguy.type==eeSPINTILE)
                 {
                     tempguy.flags |= guy_superman;
                     tempguy.item_set = 0; // Don't drop items
@@ -14841,7 +14857,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
             {
                 if(get_bit(deprecated_rules, qr_NOROPE2FLASH_DEP))
                 {
-                    if(tempguy.family==eeROPE)
+                    if(tempguy.type==eeROPE)
                     {
                         tempguy.flags &= ~guy_flashing;
                     }
@@ -14849,13 +14865,13 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
                 
                 if(get_bit(deprecated_rules, qr_NOBUBBLEFLASH_DEP))
                 {
-                    if(tempguy.family==eeBUBBLE)
+                    if(tempguy.type==eeBUBBLE)
                     {
                         tempguy.flags &= ~guy_flashing;
                     }
                 }
                 
-                if((tempguy.family==eeGHINI)&&(tempguy.attributes[0]))
+                if((tempguy.type==eeGHINI)&&(tempguy.attributes[0]))
                 {
                     if(get_bit(deprecated_rules, qr_GHINI2BLINK_DEP))
                     {
@@ -14900,7 +14916,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
             
             if(guyversion < 17)  // December 2009
             {
-                if(tempguy.family==eePROJECTILE)
+                if(tempguy.type==eePROJECTILE)
                 {
                     tempguy.attributes[0] = 0;
                 }
@@ -14908,19 +14924,19 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
             
             if(guyversion < 18)  // January 2010
             {
-                bool boss = (tempguy.family == eeAQUA || tempguy.family==eeDONGO || tempguy.family == eeMANHAN || tempguy.family == eeGHOMA || tempguy.family==eeDIG
-                             || tempguy.family == eeGLEEOK || tempguy.family==eePATRA || tempguy.family == eeGANON || tempguy.family==eeMOLD);
+                bool boss = (tempguy.type == eeAQUA || tempguy.type==eeDONGO || tempguy.type == eeMANHAN || tempguy.type == eeGHOMA || tempguy.type==eeDIG
+                             || tempguy.type == eeGLEEOK || tempguy.type==eePATRA || tempguy.type == eeGANON || tempguy.type==eeMOLD);
                              
-                tempguy.hitsfx = (boss && tempguy.family != eeMOLD && tempguy.family != eeDONGO && tempguy.family != eeDIG) ? WAV_GASP : 0;
-                tempguy.deadsfx = (boss && (tempguy.family != eeDIG || tempguy.attributes[9] == 0)) ? WAV_GASP : WAV_EDEAD;
+                tempguy.hitsfx = (boss && tempguy.type != eeMOLD && tempguy.type != eeDONGO && tempguy.type != eeDIG) ? WAV_GASP : 0;
+                tempguy.deadsfx = (boss && (tempguy.type != eeDIG || tempguy.attributes[9] == 0)) ? WAV_GASP : WAV_EDEAD;
                 
-                if(tempguy.family == eeAQUA)
+                if(tempguy.type == eeAQUA)
                     for(int32_t j=0; j<edefLAST; j++) tempguy.defense[j] = default_guys[eRAQUAM].defense[j];
-                else if(tempguy.family == eeMANHAN)
+                else if(tempguy.type == eeMANHAN)
                     for(int32_t j=0; j<edefLAST; j++) tempguy.defense[j] = default_guys[eMANHAN].defense[j];
-                else if(tempguy.family==eePATRA)
+                else if(tempguy.type==eePATRA)
                     for(int32_t j=0; j<edefLAST; j++) tempguy.defense[j] = default_guys[eGLEEOK1].defense[j];
-                else if(tempguy.family==eeGHOMA)
+                else if(tempguy.type==eeGHOMA)
                 {
                     for(int32_t j=0; j<edefLAST; j++)
                         tempguy.defense[j] = default_guys[eGOHMA1].defense[j];
@@ -14931,32 +14947,32 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
                     
                     tempguy.attributes[0]--;
                 }
-                else if(tempguy.family == eeGLEEOK)
+                else if(tempguy.type == eeGLEEOK)
                 {
                     for(int32_t j=0; j<edefLAST; j++)
                         tempguy.defense[j] = default_guys[eGLEEOK1].defense[j];
                         
                     if(tempguy.attributes[2]==1 && !tempguy.weapon) tempguy.weapon = ewFlame;
                 }
-                else if(tempguy.family == eeARMOS)
+                else if(tempguy.type == eeARMOS)
                 {
-                    tempguy.family=eeWALK;
+                    tempguy.type=eeWALK;
                     tempguy.hrate = 0;
                     tempguy.attributes[9] = tempguy.attributes[0];
                     tempguy.attributes[0] = tempguy.attributes[1] = tempguy.attributes[2] = tempguy.attributes[3] = tempguy.attributes[4] = tempguy.attributes[5] = tempguy.attributes[6] = tempguy.attributes[7] = 0;
                     tempguy.attributes[0] = tempguy.attributes[1] = tempguy.attributes[2] = tempguy.attributes[3] = tempguy.attributes[4] = tempguy.attributes[5] = tempguy.attributes[6] = tempguy.attributes[7] = 0;
                     tempguy.attributes[8] = e9tARMOS;
                 }
-                else if(tempguy.family == eeGHINI && !tempguy.attributes[0])
+                else if(tempguy.type == eeGHINI && !tempguy.attributes[0])
                 {
-                    tempguy.family=eeWALK;
+                    tempguy.type=eeWALK;
                     tempguy.hrate = 0;
                     tempguy.attributes[0] = tempguy.attributes[1] = tempguy.attributes[2] = tempguy.attributes[3] = tempguy.attributes[4] = tempguy.attributes[5] =
                                                         tempguy.attributes[6] = tempguy.attributes[7] = tempguy.attributes[8] = tempguy.attributes[9] = 0;
                 }
                 
                 // Spawn animation flags
-                if(tempguy.family == eeWALK && (tempguy.flags&guy_armos || tempguy.flags&guy_ghini))
+                if(tempguy.type == eeWALK && (tempguy.flags&guy_armos || tempguy.flags&guy_ghini))
                     tempguy.flags |= guy_fade_flicker;
                 else
                     tempguy.flags &= (guy_flags)0x0F00000F; // Get rid of the unused flags!
@@ -14964,7 +14980,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
             
             if(guyversion < 20)  // April 2010
             {
-                if(tempguy.family == eeTRAP)
+                if(tempguy.type == eeTRAP)
                 {
                     tempguy.attributes[1] = tempguy.attributes[9];
                     
@@ -14977,19 +14993,19 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
                 }
                 
                 // Bomb Blast fix
-                if(tempguy.weapon==ewBomb && tempguy.family!=eeROPE && (tempguy.family!=eeWALK || tempguy.attributes[1] != e2tBOMBCHU))
+                if(tempguy.weapon==ewBomb && tempguy.type!=eeROPE && (tempguy.type!=eeWALK || tempguy.attributes[1] != e2tBOMBCHU))
                     tempguy.weapon = ewLitBomb;
-                else if(tempguy.weapon==ewSBomb && tempguy.family!=eeROPE && (tempguy.family!=eeWALK || tempguy.attributes[1] != e2tBOMBCHU))
+                else if(tempguy.weapon==ewSBomb && tempguy.type!=eeROPE && (tempguy.type!=eeWALK || tempguy.attributes[1] != e2tBOMBCHU))
                     tempguy.weapon = ewLitSBomb;
             }
             
             if(guyversion < 21)  // September 2011
             {
-                if(tempguy.family == eeKEESE || tempguy.family == eeKEESETRIB)
+                if(tempguy.type == eeKEESE || tempguy.type == eeKEESETRIB)
                 {
-                    if(tempguy.family == eeKEESETRIB)
+                    if(tempguy.type == eeKEESETRIB)
                     {
-                        tempguy.family = eeKEESE;
+                        tempguy.type = eeKEESE;
                         tempguy.attributes[1] = e2tKEESETRIB;
                         tempguy.attributes[0] = 0;
                     }
@@ -14997,11 +15013,11 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
                     tempguy.rate = 2;
                     tempguy.hrate = 8;
                     tempguy.homing = 0;
-                    tempguy.step= (tempguy.family == eeKEESE && tempguy.attributes[0] ? 100:62);
+                    tempguy.step= (tempguy.type == eeKEESE && tempguy.attributes[0] ? 100:62);
                 }
-                else if(tempguy.family == eePEAHAT || tempguy.family==eePATRA)
+                else if(tempguy.type == eePEAHAT || tempguy.type==eePATRA)
                 {
-                    if(tempguy.family == eePEAHAT)
+                    if(tempguy.type == eePEAHAT)
                     {
                         tempguy.rate = 4;
                         tempguy.step = 62;
@@ -15012,22 +15028,22 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
                     tempguy.hrate = 8;
                     tempguy.homing = 0;
                 }
-                else if(tempguy.family == eeDIG || tempguy.family == eeMANHAN)
+                else if(tempguy.type == eeDIG || tempguy.type == eeMANHAN)
                 {
-                    if(tempguy.family == eeMANHAN)
+                    if(tempguy.type == eeMANHAN)
                         tempguy.step=50;
                         
                     tempguy.hrate = 16;
                     tempguy.homing = 0;
                 }
-                else if(tempguy.family == eeGLEEOK)
+                else if(tempguy.type == eeGLEEOK)
                 {
                     tempguy.rate = 2;
                     tempguy.homing = 0;
                     tempguy.hrate = 9;
                     tempguy.step=89;
                 }
-                else if(tempguy.family == eeGHINI)
+                else if(tempguy.type == eeGHINI)
                 {
                     tempguy.rate = 4;
                     tempguy.hrate = 12;
@@ -15036,7 +15052,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
                 }
                 
                 // Bigdig random rate fix
-                if(tempguy.family==eeDIG && tempguy.attributes[9]==1)
+                if(tempguy.type==eeDIG && tempguy.attributes[9]==1)
                 {
                     tempguy.rate = 2;
                 }
@@ -15044,15 +15060,15 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
             
             if(guyversion < 24) // November 2012
             {
-                if(tempguy.family==eeLANM)
+                if(tempguy.type==eeLANM)
                     tempguy.attributes[2] = 1;
-                else if(tempguy.family==eeMOLD)
+                else if(tempguy.type==eeMOLD)
                     tempguy.attributes[1] = 0;
             }
 	    
 	    if(guyversion < 33) //Whistle defence did not exist before this version of 2.54. -Z
 	    {
-		if(tempguy.family!=eeDIG)
+		if(tempguy.type!=eeDIG)
 		{
 			tempguy.defense[edefWhistle] = edIGNORE; //Might need to be ignore, universally. 
 		}
@@ -15062,7 +15078,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 	    if ( Header->zelda_version <= 0x210 ) 
 	    {
 		al_trace("Detected version %d for dodongo patch.\n",Header->zelda_version);
-		if ( tempguy.family == eeDONGO ) 
+		if ( tempguy.type == eeDONGO ) 
 		{
 			tempguy.deadsfx = 15; //In 2.10 and earlier, Dodongos used this as their death sound.
 		}
@@ -15089,7 +15105,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 			}
 			else
 			{
-				switch(tempguy.family)
+				switch(tempguy.type)
 				{
 					//No gravity; floats over pits
 					case eeTEK: case eePEAHAT: case eeROCK: case eeTRAP:
@@ -15132,7 +15148,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 			}
 			if(guyversion < 43)
 			{
-				switch(tempguy.family)
+				switch(tempguy.type)
 				{
 					//No gravity; floats over pits
 					case eeTEK: case eePEAHAT: case eeROCK: case eeTRAP:
@@ -15150,7 +15166,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 			}
 			if (guyversion < 44)
 			{
-				if ( tempguy.family == eeGHOMA )
+				if ( tempguy.type == eeGHOMA )
 				{
 					tempguy.flags |= guy_fade_instant;
 				}
@@ -15172,14 +15188,14 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 			}
 			else
 			{
-				tempguy.spr_shadow = (tempguy.family==eeROCK && tempguy.attributes[9]==1) ? iwLargeShadow : iwShadow;
+				tempguy.spr_shadow = (tempguy.type==eeROCK && tempguy.attributes[9]==1) ? iwLargeShadow : iwShadow;
 				tempguy.spr_death = iwDeath;
 				tempguy.spr_spawn = iwSpawn;
 			}
 			
 			if(guyversion < 46)
 			{
-				if(tempguy.family == eeWALK && tempguy.attributes[8] == e9tPOLSVOICE)
+				if(tempguy.type == eeWALK && tempguy.attributes[8] == e9tPOLSVOICE)
 				{
 					tempguy.moveflags |= move_can_waterwalk;
 				}
@@ -15187,7 +15203,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 
 			if (guyversion < 47)
 			{
-				if (tempguy.family == eeDIG && tempguy.attributes[9]!=1)
+				if (tempguy.type == eeDIG && tempguy.attributes[9]!=1)
 				{
 					tempguy.flags |= guy_ignore_kill_all;
 				}
@@ -15195,7 +15211,7 @@ int32_t readguys(PACKFILE *f, zquestheader *Header)
 
 			if (guyversion < 49)
 			{
-				if (tempguy.family == eeWALK && (tempguy.attributes[6]==e7tPERMJINX || tempguy.attributes[6]==e7tTEMPJINX || tempguy.attributes[6]==e7tUNJINX)) //BUBBLE CHECK
+				if (tempguy.type == eeWALK && (tempguy.attributes[6]==e7tPERMJINX || tempguy.attributes[6]==e7tTEMPJINX || tempguy.attributes[6]==e7tUNJINX)) //BUBBLE CHECK
 				{
 					switch (tempguy.attributes[7]) {
 						case 0: //Sword
@@ -15302,7 +15318,7 @@ void update_guy_1(guydata *tempguy) // November 2009
     bool doesntcount = false;
     tempguy->flags &= ~guy_weak_arrow; // Formerly 'weak to arrow' which wasn't implemented
     
-    switch(tempguy->family)
+    switch(tempguy->type)
     {
     case 1: //eeWALK
         switch(tempguy->attributes[9])
@@ -15322,7 +15338,7 @@ void update_guy_1(guydata *tempguy) // November 2009
         break;
         
     case 2: //eeSHOOT
-        tempguy->family = eeWALK;
+        tempguy->type = eeWALK;
         
         switch(tempguy->attributes[9])
         {
@@ -15394,7 +15410,7 @@ darknuts:
         */
     case 11: //eeGEL
     case 33: //eeGELTRIB
-        if(tempguy->family==33)
+        if(tempguy->type==33)
         {
             tempguy->attributes[3] = 1;
             
@@ -15410,7 +15426,7 @@ darknuts:
             tempguy->attributes[1] = 0;
         }
         
-        tempguy->family = eeWALK;
+        tempguy->type = eeWALK;
         
         if(tempguy->attributes[0])
         {
@@ -15424,7 +15440,7 @@ darknuts:
     case 12: //eeZOL
         tempguy->attributes[3]=tempguy->attributes[2];
         tempguy->attributes[2]=tempguy->attributes[1];
-        tempguy->family = eeWALK;
+        tempguy->type = eeWALK;
         tempguy->attributes[1]=e2tSPLITHIT;
         
         if(tempguy->attributes[0])
@@ -15436,7 +15452,7 @@ darknuts:
         break;
         
     case 13: //eeROPE
-        tempguy->family = eeWALK;
+        tempguy->type = eeWALK;
         tempguy->attributes[8] = e9tROPE;
         
         if(tempguy->attributes[0])
@@ -15450,14 +15466,14 @@ darknuts:
         break;
         
     case 14: //eeGORIYA
-        tempguy->family = eeWALK;
+        tempguy->type = eeWALK;
         
         if(tempguy->attributes[0]!=2) tempguy->attributes[0] = 0;
         
         break;
         
     case 17: //eeBUBBLE
-        tempguy->family = eeWALK;
+        tempguy->type = eeWALK;
         tempguy->attributes[7] = tempguy->attributes[1];
         tempguy->attributes[6] = tempguy->attributes[0] + 1;
         tempguy->attributes[0] = tempguy->attributes[1] = 0;
@@ -15470,7 +15486,7 @@ darknuts:
         
     case 35: //eeVIRETRIB
     case 18: //eeVIRE
-        tempguy->family = eeWALK;
+        tempguy->type = eeWALK;
         tempguy->attributes[3]=tempguy->attributes[2];
         tempguy->attributes[2]=tempguy->attributes[1];
         tempguy->attributes[1]=e2tSPLITHIT;
@@ -15478,7 +15494,7 @@ darknuts:
         break;
         
     case 19: //eeLIKE
-        tempguy->family = eeWALK;
+        tempguy->type = eeWALK;
         tempguy->attributes[6] = e7tEATITEMS;
         tempguy->attributes[7]=95;
         break;
@@ -15489,7 +15505,7 @@ darknuts:
         tempguy->defense[edefMAGIC] = tempguy->defense[edefBYRNA] = edCHINK;
         tempguy->defense[edefARROW] = ed1HKO;
         tempguy->defense[edefHOOKSHOT] = edSTUNONLY;
-        tempguy->family = eeWALK;
+        tempguy->type = eeWALK;
         tempguy->attributes[8] = e9tPOLSVOICE;
         tempguy->rate = 4;
         tempguy->homing = 32;
@@ -15533,8 +15549,8 @@ darknuts:
         for(int32_t i = 0; i < edefLAST; i++)
             if(!(i==edefSBOMB && (tempguy->flags & guy_sbombonly)))
                 tempguy->defense[i] = (i==edefBRANG && tempguy->defense[i] != edIGNORE
-                                       && tempguy->family != eeROCK && tempguy->family != eeTRAP
-                                       && tempguy->family != eePROJECTILE) ? edSTUNORIGNORE : edIGNORE;
+                                       && tempguy->type != eeROCK && tempguy->type != eeTRAP
+                                       && tempguy->type != eePROJECTILE) ? edSTUNORIGNORE : edIGNORE;
     }
     
     tempguy->flags &= ~(guy_superman|guy_sbombonly);
@@ -15548,6 +15564,7 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 	bool should_skip = legacy_skip_flags && get_bit(legacy_skip_flags, skip_maps);
 
 	byte tempbyte, padding;
+	word wpadding;
 	int32_t extras, secretcombos;
 	if(!p_getc(&(temp_mapscr->valid),f))
 	{
@@ -15860,6 +15877,17 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 			}
 			
 			temp_mapscr->enemy[k]=tempbyte;
+
+			// 76 is the highest enemy id possible to set in 1.90. Anything higher must have come
+			// from corrupting when 1.90 saved the quest.
+			// https://discord.com/channels/876899628556091432/1287580827164737658
+			if (Header->zelda_version <= 0x190)
+			{
+				if (temp_mapscr->enemy[k] > 76)
+				{
+					temp_mapscr->enemy[k] = 0;
+				}
+			}
 		}
 		else
 		{
@@ -15882,7 +15910,7 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 				temp_mapscr->enemy[k]+=1;
 			}
 		}
-		
+
 		if(version < 9)
 		{
 			if(temp_mapscr->enemy[k]>0)
@@ -16085,15 +16113,13 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 			return qe_invalid;
 		}
 		
-		if(!p_igetw(&(temp_mapscr->noreset),f))
-		{
+		if(!p_igetw(&wpadding,f))
 			return qe_invalid;
-		}
-		
-		if(!p_igetw(&(temp_mapscr->nocarry),f))
-		{
+		temp_mapscr->noreset = wpadding | mLIGHTBEAM | mTMPNORET | mVISITED;
+		if(!p_igetw(&wpadding,f))
 			return qe_invalid;
-		}
+		temp_mapscr->nocarry = wpadding | mLIGHTBEAM | mTMPNORET | mVISITED |
+			mDOOR_UP | mDOOR_DOWN | mDOOR_LEFT | mDOOR_RIGHT | mNEVERRET | mNO_ENEMIES_RETURN;
 		
 		if(temp_mapscr->flags5&32)
 		{
@@ -16118,8 +16144,9 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 	else
 	{
 		temp_mapscr->flags5 = 0;
-		temp_mapscr->noreset = 0;
-		temp_mapscr->nocarry = 0;
+		temp_mapscr->noreset = mLIGHTBEAM | mTMPNORET | mVISITED;
+		temp_mapscr->nocarry = mLIGHTBEAM | mTMPNORET | mVISITED |
+			mDOOR_UP | mDOOR_DOWN | mDOOR_LEFT | mDOOR_RIGHT | mNEVERRET | mNO_ENEMIES_RETURN;
 	}
 	
 	if((Header->zelda_version > 0x211)||((Header->zelda_version == 0x211)&&(Header->build>9)))
@@ -16829,7 +16856,7 @@ int32_t readmapscreen_old(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr
 			}
 		}
 
-		temp_mapscr->shinkToFitFFCs();
+		temp_mapscr->shrinkToFitFFCs();
 	}
 
 	
@@ -16938,16 +16965,18 @@ int32_t readmapscreen(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr, wo
 		{
 			int map = scrind/MAPSCRS;
 			int screen = scrind%MAPSCRS;
-			if(version > 25 && scrind > -1 && (map*6+5) < map_autolayers.size())
+			if(version > 25 && scrind > -1 && map < map_infos.size())
 			{
-				//Empty screen, apply autolayers
+				auto const& mapinf = map_infos[map];
+				//Empty screen, apply defaults
 				for(int q = 0; q < 6; ++q)
 				{
-					auto layermap = map_autolayers[map*6+q];
+					auto layermap = mapinf.autolayers[q];
 					temp_mapscr->layermap[q] = layermap;
 					if(layermap)
 						temp_mapscr->layerscreen[q] = screen;
 				}
+				temp_mapscr->color = mapinf.autopalette;
 			}
 			return 0;
 		}
@@ -17159,14 +17188,41 @@ int32_t readmapscreen(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr, wo
 		}
 		if(scr_has_flags & SCRHAS_CARRY)
 		{
-			if(!p_igetw(&(temp_mapscr->noreset),f))
-				return qe_invalid;
-			if(!p_igetw(&(temp_mapscr->nocarry),f))
-				return qe_invalid;
+			if(version < 34)
+			{
+				word tmpw;
+				if(!p_igetw(&tmpw,f))
+					return qe_invalid;
+				temp_mapscr->noreset = tmpw | mLIGHTBEAM | mTMPNORET | mVISITED;
+				if(!p_igetw(&tmpw,f))
+					return qe_invalid;
+				temp_mapscr->nocarry = tmpw | mLIGHTBEAM | mTMPNORET | mVISITED |
+					mDOOR_UP | mDOOR_DOWN | mDOOR_LEFT | mDOOR_RIGHT | mNEVERRET | mNO_ENEMIES_RETURN;
+			}
+			else
+			{
+				if(!p_igetl(&(temp_mapscr->noreset),f))
+					return qe_invalid;
+				if(!p_igetl(&(temp_mapscr->nocarry),f))
+					return qe_invalid;
+				if(!p_igetl(&(temp_mapscr->exstate_reset),f))
+					return qe_invalid;
+				if(!p_igetl(&(temp_mapscr->exstate_carry),f))
+					return qe_invalid;
+			}
 			if(!p_getc(&(temp_mapscr->nextmap),f))
 				return qe_invalid;
 			if(!p_getc(&(temp_mapscr->nextscr),f))
 				return qe_invalid;
+		}
+		else
+		{
+			if(version < 34)
+			{
+				temp_mapscr->noreset = mLIGHTBEAM | mTMPNORET | mVISITED;
+				temp_mapscr->nocarry = mLIGHTBEAM | mTMPNORET | mVISITED |
+					mDOOR_UP | mDOOR_DOWN | mDOOR_LEFT | mDOOR_RIGHT | mNEVERRET | mNO_ENEMIES_RETURN;
+			}
 		}
 		if(scr_has_flags & SCRHAS_SCRIPT)
 		{
@@ -17356,9 +17412,17 @@ int32_t readmapscreen(PACKFILE *f, zquestheader *Header, mapscr *temp_mapscr, wo
 		if(version > 29)
 			if(!p_getlstr(&temp_mapscr->usr_notes, f))
 				return qe_invalid;
+		
+		if (version >= 35 && (temp_mapscr->flags10 & fSCREEN_GRAVITY))
+		{
+			if (!p_igetzf(&temp_mapscr->screen_gravity, f))
+				return qe_invalid;
+			if (!p_igetzf(&temp_mapscr->screen_terminal_v, f))
+				return qe_invalid;
+		}
 	}
 
-	temp_mapscr->shinkToFitFFCs();
+	temp_mapscr->shrinkToFitFFCs();
 
 	return 0;
 }
@@ -17429,8 +17493,8 @@ int32_t readmaps(PACKFILE *f, zquestheader *Header)
 		TheMaps.resize(_mapsSize);
 		old_combo_pages.clear();
 		old_combo_pages.resize(_mapsSize);
-		map_autolayers.clear();
-		map_autolayers.resize(temp_map_count*6);
+		map_infos.clear();
+		map_infos.resize(temp_map_count);
 		if(version >= 31)
 			Regions = {};
 	}
@@ -17447,11 +17511,15 @@ int32_t readmaps(PACKFILE *f, zquestheader *Header)
 		{
 			if (version > 25)
 			{
+				auto& mapinf = map_infos[i];
 				for(int q = 0; q < 6; ++q)
 				{
-					if(!p_igetw(&map_autolayers[i*6+q],f))
+					if(!p_igetw(&mapinf.autolayers[q],f))
 						return qe_invalid;
 				}
+				if (version >= 36)
+					if(!p_igetw(&mapinf.autopalette,f))
+						return qe_invalid;
 			}
 
 			if (version >= 31)
@@ -17588,6 +17656,7 @@ int32_t readcombos_old(word section_version, PACKFILE *f, zquestheader *, word v
 	{
 		temp_combo.clear();
 		combo_trigger& temp_trigger = temp_combo.triggers.emplace_back();
+		int32_t temp_trigflags[6] = {0};
 		
 		if ( section_version >= 11 )
 		{
@@ -17699,13 +17768,13 @@ int32_t readcombos_old(word section_version, PACKFILE *f, zquestheader *, word v
 			if(section_version>=10) //combo trigger flags
 			{
 				for ( int32_t q = 0; q < 3; q++ )
-					if(!p_igetl(&temp_trigger.triggerflags[q],f))
+					if(!p_igetl(&temp_trigflags[q],f))
 						return qe_invalid;
 			}
-			else if(section_version==9) //combo trigger flags, V9 only had two indices of triggerflags[]
+			else if(section_version==9) //combo trigger flags, V9 only had two indices
 			{
 				for ( int32_t q = 0; q < 2; q++ )
-					if(!p_igetl(&temp_trigger.triggerflags[q],f))
+					if(!p_igetl(&temp_trigflags[q],f))
 						return qe_invalid;
 			}
 			if(section_version >= 9)
@@ -17853,12 +17922,12 @@ int32_t readcombos_old(word section_version, PACKFILE *f, zquestheader *, word v
 		
 		if(section_version < 23)
 		{
-			switch(temp_combo.type) //combotriggerCMBTYPEFX now required for combotype-specific effects
+			switch(temp_combo.type) //TRIGFLAG_CMBTYPEFX now required for combotype-specific effects
 			{
 				case cSCRIPT1: case cSCRIPT2: case cSCRIPT3: case cSCRIPT4: case cSCRIPT5:
 				case cSCRIPT6: case cSCRIPT7: case cSCRIPT8: case cSCRIPT9: case cSCRIPT10:
 				case cTRIGGERGENERIC: case cCSWITCH:
-					temp_trigger.triggerflags[0] |= combotriggerCMBTYPEFX;
+					temp_trigflags[TRIGFLAG_CMBTYPEFX/32] |= 1<<(TRIGFLAG_CMBTYPEFX%32);
 			}
 		}
 		if(section_version < 25)
@@ -17880,12 +17949,12 @@ int32_t readcombos_old(word section_version, PACKFILE *f, zquestheader *, word v
 		
 		if(section_version < 27)
 		{
-			if(temp_trigger.triggerflags[0] & 0x00040000) //'next'
+			if(temp_trigflags[0] & 0x00040000) //'next'
 				temp_trigger.trigchange = 1;
-			else if(temp_trigger.triggerflags[0] & 0x00080000) //'prev'
+			else if(temp_trigflags[0] & 0x00080000) //'prev'
 				temp_trigger.trigchange = -1;
 			else temp_trigger.trigchange = 0;
-			temp_trigger.triggerflags[0] &= ~(0x00040000|0x00080000);
+			temp_trigflags[0] &= ~(0x00040000|0x00080000);
 		}
 		if(section_version < 28)
 		{
@@ -17937,6 +18006,15 @@ int32_t readcombos_old(word section_version, PACKFILE *f, zquestheader *, word v
 					}
 					break;
 			}
+		}
+		
+		temp_trigger.trigger_flags.clear();
+		for(size_t q = 0; q < 32*6; ++q)
+		{
+			auto ind = q/32;
+			auto bit = 1<<(q%32);
+			if(temp_trigflags[ind] & bit)
+				temp_trigger.trigger_flags.set(q, true);
 		}
 		
 		if(temp_trigger.is_blank())
@@ -18061,10 +18139,24 @@ int32_t readcombo_triggers_loop(PACKFILE* f, word s_version, combo_trigger& temp
 		if(!p_getcstr(&temp_trigger.label,f))
 			return qe_invalid;
 	
-	int numtrigs = s_version < 36 ? 3 : 6;
-	for ( int32_t q = 0; q < numtrigs; q++ )
-		if(!p_igetl(&temp_trigger.triggerflags[q],f))
-			return qe_invalid;
+	if(s_version < 57)
+	{
+		int32_t temp_trigflags[6] = {0};
+		int numtrigs = s_version < 36 ? 3 : 6;
+		for ( int32_t q = 0; q < numtrigs; q++ )
+			if(!p_igetl(&temp_trigflags[q],f))
+				return qe_invalid;
+		temp_trigger.trigger_flags.clear();
+		for(size_t q = 0; q < 32*numtrigs; ++q)
+		{
+			auto ind = q/32;
+			auto bit = 1<<(q%32);
+			if(temp_trigflags[ind] & bit)
+				temp_trigger.trigger_flags.set(q, true);
+		}
+	}
+	else if(!p_getbitstr(&temp_trigger.trigger_flags,f))
+		return qe_invalid;
 	if(!p_igetl(&temp_trigger.triggerlevel,f))
 		return qe_invalid;
 	if(!p_getc(&temp_trigger.triggerbtn,f))
@@ -18158,8 +18250,17 @@ int32_t readcombo_triggers_loop(PACKFILE* f, word s_version, combo_trigger& temp
 	}
 	if(s_version >= 46)
 	{
-		if(!p_getc(&temp_trigger.trig_levelitems,f))
-			return qe_invalid;
+		if (s_version >= 59)
+		{
+			if(!p_igetw(&temp_trigger.trig_levelitems,f))
+				return qe_invalid;
+		}
+		else
+		{
+			if(!p_getc(&tempbyte,f))
+				return qe_invalid;
+			temp_trigger.trig_levelitems = word(tempbyte);
+		}
 		if(!p_igetw(&temp_trigger.trigdmlevel,f))
 			return qe_invalid;
 		if(s_version >= 48)
@@ -18247,6 +18348,24 @@ int32_t readcombo_triggers_loop(PACKFILE* f, word s_version, combo_trigger& temp
 		if(!p_igetzf(&temp_trigger.req_player_x, f))
 			return qe_invalid;
 		if(!p_igetzf(&temp_trigger.req_player_y, f))
+			return qe_invalid;
+	}
+	if(s_version >= 56)
+	{
+		if(!p_getc(&temp_trigger.dest_player_dir, f))
+			return qe_invalid;
+		if(!p_igetl(&temp_trigger.force_ice_combo, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.force_ice_vx, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.force_ice_vy, f))
+			return qe_invalid;
+	}
+	if(s_version >= 58)
+	{
+		if(!p_igetzf(&temp_trigger.trig_gravity, f))
+			return qe_invalid;
+		if(!p_igetzf(&temp_trigger.trig_terminal_v, f))
 			return qe_invalid;
 	}
 	return 0;
@@ -18374,7 +18493,7 @@ int32_t readcombo_loop(PACKFILE* f, word s_version, newcombo& temp_combo)
 			if(s_version < 52)
 			{
 				if(!temp_combo.triggers.empty())
-					temp_combo.only_gentrig = (temp_combo.triggers[0].triggerflags[0] & combotriggerONLYGENTRIG) ? 1 : 0;
+					temp_combo.only_gentrig = (temp_combo.triggers[0].trigger_flags.get(TRIGFLAG_ONLYGENTRIG)) ? 1 : 0;
 			}
 			else if(!p_getc(&temp_combo.only_gentrig,f))
 				return qe_invalid;
@@ -18437,7 +18556,7 @@ int32_t readcombo_loop(PACKFILE* f, word s_version, newcombo& temp_combo)
 			{
 				auto const& pitm = itemsbuf[temp_combo.lift_parent_item];
 				auto weap_glow = weap_data.light_rads[WPNSPR_BASE];
-				switch(pitm.family)
+				switch(pitm.type)
 				{
 					case itype_bomb:
 					case itype_sbomb:
@@ -18510,6 +18629,18 @@ int32_t readcombo_loop(PACKFILE* f, word s_version, newcombo& temp_combo)
 				if(!p_getc(&temp_combo.sfx_drowning,f))
 					return qe_invalid;
 				if(!p_getc(&temp_combo.sfx_lava_drowning,f))
+					return qe_invalid;
+			}
+			if(s_version >= 56)
+			{
+				if(!p_igetzf(&temp_combo.z_height,f))
+					return qe_invalid;
+				if(!p_igetzf(&temp_combo.z_step_height,f))
+					return qe_invalid;
+			}
+			if(s_version >= 60)
+			{
+				if(!p_getc(&temp_combo.dive_under_level,f))
 					return qe_invalid;
 			}
 		}
@@ -20098,7 +20229,7 @@ int32_t readinitdata_old(PACKFILE *f, zquestheader *Header, word s_version, zini
 		if(!p_getc(&tempbyte,f))
 			return qe_invalid;
 		for(int q = 0; q < 8; ++q)
-			SETFLAG(temp_zinit.litems[q+1], liTRIFORCE, get_bitl(tempbyte, q));
+			SETFLAG(temp_zinit.litems[q+1], (1 << li_mcguffin), get_bitl(tempbyte, q));
 		
 		int level_count = 32;
 		if(s_version>12 || (Header->zelda_version == 0x211 && Header->build == 18))
@@ -20113,8 +20244,8 @@ int32_t readinitdata_old(PACKFILE *f, zquestheader *Header, word s_version, zini
 				return qe_invalid;
 		for(int q = 0; q < level_count*8; ++q)
 		{
-			SETFLAG(temp_zinit.litems[q], liMAP, get_bit(tmp_map, q));
-			SETFLAG(temp_zinit.litems[q], liCOMPASS, get_bit(tmp_compass, q));
+			SETFLAG(temp_zinit.litems[q], (1 << li_map), get_bit(tmp_map, q));
+			SETFLAG(temp_zinit.litems[q], (1 << li_compass), get_bit(tmp_compass, q));
 		}
 		
 		if((Header->zelda_version > 0x192)||
@@ -20131,7 +20262,7 @@ int32_t readinitdata_old(PACKFILE *f, zquestheader *Header, word s_version, zini
 			}
 			for(int q = 0; q < level_count*8; ++q)
 			{
-				SETFLAG(temp_zinit.litems[q], liBOSSKEY, get_bit(tmp_boss_key, q));
+				SETFLAG(temp_zinit.litems[q], (1 << li_boss_key), get_bit(tmp_boss_key, q));
 			}
 		}
 		
@@ -20283,7 +20414,7 @@ int32_t readinitdata_old(PACKFILE *f, zquestheader *Header, word s_version, zini
 			}
 			for(int q = 0; q < 32*8; ++q)
 			{
-				SETFLAG(temp_zinit.litems[q], liBOSSKEY, get_bit(tmp_boss_key, q));
+				SETFLAG(temp_zinit.litems[q], (1 << li_boss_key), get_bit(tmp_boss_key, q));
 			}
 		}
 		
@@ -21091,8 +21222,17 @@ int32_t readinitdata(PACKFILE *f, zquestheader *Header)
 		{
 			for(int q = 0; q < MAXLEVELS; ++q)
 			{
-				if(!p_getc(&temp_zinit.litems[q], f))
-					return qe_invalid;
+				if (s_version >= 44)
+				{
+					if(!p_igetw(&temp_zinit.litems[q], f))
+						return qe_invalid;
+				}
+				else
+				{
+					if(!p_getc(&padding, f))
+						return qe_invalid;
+					temp_zinit.litems[q] = word(padding);
+				}
 			}
 		}
 		else
@@ -21114,10 +21254,10 @@ int32_t readinitdata(PACKFILE *f, zquestheader *Header)
 			}
 			for(int q = 0; q < MAXLEVELS; ++q)
 			{
-				SETFLAG(temp_zinit.litems[q], liMAP, get_bit(tmp_map, q));
-				SETFLAG(temp_zinit.litems[q], liCOMPASS, get_bit(tmp_compass, q));
-				SETFLAG(temp_zinit.litems[q], liBOSSKEY, get_bit(tmp_boss_key, q));
-				SETFLAG(temp_zinit.litems[q], liTRIFORCE, get_bit(tmp_mcguffin, q));
+				SETFLAG(temp_zinit.litems[q], (1 << li_map), get_bit(tmp_map, q));
+				SETFLAG(temp_zinit.litems[q], (1 << li_compass), get_bit(tmp_compass, q));
+				SETFLAG(temp_zinit.litems[q], (1 << li_boss_key), get_bit(tmp_boss_key, q));
+				SETFLAG(temp_zinit.litems[q], (1 << li_mcguffin), get_bit(tmp_mcguffin, q));
 			}
 		}
 		if(!p_getbvec(&temp_zinit.level_keys, f))
@@ -21278,11 +21418,44 @@ int32_t readinitdata(PACKFILE *f, zquestheader *Header)
 					return qe_invalid;
 			}
 		}
-	}
-	if(s_version >= 43)
-		for(uint q = 0; q < NUM_BOTTLE_SLOTS; ++q)
-			if (!p_getc(&temp_zinit.bottle_slot[q], f))
+		
+		if(s_version >= 43)
+			for(uint q = 0; q < NUM_BOTTLE_SLOTS; ++q)
+				if (!p_getc(&temp_zinit.bottle_slot[q], f))
+					return qe_invalid;
+		
+		if(s_version >= 44)
+			if (!p_getbvec(&temp_zinit.lvlswitches, f))
 				return qe_invalid;
+		
+		if (s_version >= 45)
+		{
+			if (!p_igetw(&temp_zinit.item_spawn_flicker, f))
+				return qe_invalid;
+			if (!p_igetw(&temp_zinit.item_timeout_dur, f))
+				return qe_invalid;
+			if (!p_igetw(&temp_zinit.item_timeout_flicker, f))
+				return qe_invalid;
+			if (!p_getc(&temp_zinit.item_flicker_speed, f))
+				return qe_invalid;
+		}
+		if(s_version >= 46)
+		{
+			for(int q = 0; q < SPRITE_THRESHOLD_MAX; ++q)
+				if(!p_igetw(&temp_zinit.sprite_z_thresholds[q], f))
+					return qe_invalid;
+		}
+	}
+	
+	if(s_version < 46)
+	{
+		temp_zinit.sprite_z_thresholds[SPRITE_THRESHOLD_GROUND] = temp_zinit.jump_hero_layer_threshold;
+		temp_zinit.sprite_z_thresholds[SPRITE_THRESHOLD_3] = temp_zinit.jump_hero_layer_threshold;
+		temp_zinit.sprite_z_thresholds[SPRITE_THRESHOLD_4] = temp_zinit.jump_hero_layer_threshold;
+		temp_zinit.sprite_z_thresholds[SPRITE_THRESHOLD_OVERHEAD] = word(-1);
+		temp_zinit.sprite_z_thresholds[SPRITE_THRESHOLD_5] = word(-1);
+	}
+	
 	if (should_skip)
 		return 0;
 
@@ -21406,19 +21579,19 @@ int32_t readitemdropsets(PACKFILE *f, int32_t version)
                 {
                     int32_t it = tempitemdrop.item[j];
                     
-                    if((itemsbuf[it].family == itype_rupee
+                    if((itemsbuf[it].type == itype_rupee
                             && ((itemsbuf[it].amount)&0xFFF) == 10)
                             && !get_bit(deprecated_rules, qr_ALLOW10RUPEEDROPS_DEP))
                     {
                         tempitemdrop.chance[j+1]=0;
                     }
-                    else if(itemsbuf[it].family == itype_clock && get_bit(deprecated_rules, qr_NOCLOCKS_DEP))
+                    else if(itemsbuf[it].type == itype_clock && get_bit(deprecated_rules, qr_NOCLOCKS_DEP))
                     {
                         tempitemdrop.chance[j+1]=0;
                     }
                     
                     // From Sept 2007 to Dec 2008, non-gameplay items were prohibited.
-                    if(itemsbuf[it].family == itype_misc)
+                    if(itemsbuf[it].type == itype_misc)
                     {
                         // If a non-gameplay item was selected, then item drop was aborted.
                         // Reflect this by increasing the 'Nothing' chance accordingly.
@@ -21635,7 +21808,7 @@ void portCandleRules()
 	//itemdata itemsbuf;
 	for ( int32_t q = 0; q < MAXITEMS; q++ ) 
 	{
-		if ( itemsbuf[q].family == itype_candle )
+		if ( itemsbuf[q].type == itype_candle )
 		{
 			if ( hurtshero ) itemsbuf[q].flags |= item_flag2;
 			else itemsbuf[q].flags &= ~ item_flag2;
@@ -21649,7 +21822,7 @@ void portBombRules()
 	//itemdata itemsbuf;
 	for ( int32_t q = 0; q < MAXITEMS; q++ ) 
 	{
-		if ( itemsbuf[q].family == itype_bomb )
+		if ( itemsbuf[q].type == itype_bomb )
 		{
 			if ( hurtshero ) itemsbuf[q].flags |= item_flag2;
 			else itemsbuf[q].flags &= ~ item_flag2;
@@ -22682,8 +22855,8 @@ static int32_t _lq_int(const char *filename, zquestheader *Header, miscQdata *Mi
 		TheMaps.clear();
 		TheMaps.resize(MAPSCRS*1);
 		map_count = 1;
-		map_autolayers.clear();
-		map_autolayers.resize(6*1);
+		map_infos.clear();
+		map_infos.resize(1);
 	}
 
 	if(loading_tileset_flags & TILESET_CLEARHEADER)

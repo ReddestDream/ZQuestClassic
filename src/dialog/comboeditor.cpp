@@ -53,7 +53,7 @@ bool hasCTypeEffects(int32_t type)
 		case cDAMAGE1: case cDAMAGE2: case cDAMAGE3: case cDAMAGE4:
 		case cDAMAGE5: case cDAMAGE6: case cDAMAGE7:
 		case cSTEPSFX: case cSWITCHHOOK: case cCSWITCHBLOCK:
-		case cSHOOTER: case cCUTSCENETRIG:
+		case cSHOOTER: case cCUTSCENETRIG: case cCUTSCENEEFFECT:
 		case cSAVE: case cSAVE2:
 			return true;
 	}
@@ -63,7 +63,7 @@ bool hasCTypeCauses(int32_t type)
 {
 	switch(type)
 	{
-		case cPITFALL: case cWATER:
+		case cPITFALL: case cWATER: case cCUTSCENEEFFECT:
 			return true;
 	}
 	return false;
@@ -149,7 +149,7 @@ ComboEditorDialog::ComboEditorDialog(newcombo const& ref, int32_t index):
 				return false;
 			if(itm.value == -1) //Change the none value to 0
 				itm.value = 0;
-			else switch(itemsbuf[itm.value].family) //Limit valid item types
+			else switch(itemsbuf[itm.value].type) //Limit valid item types
 			{
 				case itype_bomb:
 					itm.text += fmt::format(" [{}]",ZI.getWeapName(wLitBomb));
@@ -444,10 +444,10 @@ std::string getComboTypeHelpText(int32_t id)
 			typehelp = "When hit with a switch-hook, swaps position with the Hero (staying on the same layer).";
 			break;
 		case cBUTTONPROMPT:
-			typehelp = "Displays a button prompt based on the 'Btn:' triggerflags";
+			typehelp = "Displays a button prompt based on the 'Btn:' trigger flags";
 			break;
 		case cCUSTOMBLOCK:
-			typehelp = "Blocks weapons denoted by the weapon triggerflags.";
+			typehelp = "Blocks weapons denoted by the weapon trigger flags.";
 			break;
 		case cSHOOTER:
 			typehelp = "Shoots, as a turret. Triggering with 'ComboType Effects' causes it to instantly shoot.";
@@ -470,6 +470,10 @@ std::string getComboTypeHelpText(int32_t id)
 		case cCUTSCENETRIG:
 			typehelp = "When activated with ComboType Effects, either stops an active cutscene, or"
 				" sets the active cutscene rules.";
+			break;
+		case cCUTSCENEEFFECT:
+			typehelp = "Can be used for a variety of effects useful for 'cutscenes', such as forcing the player"
+				" to walk to a specific spot. Use the Wizard to set up the effect.";
 			break;
 		case cPUSHBLOCK:
 			typehelp = "A pushable block, that works separately from push flags. Highly configurable.";
@@ -1562,6 +1566,19 @@ void ComboEditorDialog::loadComboType()
 			}
 			break;
 		}
+		case cCUTSCENEEFFECT:
+		{
+			for(size_t q = 0; q < 16; ++q)
+			{
+				h_flag[q] = "Use the Wizard to set up this combo.";
+				if(q > 7) continue;
+				h_attribyte[q] = "Use the Wizard to set up this combo.";
+				h_attrishort[q] = "Use the Wizard to set up this combo.";
+				if(q > 3) continue;
+				h_attribute[q] = "Use the Wizard to set up this combo.";
+			}
+			break;
+		}
 		case cSLASHNEXT:
 		{
 			l_flag[0] = "Decoration Sprite";
@@ -2019,7 +2036,7 @@ void ComboEditorDialog::loadComboType()
 			h_flag[0] = "Pushable blocks pushed onto this combo will"
 				" slide past it, if nothing blocks their way.";
 			l_flag[1] = "Slides Hero";
-			h_flag[1] = "The Hero will slip and slide on the ice.";
+			h_flag[1] = "The Hero will slip and slide on the ice. Requires Newer Hero Movement." + QRHINT({qr_NEW_HERO_MOVEMENT2});
 			if(FL(cflag2))
 			{
 				l_attribyte[0] = "Start Speed Percentage";
@@ -2073,6 +2090,12 @@ void ComboEditorDialog::loadComboType()
 			h_attribyte[r_down] = "Weapons facing down-right (coming from up-left) will move in this direction."
 				"\n0 = up, 1 = down, 2 = left, 3 = right"
 				"\n4 = up-left, 5 = up-right, 6 = down-left, 7 = down-right";
+		}
+		[[fallthrough]];
+		case cMIRROR: case cMIRRORSLASH: case cMIRRORBACKSLASH: case cMAGICPRISM: case cMAGICPRISM4:
+		{
+			l_attribute[0] = "Reflect Flags";
+			h_attribute[0] = "Sum of values for each type of weapon that should be reflected. If '0', reflects everything.";
 			break;
 		}
 		case cCRUMBLE:
@@ -2183,6 +2206,8 @@ void ComboEditorDialog::updateTriggerIndex()
 {
 	trigbtnAddCursor->setDisabled(local_comboref.triggers.size() >= MAX_COMBO_TRIGGERS);
 	trigbtnAddEnd->setDisabled(local_comboref.triggers.size() >= MAX_COMBO_TRIGGERS);
+	trigbtnSummarizeAll->setDisabled(local_comboref.triggers.empty());
+	trigbtnSummarize->setDisabled(trigger_index < 0);
 	trigbtnCopy->setDisabled(trigger_index < 0);
 	trigbtnEdit->setDisabled(trigger_index < 0);
 	trigbtnDelete->setDisabled(trigger_index < 0);
@@ -2277,7 +2302,17 @@ std::shared_ptr<GUI::Widget> ComboEditorDialog::CMB_FLAG(int index)
 	);
 }
 
-#define CMB_GEN_FLAG(ind,str) \
+#define IBTN(info) \
+Button( \
+	width = 1.5_em, padding = 0_px, forceFitH = true, \
+	text = "?", hAlign = 1.0, onPressFunc = [&]() \
+	{ \
+		InfoDialog("Info", info).show(); \
+	} \
+)
+
+#define CMB_GEN_FLAG(ind,str,info) \
+IBTN(info), \
 Checkbox(text = str, \
 		minwidth = FLAGS_WID, hAlign = 0.0, \
 		checked = local_comboref.genflags & (1<<ind), fitParent = true, \
@@ -2391,15 +2426,6 @@ Checkbox( \
 	onToggleFunc = [&](bool state) \
 	{ \
 		SETFLAG(local_comboref.member, bit, state); \
-	} \
-)
-
-#define IBTN(info) \
-Button( \
-	width = 1.5_em, padding = 0_px, forceFitH = true, \
-	text = "?", hAlign = 1.0, onPressFunc = [&]() \
-	{ \
-		InfoDialog("Info", info).show(); \
 	} \
 )
 
@@ -2704,83 +2730,102 @@ std::shared_ptr<GUI::Widget> ComboEditorDialog::view()
 						)
 					)
 				)),
-				TabRef(name = "Flags", Column(
-					padding = 0_px,
-					Rows<2>(
-						framed = true,
-						frameText = "General Flags",
-						topPadding = DEFAULT_PADDING+0.4_em,
-						bottomPadding = DEFAULT_PADDING+1_px,
-						bottomMargin = 1_em,
-						CMB_GEN_FLAG(0,"Hook-Grabbable"),
-						CMB_GEN_FLAG(1,"Switch-Hookable")
-					),
-					Columns<8>(
-						framed = true,
-						frameText = "Variable Flags",
-						topPadding = DEFAULT_PADDING+0.4_em,
-						bottomPadding = DEFAULT_PADDING+1_px,
-						bottomMargin = 1_em,
-						CMB_FLAG(0),
-						CMB_FLAG(1),
-						CMB_FLAG(2),
-						CMB_FLAG(3),
-						CMB_FLAG(4),
-						CMB_FLAG(5),
-						CMB_FLAG(6),
-						CMB_FLAG(7),
-						CMB_FLAG(8),
-						CMB_FLAG(9),
-						CMB_FLAG(10),
-						CMB_FLAG(11),
-						CMB_FLAG(12),
-						CMB_FLAG(13),
-						CMB_FLAG(14),
-						CMB_FLAG(15)
-					)
-				)),
-				TabRef(name = "Attribs 1", Row(
-					Rows<3>(framed = true, frameText = "Attribytes",
-						CMB_ATTRIBYTE(0),
-						CMB_ATTRIBYTE(1),
-						CMB_ATTRIBYTE(2),
-						CMB_ATTRIBYTE(3),
-						CMB_ATTRIBYTE(4),
-						CMB_ATTRIBYTE(5),
-						CMB_ATTRIBYTE(6),
-						CMB_ATTRIBYTE(7)
-					),
-					Rows<3>(framed = true, frameText = "Attrishorts",
-						CMB_ATTRISHORT(0),
-						CMB_ATTRISHORT(1),
-						CMB_ATTRISHORT(2),
-						CMB_ATTRISHORT(3),
-						CMB_ATTRISHORT(4),
-						CMB_ATTRISHORT(5),
-						CMB_ATTRISHORT(6),
-						CMB_ATTRISHORT(7)
-					)
-				)),
-				TabRef(name = "Attribs 2", Column(
-					Rows<3>(framed = true, frameText = "Attributes",
-						CMB_ATTRIBUTE(0),
-						CMB_ATTRIBUTE(1),
-						CMB_ATTRIBUTE(2),
-						CMB_ATTRIBUTE(3)
-					),
-					Row(
-						Button(text = "Misc Weapon Data",
-							onPressFunc = [&]()
-							{
-								call_weap_data_editor(local_comboref.misc_weap_data, is_misc_lweapon(local_comboref), true);
-							}),
-						IBTN("Usable by some combo types for weapon-related effects.")
-					)
+				TabRef(name = "Type Attribs", TabPanel(
+					ptr = &cmb_tabs[2],
+					TabRef(name = "Flags", Column(
+						padding = 0_px,
+						Columns<8>(
+							topPadding = DEFAULT_PADDING+0.4_em,
+							bottomPadding = DEFAULT_PADDING+1_px,
+							bottomMargin = 1_em,
+							CMB_FLAG(0),
+							CMB_FLAG(1),
+							CMB_FLAG(2),
+							CMB_FLAG(3),
+							CMB_FLAG(4),
+							CMB_FLAG(5),
+							CMB_FLAG(6),
+							CMB_FLAG(7),
+							CMB_FLAG(8),
+							CMB_FLAG(9),
+							CMB_FLAG(10),
+							CMB_FLAG(11),
+							CMB_FLAG(12),
+							CMB_FLAG(13),
+							CMB_FLAG(14),
+							CMB_FLAG(15)
+						)
+					)),
+					TabRef(name = "Attribs 1", Row(
+						Rows<3>(framed = true, frameText = "Attribytes",
+							CMB_ATTRIBYTE(0),
+							CMB_ATTRIBYTE(1),
+							CMB_ATTRIBYTE(2),
+							CMB_ATTRIBYTE(3),
+							CMB_ATTRIBYTE(4),
+							CMB_ATTRIBYTE(5),
+							CMB_ATTRIBYTE(6),
+							CMB_ATTRIBYTE(7)
+						),
+						Rows<3>(framed = true, frameText = "Attrishorts",
+							CMB_ATTRISHORT(0),
+							CMB_ATTRISHORT(1),
+							CMB_ATTRISHORT(2),
+							CMB_ATTRISHORT(3),
+							CMB_ATTRISHORT(4),
+							CMB_ATTRISHORT(5),
+							CMB_ATTRISHORT(6),
+							CMB_ATTRISHORT(7)
+						)
+					)),
+					TabRef(name = "Attribs 2", Column(
+						Rows<3>(framed = true, frameText = "Attributes",
+							CMB_ATTRIBUTE(0),
+							CMB_ATTRIBUTE(1),
+							CMB_ATTRIBUTE(2),
+							CMB_ATTRIBUTE(3)
+						),
+						Row(
+							Button(text = "Misc Weapon Data",
+								onPressFunc = [&]()
+								{
+									call_weap_data_editor(local_comboref.misc_weap_data, is_misc_lweapon(local_comboref), true);
+								}),
+							IBTN("Usable by some combo types for weapon-related effects.")
+						)
+					))
 				)),
 				TabRef(name = "Triggers", Column(
 					Frame(
 						Row(
 							Column(
+								Row(
+									trigbtnSummarizeAll = Button(text = "Summarize All",
+										fitParent = true,
+										onPressFunc = [&]()
+										{
+											std::ostringstream oss;
+											bool first = true;
+											for (auto const& trig : local_comboref.triggers)
+											{
+												if (first)
+													first = false;
+												else oss << "\n\n";
+												oss << trig.summarize(local_comboref);
+											}
+											InfoDialog("All Trigger Summary", oss.str(), nullopt, nullptr, 0).show();
+										}),
+									trigbtnSummarize = Button(text = "Summarize",
+										fitParent = true,
+										onPressFunc = [&]()
+										{
+											auto const& trig = local_comboref.triggers[trigger_index];
+											string title = fmt::format("Trigger Summary ({:03})", trigger_index);
+											if (!trig.label.empty())
+												title += fmt::format(" '{}'", trig.label);
+											InfoDialog(title, trig.summarize(local_comboref), nullopt, nullptr, 0).show();
+										})
+								),
 								triggerList = List(
 									data = list_triggers,
 									disabled = local_comboref.triggers.empty(),
@@ -3120,6 +3165,100 @@ std::shared_ptr<GUI::Widget> ComboEditorDialog::view()
 				)),
 				TabRef(name = "General", TabPanel(
 					ptr = &cmb_tabs[1],
+					TabRef(name = "Misc",
+						Rows<2>(
+							Frame(title = "General Flags",
+								rowSpan = 2,
+								Rows<2>(
+									CMB_GEN_FLAG(0,"Hook-Grabbable","Solid parts of this combo can be grabbed by the Hookshot"),
+									CMB_GEN_FLAG(1,"Switch-Hookable","Solid parts of this combo can be grabbed by the SwitchHook"),
+									CMB_GEN_FLAG(2,"Allow walk-on-top","The Player can walk along the top of this combo's solid parts"
+										" if they are on it, or above the combo's 'Z Height'."),
+									CMB_GEN_FLAG(3,"Walk-on-top -8px DrawYOffset","While the Player is walking on top of this combo,"
+										" they will be visually offset up by 8 pixels."),
+									CMB_GEN_FLAG(4,"Step 'in front' in sideview","The effects of 'landing'/'standing'/'walking' on this"
+										" combo will occur when landing 'in front' of the combo in sideview, rather than 'on top' of the combo.")
+								)
+							),
+							Frame(title = "Hero Speed Mod",
+								info = "Speed Modification only applies if the Quest Rule 'Newer Hero Movement' is enabled." + QRHINT({qr_NEW_HERO_MOVEMENT2}),
+								Rows<3>(
+									Label(text = "Multiplier:", hAlign = 1.0),
+									TextField(type = GUI::TextField::type::INT_DECIMAL,
+										hAlign = 1.0, low = 0, high = 255, val = local_comboref.speed_mult,
+										fitParent = true,
+										onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
+										{
+											local_comboref.speed_mult = val;
+										}),
+									IBTN("Multiplies the Hero's speed by this value when walking over this combo."),
+									//
+									Label(text = "Divisor:", hAlign = 1.0),
+									TextField(type = GUI::TextField::type::INT_DECIMAL,
+										hAlign = 1.0, low = 0, high = 255, val = local_comboref.speed_div,
+										fitParent = true,
+										onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
+										{
+											local_comboref.speed_div = val;
+										}),
+									IBTN("Divides the Hero's speed by this value when walking over this combo. Applies after mult."
+										"\nIf 0, no division is performed."),
+									//
+									Label(text = "Additive:", hAlign = 1.0),
+									TextField(maxLength = 13, type = GUI::TextField::type::NOSWAP_ZSINT,
+										hAlign = 1.0, val = local_comboref.speed_add.getZLong(),
+										swap_type = nswapDEC,
+										fitParent = true,
+										onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
+										{
+											local_comboref.speed_add = zslongToFix(val);
+										}),
+									IBTN("Adds this value, in px/frame, to the Hero's speed walking over this combo. Applies after mult and div. Can be negative.")
+								)
+							),
+							Frame(
+								Rows<3>(
+									Label(text = "Z Height:", hAlign = 1.0),
+									TextField(
+										fitParent = true, maxLength = 11,
+										type = GUI::TextField::type::FIXED_DECIMAL, places = 4,
+										val = local_comboref.z_height.getZLong(),
+										onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
+										{
+											local_comboref.z_height = zslongToFix(val);
+										}),
+									IBTN("A Z-height for the block, allowing you to jump atop it, and from block to block."
+										" If set to 0, acts as infinitely tall."
+										" Has no effect if 'Allow walk-on-top' is not checked."),
+									Label(text = "Z Step:", hAlign = 1.0),
+									TextField(
+										fitParent = true, maxLength = 11,
+										type = GUI::TextField::type::FIXED_DECIMAL, places = 4,
+										val = local_comboref.z_step_height.getZLong(),
+										low = 0, high = MAX_SIGNED_32,
+										onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
+										{
+											local_comboref.z_step_height = zslongToFix(val);
+										}),
+									IBTN("The Z amount below the block's Z-height that you can jump atop it from. This allows"
+										" for 'walking up stairs' type effects."
+										" Has no effect if 'Allow walk-on-top' is not checked."),
+									Label(text = "Dive Under Level:", hAlign = 1.0),
+									TextField(maxLength = 3, type = GUI::TextField::type::NOSWAP_ZSINT,
+										val = local_comboref.dive_under_level,
+										swap_type = nswapLDEC, fitParent = true,
+										low = 0, high = 255,
+										onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
+										{
+											local_comboref.dive_under_level = byte(val);
+										}),
+									IBTN("If >0 and diving with flippers of at least this level, can 'dive under' this combo's solidity."
+										"\nTo make this visually look right, this combo should be on layer 1 or 2,"
+										" with the Player set to draw under layer 1 while diving." + QRHINT({qr_HERO_DIVE_UNDER_LAYER_1}))
+								)
+							)
+						)
+					),
 					TabRef(name = "SFX",
 						Rows<3>(
 							Label(text = "Appears:"),
@@ -3302,46 +3441,6 @@ std::shared_ptr<GUI::Widget> ComboEditorDialog::view()
 							IBTN("Used when the combo is falling into lava (after being pushed as a pushable block)."
 								"\nIf set to (None), uses the Lava Drowning Sprite set in Misc Sprites as a default."
 								+ QRHINT({qr_BLOCKS_DROWN}))
-						)
-					),
-					TabRef(name = "Misc",
-						Row(
-							Frame(title = "Hero Speed Mod",
-								info = "Speed Modification only applies if the Quest Rule 'Newer Hero Movement' is enabled." + QRHINT({qr_NEW_HERO_MOVEMENT2}),
-								Rows<3>(
-									Label(text = "Multiplier:"),
-									TextField(type = GUI::TextField::type::INT_DECIMAL,
-										hAlign = 1.0, low = 0, high = 255, val = local_comboref.speed_mult,
-										fitParent = true,
-										onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
-										{
-											local_comboref.speed_mult = val;
-										}),
-									IBTN("Multiplies the Hero's speed by this value when walking over this combo."),
-									//
-									Label(text = "Divisor:"),
-									TextField(type = GUI::TextField::type::INT_DECIMAL,
-										hAlign = 1.0, low = 0, high = 255, val = local_comboref.speed_div,
-										fitParent = true,
-										onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
-										{
-											local_comboref.speed_div = val;
-										}),
-									IBTN("Divides the Hero's speed by this value when walking over this combo. Applies after mult."
-										"\nIf 0, no division is performed."),
-									//
-									Label(text = "Additive:"),
-									TextField(maxLength = 13, type = GUI::TextField::type::NOSWAP_ZSINT,
-										hAlign = 1.0, val = local_comboref.speed_add.getZLong(),
-										swap_type = nswapDEC,
-										fitParent = true,
-										onValChangedFunc = [&](GUI::TextField::type,std::string_view,int32_t val)
-										{
-											local_comboref.speed_add = zslongToFix(val);
-										}),
-									IBTN("Adds this value, in px/frame, to the Hero's speed walking over this combo. Applies after mult and div. Can be negative.")
-								)
-							)
 						)
 					)
 				)),
@@ -3536,12 +3635,12 @@ void ComboEditorDialog::apply_combo()
 	if(!hasCTypeEffects(local_comboref.type))
 	{
 		for(combo_trigger& trig : local_comboref.triggers)
-			trig.triggerflags[0] &= ~combotriggerCMBTYPEFX;
+			trig.trigger_flags.set(TRIGFLAG_CMBTYPEFX, false);
 	}
 	if(!hasCTypeCauses(local_comboref.type))
 	{
 		for(combo_trigger& trig : local_comboref.triggers)
-			trig.triggerflags[4] &= ~combotriggerCMBTYPECAUSES;
+			trig.trigger_flags.set(TRIGFLAG_CMBTYPECAUSES, false);
 	}
 	combobuf[index] = local_comboref;
 	saved = false;

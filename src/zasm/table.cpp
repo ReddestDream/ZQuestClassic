@@ -7,7 +7,7 @@
 #define NUM      ARGTY::LITERAL
 #define NUM_REG  ARGTY::LITERAL_REG
 #define CMP      ARGTY::COMPARE_OP
-#define REG      ARGTY::UNUSED_REG
+#define REG_UNIMPLEMENTED      ARGTY::UNUSED_REG
 #define REG_R    ARGTY::READ_REG
 #define REG_W    ARGTY::WRITE_REG
 #define REG_RW   ARGTY::READWRITE_REG
@@ -89,9 +89,9 @@ static constexpr script_command command_list[]=
 	{ "PUSHR", PUSHR, 1, { REG_R }, 0, 0 },
 	{ "PUSHV", PUSHV, 1, { NUM }, 0, 0 },
 	{ "POP", POP, 1, { REG_W }, 0, 0 },
-	{ "ENQUEUER", ENQUEUER, 2, { REG, REG }, 0, UNIMPL }, // Unimplemented
-	{ "ENQUEUEV", ENQUEUEV, 2, { REG, NUM }, 0, UNIMPL }, // Unimplemented
-	{ "DEQUEUE", DEQUEUE, 1, { REG }, 0, UNIMPL }, // Unimplemented
+	{ "ENQUEUER", ENQUEUER, 2, { REG_UNIMPLEMENTED, REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented
+	{ "ENQUEUEV", ENQUEUEV, 2, { REG_UNIMPLEMENTED, NUM }, 0, UNIMPL }, // Unimplemented
+	{ "DEQUEUE", DEQUEUE, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented
 	{ "PLAYSOUNDR", PLAYSOUNDR, 1, { REG_R }, 0, 0 },
 	{ "PLAYSOUNDV", PLAYSOUNDV, 1, { NUM }, 0, 0 },
 	{ "LOADLWEAPONR", LOADLWEAPONR, 1, { REG_R }, 0, 0 },
@@ -129,7 +129,7 @@ static constexpr script_command command_list[]=
 	{ "ELLIPSE2", ELLIPSE2, 0, {}, 0, 0 },
 	{ "SPLINER", SPLINER, 0, {}, 0, 0 },
 	{ "FLOODFILL", FLOODFILL, 0, {}, 0, 0 },
-	{ "COMPOUNDR", COMPOUNDR, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
+	{ "COMPOUNDR", COMPOUNDR, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
 	{ "COMPOUNDV", COMPOUNDV, 1, { NUM }, 0, UNIMPL }, // Unimplemented - no case
 	{ "MSGSTRR", MSGSTRR, 1, { REG_R }, 0, 0 },
 	{ "MSGSTRV", MSGSTRV, 1, { NUM }, 0, 0 },
@@ -196,9 +196,9 @@ static constexpr script_command command_list[]=
 	{ "QUADR", QUADR, 0, {}, 0, 0 },
 	{ "TRIANGLER", TRIANGLER, 0, {}, 0, 0 },
 	{ "ARCSINR", ARCSINR, 2, { REG_W, REG_R }, 0, 0 },
-	{ "ARCSINV", ARCSINV, 2, { NUM, REG }, 0, UNIMPL }, //!TODO ERROR Writes to sarg1 as a register, reads from sarg2 as a literal
+	{ "ARCSINV", ARCSINV, 2, { NUM, REG_UNIMPLEMENTED }, 0, UNIMPL }, //!TODO ERROR Writes to sarg1 as a register, reads from sarg2 as a literal
 	{ "ARCCOSR", ARCCOSR, 2, { REG_W, REG_R }, 0, 0 },
-	{ "ARCCOSV", ARCCOSV, 2, { NUM, REG }, 0, UNIMPL }, //!TODO ERROR Writes to sarg1 as a register, reads from sarg2 as a literal
+	{ "ARCCOSV", ARCCOSV, 2, { NUM, REG_UNIMPLEMENTED }, 0, UNIMPL }, //!TODO ERROR Writes to sarg1 as a register, reads from sarg2 as a literal
 	{ "GAMEEND", GAMEEND, 0, {}, 0, 0 },
 	{ "GAMEEXIT", GAMEEXIT, 0, {}, 0, 0 },
 	{ "DRAWINTR", DRAWINTR, 0, {}, 0, 0 },
@@ -273,9 +273,9 @@ static constexpr script_command command_list[]=
 	{ "PIXELARRAYR", PIXELARRAYR, 0, {}, 0, 0 },
 	{ "TILEARRAYR", TILEARRAYR, 0, {}, 0, 0 },
 	{ "COMBOARRAYR", COMBOARRAYR, 0, {}, 0, 0 },
-	{ "PAUSESFX", PAUSESFX, 1, { REG }, 0, 0 },
-	{ "RESUMESFX", RESUMESFX, 1, { REG }, 0, 0 },
-	{ "CONTINUESFX", CONTINUESFX, 1, { REG }, 0, 0 },
+	{ "PAUSESFX", PAUSESFX, 1, { REG_UNIMPLEMENTED }, 0, 0 },
+	{ "RESUMESFX", RESUMESFX, 1, { REG_UNIMPLEMENTED }, 0, 0 },
+	{ "CONTINUESFX", CONTINUESFX, 1, { REG_R }, 0, 0 },
 	{ "ADJUSTSFX", ADJUSTSFX, 0, {}, 0, 0 },
 	{ "GETITEMSCRIPT", GETITEMSCRIPT, 1, { REG_RW }, 0, 0 },
 	//NPCData
@@ -321,7 +321,7 @@ static constexpr script_command command_list[]=
 	{ "GETNPCDATAHITSFX", GETNPCDATAHITSFX, 2, { REG_RW, REG_R }, 0, 0 },
 	{ "GETNPCDATAFIRESFX", GETNPCDATAFIRESFX, 2, { REG_W, REG_R }, 0, 0 },
 	//two inputs one return
-	{ "GETNPCDATASCRIPTDEF", GETNPCDATASCRIPTDEF, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
+	{ "GETNPCDATASCRIPTDEF", GETNPCDATASCRIPTDEF, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
 	{ "GETNPCDATADEFENSE", GETNPCDATADEFENSE, 1, { REG_W }, 0, 0 },
 	{ "GETNPCDATASIZEFLAG", GETNPCDATASIZEFLAG, 1, { REG_W }, 0, 0 },
 	{ "GETNPCDATAATTRIBUTE", GETNPCDATAATTRIBUTE, 1, { REG_W }, 0, 0 },
@@ -525,7 +525,7 @@ static constexpr script_command command_list[]=
 	{ "GETNPCDATAEHEIGHT", GETNPCDATAEHEIGHT, 2, { REG_RW, REG_R }, 0, 0 },
 	{ "SETNPCDATATILE", SETNPCDATATILE, 2, { REG_RW, REG_R }, 0, 0 },
 	{ "SETNPCDATAEHEIGHT", SETNPCDATAEHEIGHT, 2, { REG_RW, REG_R }, 0, 0 },
-	{ "GETSPRITEDATASTRING", GETSPRITEDATASTRING, 2, { REG, REG }, 0, UNIMPL }, // Unimplemented - no case
+	{ "GETSPRITEDATASTRING", GETSPRITEDATASTRING, 2, { REG_UNIMPLEMENTED, REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
 	//SpriteData
 	{ "GETSPRITEDATATILE", GETSPRITEDATATILE, 2, { REG_W, REG_R }, 0, 0 },
 	{ "GETSPRITEDATAMISC", GETSPRITEDATAMISC, 2, { REG_W, REG_R }, 0, 0 },
@@ -533,7 +533,7 @@ static constexpr script_command command_list[]=
 	{ "GETSPRITEDATAFRAMES", GETSPRITEDATAFRAMES, 2, { REG_W, REG_R }, 0, 0 },
 	{ "GETSPRITEDATASPEED", GETSPRITEDATASPEED, 2, { REG_W, REG_R }, 0, 0 },
 	{ "GETSPRITEDATATYPE", GETSPRITEDATATYPE, 2, { REG_W, REG_R }, 0, 0 },
-	{ "SETSPRITEDATASTRING", SETSPRITEDATASTRING, 2, { REG, REG }, 0, UNIMPL }, // Unimplemented - no case
+	{ "SETSPRITEDATASTRING", SETSPRITEDATASTRING, 2, { REG_UNIMPLEMENTED, REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
 	{ "SETSPRITEDATATILE", SETSPRITEDATATILE, 2, { REG_RW, REG_R }, 0, 0 },
 	{ "SETSPRITEDATAMISC", SETSPRITEDATAMISC, 2, { REG_RW, REG_R }, 0, 0 },
 	{ "SETSPRITEDATACSETS", SETSPRITEDATACSETS, 2, { REG_RW, REG_R }, 0, 0 },
@@ -690,7 +690,7 @@ static constexpr script_command command_list[]=
 	{ "ISVALIDBITMAP", ISVALIDBITMAP, 1, { REG_RW }, 0, 0 },
 	{ "READBITMAP", READBITMAP, 0, {}, 0, 0 },
 	{ "WRITEBITMAP", WRITEBITMAP, 0, {}, 0, 0 },
-	{ "ALLOCATEBITMAP", ALLOCATEBITMAP, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
+	{ "ALLOCATEBITMAP", ALLOCATEBITMAP, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
 	{ "CLEARBITMAP", CLEARBITMAP, 0, {}, 0, 0 },
 	{ "REGENERATEBITMAP", REGENERATEBITMAP, 0, {}, 0, 0 },
 	{ "BMPBLITTO", BMPBLITTO, 0, {}, 0, 0 },
@@ -722,16 +722,16 @@ static constexpr script_command command_list[]=
 	{ "SETLESSI", SETLESSI, 1, { REG_W }, 0, CMPUSED },
 	
 	{ "ARRAYCOPY", ARRAYCOPY, 2, { REG_R, REG_R }, 0, 0 },
-	{ "ARRAYNCOPY", ARRAYNCOPY, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
+	{ "ARRAYNCOPY", ARRAYNCOPY, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
 	
 	//1 INPUT, NO RETURN
-	{ "REMCHR", REMCHR, 2, { REG, REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRINGUPPERLOWER", STRINGUPPERLOWER, 2, { REG, REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRINGLOWERUPPER", STRINGLOWERUPPER, 2, { REG, REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRINGCONVERTCASE", STRINGCONVERTCASE, 2, { REG, REG }, 0, UNIMPL }, // Unimplemented - no case
+	{ "REMCHR", REMCHR, 2, { REG_UNIMPLEMENTED, REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRINGUPPERLOWER", STRINGUPPERLOWER, 2, { REG_UNIMPLEMENTED, REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRINGLOWERUPPER", STRINGLOWERUPPER, 2, { REG_UNIMPLEMENTED, REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRINGCONVERTCASE", STRINGCONVERTCASE, 2, { REG_UNIMPLEMENTED, REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
 	
 	//1 input, 1 ret
-	{ "XLEN", XLEN, 2, { REG, REG_R }, 0, UNIMPL }, // Unimplemented
+	{ "XLEN", XLEN, 2, { REG_UNIMPLEMENTED, REG_R }, 0, UNIMPL }, // Unimplemented
 	{ "XTOI", XTOI, 2, { REG_W, REG_R }, 0, 0 },
 	{ "ILEN", ILEN, 2, { REG_W, REG_R }, 0, 0 },
 	{ "ATOI", ATOI, 2, { REG_W, REG_R }, 0, 0 },
@@ -746,24 +746,24 @@ static constexpr script_command command_list[]=
 	{ "STRCHR", STRCHR, 1, { REG_W }, 0, 0 },
 	{ "STRRCHR", STRRCHR, 1, { REG_W }, 0, 0 },
 	//2 INP, 1 RET OVERLOADS
-	{ "XLEN2", XLEN2, 1, { REG }, 0, UNIMPL }, // Unimplemented
+	{ "XLEN2", XLEN2, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented
 	{ "XTOI2", XTOI2, 1, { REG_W }, 0, 0 },
-	{ "ILEN2", ILEN2, 1, { REG }, 0, UNIMPL }, // Unimplemented
-	{ "ATOI2", ATOI2, 1, { REG }, 0, UNIMPL }, // Unimplemented
-	{ "REMCHR2", REMCHR2, 1, { REG }, 0, UNIMPL }, // Unimplemented
+	{ "ILEN2", ILEN2, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented
+	{ "ATOI2", ATOI2, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented
+	{ "REMCHR2", REMCHR2, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented
 	
 	//3 INPUT 1 RET
-	{ "XTOA3", XTOA3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRCATF", STRCATF, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "ITOA3", ITOA3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRSTR3", STRSTR3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "REMNCHR3", REMNCHR3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRCAT3", STRCAT3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRNCAT3", STRNCAT3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRCHR3", STRCHR3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRRCHR3", STRRCHR3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRSPN3", STRSPN3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
-	{ "STRCSPN3", STRCSPN3, 1, { REG }, 0, UNIMPL }, // Unimplemented - no case
+	{ "XTOA3", XTOA3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRCATF", STRCATF, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "ITOA3", ITOA3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRSTR3", STRSTR3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "REMNCHR3", REMNCHR3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRCAT3", STRCAT3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRNCAT3", STRNCAT3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRCHR3", STRCHR3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRRCHR3", STRRCHR3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRSPN3", STRSPN3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
+	{ "STRCSPN3", STRCSPN3, 1, { REG_UNIMPLEMENTED }, 0, UNIMPL }, // Unimplemented - no case
 	
 	{ "UPPERTOLOWER", UPPERTOLOWER, 2, { REG_W, REG_R }, 0, 0 },
 	{ "LOWERTOUPPER", LOWERTOUPPER, 2, { REG_W, REG_R }, 0, 0 },
@@ -955,10 +955,10 @@ static constexpr script_command command_list[]=
 	{ "KILLPLAYER", KILLPLAYER, 1, { REG_R }, 0, 0 },
 	{ "DEGTORAD", DEGTORAD, 2, { REG_W, REG_R }, 0, 0 },
 	{ "RADTODEG", RADTODEG, 2, { REG_W, REG_R }, 0, 0 },
-	{ "LWPNMAKEANGULAR", LWPNMAKEANGULAR, 1, { REG }, 0, 0 },
-	{ "EWPNMAKEANGULAR", EWPNMAKEANGULAR, 1, { REG }, 0, 0 },
-	{ "LWPNMAKEDIRECTIONAL", LWPNMAKEDIRECTIONAL, 1, { REG }, 0, 0 },
-	{ "EWPNMAKEDIRECTIONAL", EWPNMAKEDIRECTIONAL, 1, { REG }, 0, 0 },
+	{ "LWPNMAKEANGULAR", LWPNMAKEANGULAR, 1, { REG_R }, 0, 0 },
+	{ "EWPNMAKEANGULAR", EWPNMAKEANGULAR, 1, { REG_R }, 0, 0 },
+	{ "LWPNMAKEDIRECTIONAL", LWPNMAKEDIRECTIONAL, 1, { REG_R }, 0, 0 },
+	{ "EWPNMAKEDIRECTIONAL", EWPNMAKEDIRECTIONAL, 1, { REG_R }, 0, 0 },
 	{ "BMPMASKDRAW2", BMPMASKDRAW2, 0, {}, 0, 0 },
 	{ "BMPMASKDRAW3", BMPMASKDRAW3, 0, {}, 0, 0 },
 	{ "BMPMASKBLIT", BMPMASKBLIT, 0, {}, 0, 0 },
@@ -1283,7 +1283,7 @@ static constexpr script_variable variable_list[]=
 	{ "ITEMFLASH", ITEMFLASH, 0},
 	{ "ITEMFLIP", ITEMFLIP, 0},
 	{ "ITEMCOUNT", ITEMCOUNT, 0},
-	{ "IDATAFAMILY", IDATAFAMILY, 0},
+	{ "IDATATYPE", IDATATYPE, 0},
 	{ "IDATALEVEL", IDATALEVEL, 0},
 	{ "IDATAKEEP", IDATAKEEP, 0},
 	{ "IDATAAMOUNT", IDATAAMOUNT, 0},
@@ -1366,7 +1366,7 @@ static constexpr script_variable variable_list[]=
 	{ "LWPNDRAWTYPE", LWPNDRAWTYPE, 0},
 	{ "LWPNPOWER", LWPNPOWER, 0},
 	{ "LWPNDEAD", LWPNDEAD, 0},
-	{ "LWPNID", LWPNID, 0},
+	{ "LWPNTYPE", LWPNTYPE, 0},
 	{ "LWPNTILE", LWPNTILE, 0},
 	{ "LWPNCSET", LWPNCSET, 0},
 	{ "LWPNFLASHCSET", LWPNFLASHCSET, 0},
@@ -1390,7 +1390,7 @@ static constexpr script_variable variable_list[]=
 	{ "EWPNDRAWTYPE", EWPNDRAWTYPE, 0},
 	{ "EWPNPOWER", EWPNPOWER, 0},
 	{ "EWPNDEAD", EWPNDEAD, 0},
-	{ "EWPNID", EWPNID, 0},
+	{ "EWPNTYPE", EWPNTYPE, 0},
 	{ "EWPNTILE", EWPNTILE, 0},
 	{ "EWPNCSET", EWPNCSET, 0},
 	{ "EWPNFLASHCSET", EWPNFLASHCSET, 0},
@@ -1764,7 +1764,7 @@ static constexpr script_variable variable_list[]=
 	{"NPCDATAEWIDTH", NPCDATAEWIDTH, 0},
 	{"NPCDATAEHEIGHT", NPCDATAEHEIGHT, 0},
 	{"NPCDATAHP", NPCDATAHP, 0},
-	{"NPCDATAFAMILY", NPCDATAFAMILY, 0},
+	{"NPCDATATYPE", NPCDATATYPE, 0},
 	{"NPCDATACSET", NPCDATACSET, 0},
 	{"NPCDATAANIM", NPCDATAANIM, 0},
 	{"NPCDATAEANIM", NPCDATAEANIM, 0},
@@ -2171,7 +2171,7 @@ static constexpr script_variable variable_list[]=
 	//lweapon scripts
 	{"LWPNSCRIPT", LWPNSCRIPT, 0},
 	{"LWPNINITD", LWPNINITD, 0},
-	{"ITEMFAMILY", ITEMFAMILY, 0},
+	{"ITEMTYPE", ITEMTYPE, 0},
 	{"ITEMLEVEL", ITEMLEVEL, 0},
 	
 	{"EWPNSCRIPT", EWPNSCRIPT, 0},
@@ -2994,6 +2994,38 @@ static constexpr script_variable variable_list[]=
 	{ "SCREEN_FFCS", SCREEN_FFCS, 0 },
 	{ "SCREEN_PORTALS", SCREEN_PORTALS, 0 },
 	{ "GAME_SAVED_PORTALS", GAME_SAVED_PORTALS, 0 },
+	{ "COMBOD_Z_HEIGHT", COMBOD_Z_HEIGHT, 0 },
+	{ "COMBOD_Z_STEP_HEIGHT", COMBOD_Z_STEP_HEIGHT, 0 },
+	{ "CMBTRIGGERFORCEPLAYERDIR", CMBTRIGGERFORCEPLAYERDIR, 0 },
+	{ "CMBTRIGGERICECOMBO", CMBTRIGGERICECOMBO, 0 },
+	{ "CMBTRIGGERICEVX", CMBTRIGGERICEVX, 0 },
+	{ "CMBTRIGGERICEVY", CMBTRIGGERICEVY, 0 },
+	{ "SCREENDATANORESETARR", SCREENDATANORESETARR, 0 },
+	{ "SCREENDATANOCARRYARR", SCREENDATANOCARRYARR, 0 },
+	{ "MAPDATANOCARRYARR", MAPDATANOCARRYARR, 0 },
+	{ "MAPDATANORESETARR", MAPDATANORESETARR, 0 },
+	{ "SCREENDATAEXCARRY", SCREENDATAEXCARRY, 0 },
+	{ "SCREENDATAEXRESET", SCREENDATAEXRESET, 0 },
+	{ "MAPDATAEXCARRY", MAPDATAEXCARRY, 0 },
+	{ "MAPDATAEXRESET", MAPDATAEXRESET, 0 },
+	{ "SPRITE_GRAVITY_STRENGTH", SPRITE_GRAVITY_STRENGTH, 0 },
+	{ "SPRITE_TERMINAL_VELOCITY", SPRITE_TERMINAL_VELOCITY, 0 },
+	{ "SPRITE_CUSTOM_GRAVITY_STRENGTH", SPRITE_CUSTOM_GRAVITY_STRENGTH, 0 },
+	{ "SPRITE_CUSTOM_TERMINAL_VELOCITY", SPRITE_CUSTOM_TERMINAL_VELOCITY, 0 },
+	{ "IDATACOOLDOWN", IDATACOOLDOWN, 0 },
+	{ "HEROITEMCOOLDOWN", HEROITEMCOOLDOWN, 0 },
+	{ "SUBWIDGTY_TOTAL", SUBWIDGTY_TOTAL, 0 },
+	{ "SCREENDATA_GRAVITY_STRENGTH", SCREENDATA_GRAVITY_STRENGTH, 0 },
+	{ "SCREENDATA_TERMINAL_VELOCITY", SCREENDATA_TERMINAL_VELOCITY, 0 },
+	{ "MAPDATA_GRAVITY_STRENGTH", MAPDATA_GRAVITY_STRENGTH, 0 },
+	{ "MAPDATA_TERMINAL_VELOCITY", MAPDATA_TERMINAL_VELOCITY, 0 },
+	{ "DMAPDATA_GRAVITY_STRENGTH", DMAPDATA_GRAVITY_STRENGTH, 0 },
+	{ "DMAPDATA_TERMINAL_VELOCITY", DMAPDATA_TERMINAL_VELOCITY, 0 },
+	{ "SPRITE_CURRENT_SCREEN", SPRITE_CURRENT_SCREEN, 0 },
+	{ "CMBTRIGGER_GRAVITY", CMBTRIGGER_GRAVITY, 0 },
+	{ "CMBTRIGGER_TERMINAL_VELOCITY", CMBTRIGGER_TERMINAL_VELOCITY, 0 },
+	{ "COMBOD_DIVE_UNDER_LEVEL", COMBOD_DIVE_UNDER_LEVEL, 0 },
+	{ "GAMELAYERZTHRESHOLDS", GAMELAYERZTHRESHOLDS, 0 },
 };
 
 // Don't rely on `command_list` to be indexed by command.
@@ -3119,10 +3151,15 @@ std::initializer_list<CommandDependency> get_command_implicit_dependencies(int c
 			return r;
 		}
 
-		case ZCLASS_CONSTRUCT:
 		case ZCLASS_WRITE:
 		{
 			static T r = {{rEXP1, REG_R}};
+			return r;
+		}
+
+		case ZCLASS_CONSTRUCT:
+		{
+			static T r = {{rEXP1, REG_R}, {CLASS_THISKEY, REG_W}};
 			return r;
 		}
 		
@@ -3274,7 +3311,7 @@ std::initializer_list<CommandDependency> get_command_implicit_dependencies(int c
 	return {};
 }
 
-std::initializer_list<int> get_register_dependencies(int reg)
+static std::vector<int> _get_register_dependencies(int reg)
 {
 	switch (reg)
 	{
@@ -3350,6 +3387,7 @@ std::initializer_list<int> get_register_dependencies(int reg)
 		case GAMEEVENTDATA:
 		case GAMEGENERICD:
 		case GAMEGRAVITY:
+		case GAMELAYERZTHRESHOLDS:
 		case GAMEGSWITCH:
 		case GAMEGUYCOUNT:
 		case GAMEGUYCOUNTD:
@@ -3400,6 +3438,7 @@ std::initializer_list<int> get_register_dependencies(int reg)
 		case LINKDEFENCE:
 		case LINKHITBY:
 		case LINKITEMD:
+		case HEROITEMCOOLDOWN:
 		case LINKMISCD:
 		case LWPNBURNLIGHTRADIUS:
 		case LWPNFLAGS:
@@ -3466,6 +3505,10 @@ std::initializer_list<int> get_register_dependencies(int reg)
 		case MAPDATATWARPRETSQR:
 		case MAPDATAWARPRETX:
 		case MAPDATAWARPRETY:
+		case MAPDATANOCARRYARR:
+		case MAPDATANORESETARR:
+		case MAPDATAEXCARRY:
+		case MAPDATAEXRESET:
 		case MESSAGEDATAFLAGSARR:
 		case MESSAGEDATAMARGINS:
 		case MOUSEARR:
@@ -3497,6 +3540,10 @@ std::initializer_list<int> get_register_dependencies(int reg)
 		case SCREENDATAENEMY:
 		case SCREENDATAFFINITIALISED:
 		case SCREENDATAFLAGS:
+		case SCREENDATANOCARRYARR:
+		case SCREENDATANORESETARR:
+		case SCREENDATAEXCARRY:
+		case SCREENDATAEXRESET:
 		case SCREENDATALAYERINVIS:
 		case SCREENDATALAYERMAP:
 		case SCREENDATALAYEROPACITY:
@@ -3581,8 +3628,7 @@ std::initializer_list<int> get_register_dependencies(int reg)
 		case SUBWIDGTY_TILE:
 		case TANGOARR:
 		{
-			static auto r1 = {rINDEX};
-			return r1;
+			return {rINDEX};
 		}
 
 		case CREATEBITMAP:
@@ -3597,8 +3643,7 @@ std::initializer_list<int> get_register_dependencies(int reg)
 		case SCRIPTRAM:
 		case SDDD:
 		{
-			static auto r = {rINDEX, rINDEX2};
-			return r;
+			return {rINDEX, rINDEX2};
 		}
 
 		case COMBOCDM:
@@ -3609,26 +3654,40 @@ std::initializer_list<int> get_register_dependencies(int reg)
 		case COMBOTDM:
 		case SDDDD:
 		{
-			static auto r = {rINDEX, rINDEX2, rEXP1};
-			return r;
+			return {rINDEX, rINDEX2, rEXP1};
 		}
 
 		case DISTANCE:
 		case LONGDISTANCE:
 		{
-			static auto r = {rINDEX, rINDEX2, rEXP1, rSFTEMP};
-			return r;
+			return {rINDEX, rINDEX2, rEXP1, rSFTEMP};
 		}
 
 		case DISTANCESCALE:
 		case LONGDISTANCESCALE:
 		{
-			static auto r = {rINDEX, rINDEX2, rEXP1, rSFTEMP, rWHAT_NO_7};
-			return r;
+			return {rINDEX, rINDEX2, rEXP1, rSFTEMP, rWHAT_NO_7};
+		}
+
+		case ZCLASS_MARK_TYPE:
+		{
+			return {CLASS_THISKEY};
 		}
 	}
 
 	return {};
+}
+
+static auto register_dependencies = [](){
+	std::array<std::vector<int>, NUMVARIABLES> result;
+	for (int i = 0; i < NUMVARIABLES; i++)
+		result[i] = _get_register_dependencies(i);
+	return result;
+}();
+
+const std::vector<int>& get_register_dependencies(int reg)
+{
+	return register_dependencies[reg];
 }
 
 std::optional<int> get_register_ref_dependency(int reg)
@@ -3747,6 +3806,7 @@ std::optional<int> get_register_ref_dependency(int reg)
 		case IDATAWPNINITD:
 		case IDATAMOVEFLAGS:
 		case IDATAWMOVEFLAGS:
+		case IDATACOOLDOWN:
 			return REFITEMCLASS;
 		
 		case SPRITEDATAFLAGS:
@@ -3813,6 +3873,10 @@ std::optional<int> get_register_ref_dependency(int reg)
 		case MAPDATATWARPRETSQR:
 		case MAPDATAWARPRETX:
 		case MAPDATAWARPRETY:
+		case MAPDATANOCARRYARR:
+		case MAPDATANORESETARR:
+		case MAPDATAEXCARRY:
+		case MAPDATAEXRESET:
 			return REFMAPDATA;
 		
 		case PALDATAB:
@@ -3825,6 +3889,10 @@ std::optional<int> get_register_ref_dependency(int reg)
 		case SCREEN_FLAG:
 		case SCREENDATAENEMY:
 		case SCREENDATAFLAGS:
+		case SCREENDATANOCARRYARR:
+		case SCREENDATANORESETARR:
+		case SCREENDATAEXCARRY:
+		case SCREENDATAEXRESET:
 		case SCREENDATALAYERINVIS:
 		case SCREENDATALAYERMAP:
 		case SCREENDATALAYEROPACITY:
@@ -3884,6 +3952,10 @@ std::optional<int> get_register_ref_dependency(int reg)
 		case SPRITE_JUMP:
 		case SPRITE_FAKE_JUMP:
 		case SPRITE_GRAVITY:
+		case SPRITE_GRAVITY_STRENGTH:
+		case SPRITE_TERMINAL_VELOCITY:
+		case SPRITE_CUSTOM_GRAVITY_STRENGTH:
+		case SPRITE_CUSTOM_TERMINAL_VELOCITY:
 		case SPRITE_FLIP:
 		case SPRITE_SCRIPT_FLIP:
 		case SPRITE_ENGINE_ANIMATE:
@@ -4092,7 +4164,7 @@ std::optional<int> get_register_ref_dependency(int reg)
 		case ITEMFAKEZ:
 		case ITEMFALLCLK:
 		case ITEMFALLCMB:
-		case ITEMFAMILY:
+		case ITEMTYPE:
 		case ITEMFLASH:
 		case ITEMFLASHCSET:
 		case ITEMFLIP:
@@ -4241,6 +4313,6 @@ std::optional<int> get_register_ref_dependency(int reg)
 
 bool has_register_dependency(int reg)
 {
-	return get_register_dependencies(reg).size() || get_register_ref_dependency(reg).has_value();
+	return register_dependencies[reg].size() || get_register_ref_dependency(reg).has_value();
 }
 

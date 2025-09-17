@@ -262,9 +262,13 @@ enum ItemType {
 	IC_NOTE                    = 277,
 	IC_REFILL                  = 278,
 	IC_LIFTGLOVE               = 279,
+	IC_GRAVITY_BOOTS           = 280,
+	IC_GRAVITY_UP_BOOTS        = 281,
+	IC_GRAVITY_DOWN_BOOTS      = 282,
+	IC_COOLDOWN_RING           = 283,
 
 	//Itemclasses not less than this are reserved for future engine itemclasses
-	IC_MAXUSABLE               = 280,
+	IC_MAXUSABLE               = 284,
 
 	IC_MAX                     = 512 //Last of enum. All itemclassesare < this.
 };
@@ -377,14 +381,8 @@ class itemdata {
 	internal const int ID;
 
 	// @value [enum ItemType]
-	// @zasm_var IDATAFAMILY
+	// @zasm_var IDATATYPE
 	internal int Type;
-
-	// Exactly the same as [Type] - use that instead.
-	//
-	// @value [enum ItemType]
-	// @zasm_var IDATAFAMILY
-	internal int Family;
 
 	// @zasm_var IDATALEVEL
 	internal int Level;
@@ -505,6 +503,11 @@ class itemdata {
 	//
 	// @zasm_var IDATACOSTCOUNTER2
 	internal int CostCounter2;
+
+	// After using the item, it goes on cooldown unable to be used again for this many frames.
+	//
+	// @zasm_var IDATACOOLDOWN
+	internal int Cooldown;
 
 	// The number of max hearts required to pick up the item.
 	//
@@ -963,4 +966,9 @@ class itemdata {
 	//   POP REFITEMCLASS
 	//   RUNITEMSCRIPT D2
 	internal void RunScript(int mode = ISCR_PERPETUAL);
+
+	// @soft_deprecated Exactly the same as [Type], use that instead.
+	// @value [enum ItemType]
+	// @zasm_var IDATATYPE
+	internal int Family;
 }

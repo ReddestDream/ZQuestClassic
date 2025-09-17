@@ -57,7 +57,7 @@ extern int region_num_rpos;
 		  the viewport bounds to the edges. This behavior is modified by `viewport_mode`, which
 		  can be modified by scripts via `Viewport->`
 		- the top-left screen is loaded as `cur_screen` / `origin_scr`
-        - `hero_screen` / `hero_scr` is the screen where the hero currently is, and updates as the
+        - `Hero.current_screen` / `hero_scr` is the screen where the hero currently is, and updates as the
 		  player moves around.
 */
 struct region_t
@@ -174,7 +174,8 @@ int get_current_region_id();
 bool is_in_current_region(int map, int screen);
 bool is_in_current_region(int screen);
 bool is_in_current_region(mapscr* scr);
-bool is_in_scrolling_region(int screen);
+// Returns true if the screen is inside the region currently being scrolled away from (scrolling_region).
+bool is_in_screenscrolling_region(int screen);
 void calculate_region(int map, int screen, region_t& region, int& region_scr_dx, int& region_scr_dy);
 void load_region(int dmap, int screen);
 // Returns a rpos_handle of the top-left position for every valid
@@ -184,13 +185,14 @@ void load_region(int dmap, int screen);
 std::tuple<const rpos_handle_t*, int> get_current_region_handles();
 std::tuple<const rpos_handle_t*, int> get_current_region_handles(mapscr* scr);
 void mark_current_region_handles_dirty();
+void delete_temporary_screens(mapscr** screens);
 void clear_temporary_screens();
 std::vector<mapscr*> take_temporary_scrs();
 void calculate_viewport(viewport_t& viewport, int dmap, int screen, int world_w, int world_h, int x, int y);
 sprite* get_viewport_sprite();
 void set_viewport_sprite(sprite* spr);
 void update_viewport();
-void update_heroscr();
+viewport_t get_sprite_freeze_rect();
 mapscr* determine_hero_screen_from_coords();
 bool edge_of_region(direction dir);
 int get_screen_for_world_xy(int x, int y);
@@ -270,16 +272,16 @@ int32_t MAPCOMBOFLAGL(int32_t layer,int32_t x,int32_t y);
 std::optional<ffc_handle_t> getFFCAt(int32_t x, int32_t y);
 void eventlog_mapflags();
 
-void setmapflag(mapscr* scr, int32_t flag);
-void setmapflag_homescr(int32_t flag);
-void setmapflag_mi(int32_t mi, int32_t flag);
-void setmapflag_mi(mapscr* scr, int32_t mi, int32_t flag);
-void unsetmapflag_mi(mapscr* scr, int32_t mi, int32_t flag, bool anyflag=false);
-void unsetmapflag_mi(int32_t mi, int32_t flag, bool anyflag=false);
-void unsetmapflag_home(int32_t flag = 32,bool anyflag = false);
-void unsetmapflag(mapscr* scr, int32_t flag, bool anyflag = false);
-bool getmapflag(int32_t screen, int32_t flag);
-bool getmapflag(mapscr* scr, int32_t flag);
+void setmapflag(mapscr* scr, uint32_t flag);
+void setmapflag_homescr(uint32_t flag);
+void setmapflag_mi(int32_t mi, uint32_t flag);
+void setmapflag_mi(mapscr* scr, int32_t mi, uint32_t flag);
+void unsetmapflag_mi(mapscr* scr, int32_t mi, uint32_t flag, bool anyflag=false);
+void unsetmapflag_mi(int32_t mi, uint32_t flag, bool anyflag=false);
+void unsetmapflag_home(uint32_t flag = 32,bool anyflag = false);
+void unsetmapflag(mapscr* scr, uint32_t flag, bool anyflag = false);
+bool getmapflag(int32_t screen, uint32_t flag);
+bool getmapflag(mapscr* scr, uint32_t flag);
 
 void setxmapflag(int32_t screen, uint32_t flag);
 void setxmapflag_mi(int32_t mi, uint32_t flag);
@@ -380,8 +382,6 @@ void trigger_secrets_for_screen_internal(const std::array<screen_handle_t, 7>& s
 void update_freeform_combos();
 void update_slopes();
 bool trigger_secrets_if_flag(int32_t x, int32_t y, int32_t flag, bool setflag);
-bool hitcombo(int32_t x, int32_t y, int32_t combotype, byte layers = 0b0000001);
-int gethitcombo(int32_t x, int32_t y, int32_t combotype, byte layers = 0b0000001);
 bool hitflag(int32_t x, int32_t y, int32_t flagtype, byte layers = 0b0000001);
 optional<int> nextscr(int screen, int dir);
 optional<int> nextscr_mi(int mi, int dir);

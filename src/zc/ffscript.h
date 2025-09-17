@@ -518,7 +518,10 @@ void register_existing_script_array(script_array* array);
 std::vector<script_array*> get_script_arrays();
 script_array* checkArray(uint32_t id, bool skipError = false);
 
-int32_t run_script_int(bool is_jitted);
+int32_t run_script_jit_sequence(JittedScriptInstance* j_instance, int32_t pc, uint32_t sp, int32_t count);
+int32_t run_script_jit_one(JittedScriptInstance* j_instance, int32_t pc, uint32_t sp);
+int32_t run_script_jit_until_call_or_return(JittedScriptInstance* j_instance, int32_t pc, uint32_t sp);
+int32_t run_script_int(JittedScriptInstance* j_instance = nullptr);
 
 void clearConsole();
 
@@ -1458,7 +1461,9 @@ enum __Error
         _OutOfBounds, //library array out of bounds
         _InvalidSpriteUID //bad npc, ffc, etc.
     };
-    
+
+	static void release_sprite_owned_objects(int32_t sprite_id);
+	static void destroySprite(sprite* sprite);
 	static void destroyScriptableObject(ScriptType scriptType, const int32_t UID);
 	static void destroyScriptableObjectsOfType(ScriptType scriptType);
 	static void deallocateAllScriptOwned(ScriptType scriptType, const int32_t UID);
@@ -1485,7 +1490,7 @@ void do_set(int reg, int value);
 int32_t run_script(ScriptType type, word script, int32_t i = -1); //Global scripts don't need 'i'
 int32_t ffscript_engine(const bool preload);
 
-int32_t get_own_i(ScriptType type);
+sprite* get_own_sprite(ScriptType type);
 
 void deallocateArray(const int32_t ptrval);
 void clearScriptHelperData();
@@ -1728,16 +1733,6 @@ public:
 		return checkBounds(pos, 0, MAXCOMBOS-1);
 	}
 	
-	static INLINE int32_t checkMisc(const int32_t a)
-	{
-		return checkBounds(a, 0, 15);
-	}
-	
-	 static INLINE int32_t checkMisc32(const int32_t a)
-	{
-		return checkBounds(a, 0, 31);
-	}
-	
 	static INLINE int32_t checkMessage(const int32_t ID)
 	{
 		return checkBounds(ID, 0, msg_strings_size-1);
@@ -1832,6 +1827,17 @@ public:
 
 		return _NoError;
 	}
+
+	static INLINE int32_t checkIndex2OneIndex(int32_t n, int32_t len)
+	{
+		if(n <= 0 || n > len)
+		{
+			scripting_log_error_with_context("Invalid index: {} - must be > 0 and <= {}", n, len);
+			return _OutOfBounds;
+		}
+
+		return _NoError;
+	}
 	
 	static INLINE int32_t checkBoundsPos(const int32_t n, const int32_t boundlow, const int32_t boundup)
 	{
@@ -1880,9 +1886,9 @@ public:
 
 struct ScriptEngineData {
 	refInfo ref;
-	int32_t stack[MAX_SCRIPT_REGISTERS];
-	bounded_vec<word, int32_t> ret_stack {65535};
-	std::unique_ptr<JittedScriptHandle> jitted_script;
+	int32_t stack[MAX_STACK_SIZE];
+	int32_t ret_stack[MAX_CALL_FRAMES];
+	std::shared_ptr<JittedScriptInstance> j_instance;
 	// This is used as a boolean for all but ScriptType::Item.
 	byte doscript = true;
 	bool waitdraw;
@@ -1891,7 +1897,7 @@ struct ScriptEngineData {
 	void clear_ref()
 	{
 		ref.Clear();
-		jitted_script = {};
+		j_instance = {};
 		initialized = false;
 	}
 
@@ -1899,7 +1905,7 @@ struct ScriptEngineData {
 	{
 		// No need to zero the stack.
 		ref = refInfo();
-		jitted_script = {};
+		j_instance = {};
 		doscript = true;
 		waitdraw = false;
 		initialized = false;
@@ -1919,10 +1925,12 @@ extern int32_t flagval;
 void clear_ornextflag();
 void ornextflag(bool flag);
 
-int32_t get_mi();
+int32_t get_mi(int32_t);
+int32_t get_mi(mapdata const&);
 int32_t get_total_mi();
 int get_mouse_state(int index);
 
 bool pc_overflow(dword pc, bool print_err = true);
+bool check_stack(uint32_t sp);
 
 #endif

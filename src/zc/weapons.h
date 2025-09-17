@@ -32,11 +32,19 @@ private:
     
 	optional<byte> _handle_loadsprite(optional<byte> spr, bool isDummy = false, bool force = false);
 	optional<byte> _ewpn_sprite(int parentid) const;
+	
+	bool _prism_dupe(zfix newx, zfix newy, rpos_t cpos, int tdir);
+	bool _mirror_refl(zfix newx, zfix newy, rpos_t cpos, newcombo const& mirror_cmb);
 public:
 	void load_weap_data(weapon_data const& data, optional<byte>* out_wpnspr = nullptr);
     void setAngle(double angletoset);
     void doAutoRotate(bool dodir = false, bool doboth = false);
-    int32_t power,type,dead,clk2,misc2;
+    int32_t power,dead,clk2,misc2;
+    // The level (or "sub-type") of the weapon.
+    // Each weapon type (sprite::id) uses this differently (and some not at all).
+    // For weapons created by an item, it's the item level.
+    // For fireballs, the first bit is the "boss fireball" flag.
+    int32_t level;
 	rpos_t ignorecombo;
     bool isLit; //if true, this weapon is providing light to the current screen
     int32_t parentid, //Enemy who created it
@@ -48,7 +56,6 @@ public:
     int32_t o_speed, o_type, frames, o_flip, ref_o_tile;
 	byte script_wrote_otile;
     int32_t temp1;
-    bool behind;
     bool autorotate;
 	byte linkedItem;
 	byte unblockable;
@@ -137,6 +144,7 @@ public:
     weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t Type,int32_t pow,int32_t Dir, int32_t Parentid, int32_t prntid, bool isDummy=false, byte script_gen=0, byte isLW=0, byte special = 0, int32_t Linked_Parent = 0, int32_t use_sprite = -1, bool autoRotate = false);
     weapon(zfix X,zfix Y,zfix Z,int32_t Id,int32_t usesprite, int32_t Dir, int32_t step, int32_t prntid, int32_t height, int32_t width, int32_t a, int32_t b, int32_t c, int32_t d, int32_t e, int32_t f, int32_t g);
     virtual ~weapon();
+	bool do_mirror(); // returns true if animate needs to early-break
     void eweapon_overrides();
     void cleanup_sfx();
 	void reset_wgrids();
@@ -163,7 +171,10 @@ public:
     virtual bool hit(sprite *s);
     virtual bool hit(int32_t tx,int32_t ty,int32_t tz,int32_t txsz,int32_t tysz,int32_t tzsz);
 	virtual bool hit(int32_t tx,int32_t ty,int32_t txsz,int32_t tysz);
+	void animate_graphics();
+	virtual bool can_drawshadow() const;
     virtual void draw(BITMAP *dest);
+    virtual void drawshadow(BITMAP *dest, bool translucent);
     virtual void update_weapon_frame(int32_t change, int32_t orig);
 	virtual int32_t run_script(int32_t mode);
 	virtual ALLEGRO_COLOR hitboxColor(byte opacity = 255) const;

@@ -10,7 +10,7 @@ Function #0 (run_none-0)
     8: PEEK            D4
     9: PUSHV           12
    10: GOTO            18                           [Call Function #3]
-   11: PEEK            D4
+   11: POP             D4
    12: LOAD            LINKX            0
    13: QUIT
 

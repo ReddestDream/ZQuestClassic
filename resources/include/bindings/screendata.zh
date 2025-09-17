@@ -16,8 +16,8 @@ enum WipeEffect
 // Determines how to interpret coordinates given to [Screen] draw functions.
 enum DrawOrigin
 {
-	// Equal to [DRAW_ORIGIN_REGION], unless in a scrolling region (or scrolling to/from one), in which
-	// case this is equal to [DRAW_ORIGIN_PLAYING_FIELD].
+	// When in a scrolling region (or scrolling to/from one), this is equal to [DRAW_ORIGIN_REGION].
+	// Otherwise, this is equal to [DRAW_ORIGIN_PLAYING_FIELD].
 	DRAW_ORIGIN_DEFAULT = 0L,
 	// The origin `(0, 0)` is the top-left pixel of the playing field (where screen combos are drawn).
 	// Normally, this is just below the passive subscreen. But in extended height mode,
@@ -163,6 +163,7 @@ enum ScreenFlag
 	SFL_ENEMIES_ITEM = 1, // Killing enemies spawns screen item.
 	SFL_ENEMIES_SECRETS = 15, // Enemies->Secrets.
 	SFL_ENEMIES_SECRETS_PERM = 28, // Enemies->Secrets (perm).
+	SFL_ENEMIES_STAY_DEAD = 71, // Enemies->Stay Dead - once all enemies are killed they will not respawn again
 	SFL_ENEMIES_CHAIN_TRIGGERS = 70, // Chain 'Enemies->' Triggers.
 	SFL_TRAPS_IGNORE_SOLID = 14, // Traps Ignore Solidity.
 	SFL_ENEMIES_LEADER = 85, // Ringleader. The first enemy listed in the screen's enemy list will be a 'Ringleader'. When this enemy dies, all other enemies will die.
@@ -184,6 +185,9 @@ enum ScreenFlag
 	SFL_SCRIPT_3 = 58,
 	SFL_SCRIPT_4 = 59,
 	SFL_SCRIPT_5 = 60,
+	
+	// Gravity
+	SFL_CUSTOM_GRAV = 74, // use screen-specific [screendata::GravityStrength|Gravity Strength] and [screendata::TerminalVelocity|Terminal Velocity]
 };
 
 // Screen Flag groups, used with [Screen->Flags].
@@ -577,6 +581,16 @@ class screendata {
 	// @zasm_var SCREENEFLAGSD
 	internal const int EFlags[];
 
+	// If [SFL_CUSTOM_GRAV] is set, this gravity applies on the screen.
+	//
+	// @zasm_var SCREENDATA_GRAVITY_STRENGTH
+	internal int GravityStrength;
+
+	// If [SFL_CUSTOM_GRAV] is set, this terminal velocity applies on the screen.
+	//
+	// @zasm_var SCREENDATA_TERMINAL_VELOCITY
+	internal int TerminalVelocity;
+
 	// The special room type.
 	//
 	// This only refers to the screen denoted by [Index].
@@ -786,25 +800,49 @@ class screendata {
 	//
 	// @zasm_var SCREENDATACSENSITIVE
 	internal int CSensitive;
-
-	// Which parts of the screen state that won't reset on reentry.
+	
+	// Which parts of the screen state that won't reset via 'Reset Room' combos.
 	//
+	// @index [enum ScreenState]
+	// @zasm_var SCREENDATANORESETARR
+	internal bool NoResetState[];
+	
+	// Which parts of the screen state that won't reset via 'Reset Room' combos.
+	//
+	// @deprecated Use [NoResetState] instead!
 	// @value [enum NoResetBitflags]
 	// @zasm_var SCREENDATANORESET
 	internal int NoReset;
+	
+	// For screen state carryovers, which parts of the screen state that won't carry over to the
+	// target screen.
+	//
+	// @index [enum ScreenState]
+	// @zasm_var SCREENDATANOCARRYARR
+	internal bool NoCarryState[];
 
 	// For screen state carryovers, which parts of the screen state that won't carry over to the
 	// target screen.
 	//
+	// @deprecated Use [NoCarryState] instead!
 	// @value [enum NoCarryBitflags]
 	// @zasm_var SCREENDATANOCARRY
 	internal int NoCarry;
+	
+	// Which of the 32 ExStates should be carried over to the target screen
+	//
+	// @zasm_var SCREENDATAEXCARRY
+	internal bool ExStateCarry[];
+	
+	// Which of the 32 ExStates should be reset by 'Reset Room' combos
+	//
+	// @zasm_var SCREENDATAEXRESET
+	internal bool ExStateReset[];
 
 	// The Map IDs used by screen layers 1 through 6, represented as [1] through
 	// [6].
 	//
-	// Index [0] does nothing, and trying to access it will report an error to
-	// the log.
+	// This array is 1-indexed, so index [0] does nothing and is invalid to access.
 	//
 	// This only refers to the screen denoted by [Index].
 	//
@@ -814,8 +852,7 @@ class screendata {
 	// The Screen IDs used by screen layers 1 through 6, represented as [1]
 	// through [6].
 	//
-	// Index [0] does nothing, and trying to access it will report an error to
-	// the log.
+	// This array is 1-indexed, so index [0] does nothing and is invalid to access.
 	//
 	// This only refers to the screen denoted by [Index].
 	//
@@ -826,8 +863,7 @@ class screendata {
 	//
 	// Valid layers are 1 through 6, represented as [1] through [6].
 	//
-	// Index [0] does nothing, and trying to access it will report an error to
-	// the log.
+	// This array is 1-indexed, so index [0] does nothing and is invalid to access.
 	//
 	// @zasm_var SCREENDATALAYEROPACITY
 	internal int LayerOpacity[];

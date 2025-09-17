@@ -39,9 +39,9 @@ protected:
 	std::shared_ptr<GUI::MiscColorSel> col_sel[6];
 	std::shared_ptr<GUI::MiscCSetSel> cs_sel[3];
 	std::shared_ptr<GUI::SelTileSwatch> tswatches[2];
-	std::shared_ptr<GUI::DropDownList> ddl;
+	std::shared_ptr<GUI::DropDownList> ddls[2];
 	std::shared_ptr<GUI::TextField> fonttf;
-	std::shared_ptr<GUI::Label> labels[5];
+	std::shared_ptr<GUI::Label> labels[6];
 	std::shared_ptr<GUI::TextField> tfs[3];
 	std::shared_ptr<GUI::Checkbox> cbs[4];
 	
@@ -70,10 +70,12 @@ protected:
 	
 	GUI::ListData list_font, list_shadtype, list_aligns, list_buttons, list_items,
 		list_counters, list_counters2, list_itemclass, list_genscr, list_sfx,
-		list_costinds, list_items_no_none, list_reqitems, list_reqnotitems;
+		list_costinds, list_items_no_none, list_reqitems, list_reqnotitems,
+		list_buttons_none;
 	
 	void updateSelectable();
 	void updateAttr();
+	void updatePreview();
 	void updateColors();
 	void updateConditions();
 	void update_wh();

@@ -24,17 +24,30 @@ struct save_t
 	gamedata* game;
 
 	save_t() = default;
-	save_t(save_t&& other): path(other.path), header(other.header), game(other.game)
+	save_t(save_t&& other) noexcept
+	  : index(other.index),
+		error_time(other.error_time),
+		did_error(other.did_error),
+		path(std::move(other.path)),
+		write_to_disk(other.write_to_disk),
+		header(other.header),
+		game(other.game)
 	{
-		other.path = "";
 		other.header = nullptr;
 		other.game = nullptr;
 	}
 	save_t& operator=(save_t&& other)
 	{
-		std::swap(this->path, other.path);
-		std::swap(this->header, other.header);
-		std::swap(this->game, other.game);
+		if (this != &other)
+		{
+			std::swap(this->index, other.index);
+			std::swap(this->error_time, other.error_time);
+			std::swap(this->did_error, other.did_error);
+			std::swap(this->path, other.path);
+			std::swap(this->write_to_disk, other.write_to_disk);
+			std::swap(this->header, other.header);
+			std::swap(this->game, other.game);
+		}
 		return *this;
 	}
 	save_t(const save_t&) = delete;
@@ -52,6 +65,8 @@ void saves_unselect();
 void saves_unload(int32_t index);
 int32_t saves_count();
 int32_t saves_current_selection();
+std::string saves_current_path();
+int saves_find_index(std::string path);
 expected<save_t*, std::string> saves_create_slot(gamedata* game, fs::path path = "", bool write_to_disk = true);
 expected<save_t*, std::string> saves_create_slot(fs::path path, bool write_to_disk = true);
 expected<bool, std::string> saves_update_slot(save_t* save, std::string qstpath);

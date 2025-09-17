@@ -196,7 +196,7 @@ void dosubscr()
 		bool can_btn = !subscr_pg_animating;
 		if(can_btn)
 		{
-			byte btn_press = getIntBtnInput(0xFF, true, false, false, false, legacy_btn_press_peek);
+			byte btn_press = getIntBtnInput(0xFF, INPUT_PRESS | (legacy_btn_press_peek ? INPUT_PEEK : 0));
 			int32_t pos = pg.cursor_pos;
 			
 			if(rUp())         pg.move_cursor(SEL_UP);
@@ -595,7 +595,7 @@ void markBmap(int32_t dir, int32_t sc)
 }
 void markBmap()
 {
-	markBmap(-1, hero_screen);
+	markBmap(-1, Hero.current_screen);
 }
 
 void put_passive_subscr(BITMAP *dest,int32_t x,int32_t y,bool showtime,int32_t pos2)

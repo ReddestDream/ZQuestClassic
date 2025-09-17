@@ -31,7 +31,7 @@ from pathlib import Path
 
 from common import ZCTestCase
 
-ZSCRIPT_DATABASE_COMMIT = '68f3d886d7fd929038deb729f38c440ed0250fc0'
+ZSCRIPT_DATABASE_COMMIT = '8b448930ffa8665816114ad88bb61b38bdcfc4e5'
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -130,7 +130,7 @@ def intuit_imports(database_dir: Path, script_path: Path):
         include_paths.append(database_dir / '00284-linkmovement-zh')
 
     if re.search(
-        r'GetCurrentItem|freezeScreen|debugValue|moveLink', code, re.IGNORECASE
+        r'GetCurrentItem|freezeScreen|debugValue|moveLink', code
     ):
         imports.append(test_scripts_dir / 'compat/stdExtra.zh')
         include_paths.append(test_scripts_dir / 'compat')
@@ -339,6 +339,31 @@ class TestZScriptDatabase(ZCTestCase):
         header += f'Failures:\n'
         header += '\t' + '\n\t'.join(failures) + '\n\n'
         result = header + result
+
+        # print('failing w/ missing return value:')
+        # missing_returns = []
+        # for script_path, (returncode, output) in result_dict.items():
+        #     success = returncode == 0 and 'Success!' in output
+        #     if not success and 'must return a value' in output:
+        #         import json
+
+        #         meta_path = script_path.with_name('meta.json')
+        #         while not meta_path.exists():
+        #             meta_path = meta_path.parent.with_name('meta.json')
+        #         meta = json.loads(meta_path.read_text())
+        #         downloads = meta.get('downloads') or 'fail'
+        #         if not downloads[0].isdigit():
+        #             meta['downloads'] = 0
+        #         missing_returns.append((script_path, meta))
+
+        # missing_returns.sort(key=lambda x: -int(x[1].get('downloads', 0)))
+
+        # for script_path, meta in missing_returns:
+        #     url = meta.get('source')
+        #     downloads = meta.get('downloads', 0)
+        #     author = meta.get('author', '?')
+        #     path = script_path.relative_to(database_dir)
+        #     print(f'(url: {url}, downloads: {downloads}, author: {author}) {path}')
 
         expected_path = root_dir / 'tests/snapshots/zscript_database_expected.txt'
         self.expect_snapshot(expected_path, result, args.update)

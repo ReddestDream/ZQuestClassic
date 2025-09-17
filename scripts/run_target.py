@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 script_dir = Path(os.path.dirname(os.path.realpath(__file__)))
 root_dir = script_dir.parent
@@ -63,7 +63,7 @@ def _get_debug_method():
         except Exception as e:
             print_run_target(str(e))
             print_run_target(
-                'WARNING: lldb is installed, but could not import the Python extension'
+                'WARNING: lldb is installed, but could not import the Python extension. falling back to reading core file'
             )
             return False
 
@@ -88,7 +88,11 @@ def _get_debug_method():
         debugger_tool = 'gdb'
 
     if debugger_tool:
-        return {'method': DEBUG_METHOD_CORE, 'debugger': debugger_tool}
+        is_sudo = os.geteuid() == 0
+        if is_sudo:
+            return {'method': DEBUG_METHOD_CORE, 'debugger': debugger_tool}
+        else:
+            print_run_target('WARNING: must be in sudo mode to print core dump on crash')
 
     return {'method': DEBUG_METHOD_NONE}
 
@@ -128,7 +132,7 @@ def get_build_folder():
     return build_folder
 
 
-def _run(target_name: str, args: List, build_folder: Optional[str] = None):
+def _run(target_name: str, args: list, build_folder: Optional[str] = None):
     if not build_folder:
         build_folder = get_build_folder()
 
@@ -253,7 +257,7 @@ def _run(target_name: str, args: List, build_folder: Optional[str] = None):
     return p
 
 
-def run(target_name: str, args: List, build_folder: Optional[Path] = None, **kwargs):
+def run(target_name: str, args: list, build_folder: Optional[Path] = None, **kwargs):
     """
     Runs target (ex: zplayer, zeditor, zscript, zlauncher), from env.BUILD_FOLDER or the provided build_folder.
 
@@ -281,7 +285,7 @@ def run(target_name: str, args: List, build_folder: Optional[Path] = None, **kwa
 
 
 def check_run(
-    target_name: str, args: List, build_folder: Optional[Path] = None, **kwargs
+    target_name: str, args: list, build_folder: Optional[Path] = None, **kwargs
 ):
     """
     Same as run_target.run, but raises an exception on non-zero exit code.

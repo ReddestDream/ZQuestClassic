@@ -4,13 +4,11 @@
 #include "base/zdefs.h"
 #include "zc/ffscript.h"
 #include "zc/replay.h"
-#include "zc/zasm_utils.h"
 #include "zasm/table.h"
 #include "zasm/serialize.h"
 #include "zconsole/ConsoleLogger.h"
 #include <fmt/format.h>
 #include <fmt/ranges.h>
-#include <iomanip>
 #include <sstream>
 
 extern refInfo *ri;
@@ -99,6 +97,7 @@ void ScriptDebugHandle::update_file()
 
 		al_make_directory(dir.c_str());
 		file = al_fopen(path.c_str(), "w");
+		al_trace("[debug] writing zasm to %s\n", path.c_str());
 	}
 }
 
@@ -211,7 +210,7 @@ void ScriptDebugHandle::pre_command()
 		std::string line = script_debug_registers_and_stack_to_string();
 		util::replchar(line, '\n', ' ');
 
-		replay_step_comment(fmt::format("{} {} | {}", i, zasm_op_to_string(op), line));
+		replay_step_comment(fmt::format("pc: {} {} | {}", i, zasm_op_to_string(op), line));
 
 		if (command == COMPAREV || command == COMPARER)
 		{
@@ -255,7 +254,7 @@ int script_debug_is_runtime_debugging()
 
 std::string script_debug_registers_and_stack_to_string()
 {
-	extern int32_t (*stack)[MAX_SCRIPT_REGISTERS];
+	extern int32_t (*stack)[MAX_STACK_SIZE];
 
 	std::stringstream ss;
 
@@ -269,7 +268,7 @@ std::string script_debug_registers_and_stack_to_string()
 	ss << "stack:\t";
 	if (ri->sp > 0)
 	{
-		for (int i = 1023; i >= ri->sp; i--)
+		for (int i = MAX_STACK_SIZE-1; i >= ri->sp; i--)
 		{
 			ss << (*stack)[i] << " ";
 		}

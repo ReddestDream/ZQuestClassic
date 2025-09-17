@@ -1,6 +1,7 @@
 #ifndef ZDEFS_H_
 #define ZDEFS_H_
 
+#include "base/general.h"
 #define DEVLEVEL 0
 #define COLLECT_SCRIPT_ITEM_ZERO -32767
 
@@ -147,32 +148,32 @@ enum {ENC_METHOD_192B104=0, ENC_METHOD_192B105, ENC_METHOD_192B185, ENC_METHOD_2
 #define V_STRINGS         10
 #define V_MISC            16
 #define V_TILES            3 //2 is a int32_t, max 214500 tiles (ZScript upper limit)
-#define V_COMBOS          55
+#define V_COMBOS          60
 #define V_CSETS            6 //palette data
-#define V_MAPS            33
-#define V_DMAPS           22
+#define V_MAPS            36
+#define V_DMAPS           23
 #define V_DOORS            1
-#define V_ITEMS           63
+#define V_ITEMS           65
 #define V_WEAPONS          8
 #define V_COLORS           4 //Misc Colours
 #define V_ICONS            10 //Game Icons
 #define V_GRAPHICSPACK     1
-#define V_INITDATA        43
+#define V_INITDATA        46
 #define V_GUYS            54
 #define V_MIDIS            4
 #define V_CHEATS           1
-#define V_SAVEGAME        44
+#define V_SAVEGAME        47
 #define V_COMBOALIASES     5
 #define V_HEROSPRITES      16
-#define V_SUBSCREEN        14
+#define V_SUBSCREEN        15
 #define V_ITEMDROPSETS     2
 #define V_FFSCRIPT         28
 #define V_SFX              8
 #define V_FAVORITES        4
-#define V_ZINFO            4
+#define V_ZINFO            5
 
 // not 'real' sections, just separate version numbers
-#define V_COMPATRULE       82
+#define V_COMPATRULE       91
 #define V_WEAP_DATA        0
 
 //= V_SHOPS is under V_MISC
@@ -251,17 +252,17 @@ if(close_button_quit) \
 #define ZQ_CHEATS2       5
 #define ZQ_MAXDATA      20
 
-// lvlitems flags
-#define liTRIFORCE      0x01
-#define liMAP           0x02
-#define liCOMPASS       0x04
-#define liBOSS          0x08
-#define liBOSSKEY       0x10
-#define liCUSTOM01      0x20
-#define liCUSTOM02      0x40
-#define liCUSTOM03      0x80
+// lvlitems
+enum level_item
+{
+	li_mcguffin, li_map, li_compass, li_boss_killed,
+	li_boss_key, li_custom_01, li_custom_02, li_custom_03,
+	li_custom_04, li_custom_05, li_custom_06, li_custom_07,
+	li_custom_08, li_custom_09, li_custom_10, li_custom_11,
+	li_max
+};
 
-#define liALL           0xFF
+#define LI_ALL ((1 << li_max)-1)
 
 // sprite drawing flag bits
 #define sprdrawflagALWAYSOLDDRAWS 1
@@ -385,72 +386,72 @@ enum
 };
 
 // combo types
-//combo name strings come from defdata
+// combo name strings come from zinfo
 enum
 {
-    cNONE, cSTAIR, cCAVE, cWATER, cARMOS, 
+	cNONE, cSTAIR, cCAVE, cWATER, cARMOS,
 	//5
-	cGRAVE, cDOCK, cUNDEF, cPUSH_WAIT, cPUSH_HEAVY, 
+	cGRAVE, cDOCK, cUNDEF, cPUSH_WAIT, cPUSH_HEAVY,
 	//10
-	cPUSH_HW, cL_STATUE, cR_STATUE, cWALKSLOW, cCVUP, 
+	cPUSH_HW, cL_STATUE, cR_STATUE, cWALKSLOW, cCVUP,
 	//15
 	cCVDOWN, cCVLEFT, cCVRIGHT, cSWIMWARP, cDIVEWARP,
 	//20
-	cLADDERHOOKSHOT, cTRIGNOFLAG, cTRIGFLAG, cZELDA, cSLASH, 
+	cLADDERHOOKSHOT, cTRIGNOFLAG, cTRIGFLAG, cZELDA, cSLASH,
 	//25
-	cSLASHITEM, cPUSH_HEAVY2, cPUSH_HW2, cPOUND, cHSGRAB, 
+	cSLASHITEM, cPUSH_HEAVY2, cPUSH_HW2, cPOUND, cHSGRAB,
 	//30
-	cHSBRIDGE, cDAMAGE1, cDAMAGE2, cDAMAGE3, cDAMAGE4, 
+	cHSBRIDGE, cDAMAGE1, cDAMAGE2, cDAMAGE3, cDAMAGE4,
 	//35
-	cC_STATUE, cTRAP_H, cTRAP_V, cTRAP_4, cTRAP_LR, 
+	cC_STATUE, cTRAP_H, cTRAP_V, cTRAP_4, cTRAP_LR,
 	//40
-	cTRAP_UD, cPIT, cHOOKSHOTONLY, cOVERHEAD, cNOFLYZONE, 
+	cTRAP_UD, cPIT, cHOOKSHOTONLY, cOVERHEAD, cNOFLYZONE,
 	//45
 	cMIRROR, cMIRRORSLASH, cMIRRORBACKSLASH, cMAGICPRISM, cMAGICPRISM4,
 	//50
-	cMAGICSPONGE, cCAVE2, cEYEBALL_A, cEYEBALL_B, cNOJUMPZONE, 
+	cMAGICSPONGE, cCAVE2, cEYEBALL_A, cEYEBALL_B, cNOJUMPZONE,
 	//55
-	cBUSH, cFLOWERS, cTALLGRASS, cSHALLOWWATER, cLOCKBLOCK, 
+	cBUSH, cFLOWERS, cTALLGRASS, cSHALLOWWATER, cLOCKBLOCK,
 	//60
 	cLOCKBLOCK2, cBOSSLOCKBLOCK, cBOSSLOCKBLOCK2, cLADDERONLY, cBSGRAVE,
 	//65
-	cCHEST, cCHEST2, cLOCKEDCHEST, cLOCKEDCHEST2, cBOSSCHEST, 
+	cCHEST, cCHEST2, cLOCKEDCHEST, cLOCKEDCHEST2, cBOSSCHEST,
 	//70
-	cBOSSCHEST2, cRESET, cSAVE, cSAVE2, /*cVERTICAL,*/ cCAVEB, 
+	cBOSSCHEST2, cRESET, cSAVE, cSAVE2, /*cVERTICAL,*/ cCAVEB,
 	//75
-	cCAVEC, cCAVED, cSTAIRB, cSTAIRC, cSTAIRD, 
+	cCAVEC, cCAVED, cSTAIRB, cSTAIRC, cSTAIRD,
 	//80
-	cPITB, cPITC, cPITD, cCAVE2B, cCAVE2C, 
+	cPITB, cPITC, cPITD, cCAVE2B, cCAVE2C,
 	//85
-	cCAVE2D, cSWIMWARPB, cSWIMWARPC, cSWIMWARPD, cDIVEWARPB, 
+	cCAVE2D, cSWIMWARPB, cSWIMWARPC, cSWIMWARPD, cDIVEWARPB,
 	//90
-	cDIVEWARPC, cDIVEWARPD, cSTAIRR, cPITR, cAWARPA, 
+	cDIVEWARPC, cDIVEWARPD, cSTAIRR, cPITR, cAWARPA,
 	//95
-	cAWARPB, cAWARPC, cAWARPD, cAWARPR, cSWARPA, 
+	cAWARPB, cAWARPC, cAWARPD, cAWARPR, cSWARPA,
 	//100
-	cSWARPB, cSWARPC, cSWARPD, cSWARPR, cSTRIGNOFLAG, 
+	cSWARPB, cSWARPC, cSWARPD, cSWARPR, cSTRIGNOFLAG,
 	//105
-	cSTRIGFLAG, cSTEP, cSTEPSAME, cSTEPALL, cSTEPCOPY, 
+	cSTRIGFLAG, cSTEP, cSTEPSAME, cSTEPALL, cSTEPCOPY,
 	//110
-	cNOENEMY, cBLOCKARROW1, cBLOCKARROW2, cBLOCKARROW3, cBLOCKBRANG1, 
+	cNOENEMY, cBLOCKARROW1, cBLOCKARROW2, cBLOCKARROW3, cBLOCKBRANG1,
 	//115
-	cBLOCKBRANG2, cBLOCKBRANG3, cBLOCKSBEAM, cBLOCKALL, cBLOCKFIREBALL, 
+	cBLOCKBRANG2, cBLOCKBRANG3, cBLOCKSBEAM, cBLOCKALL, cBLOCKFIREBALL,
 	//120
-	cDAMAGE5, cDAMAGE6, cDAMAGE7, cCHANGE/**DEPRECATED**/, cSPINTILE1, 
+	cDAMAGE5, cDAMAGE6, cDAMAGE7, cCHANGE/**DEPRECATED**/, cSPINTILE1,
 	//125
-	cSPINTILE2, cSCREENFREEZE, cSCREENFREEZEFF, cNOGROUNDENEMY, cSLASHNEXT, 
+	cSPINTILE2, cSCREENFREEZE, cSCREENFREEZEFF, cNOGROUNDENEMY, cSLASHNEXT,
 	//130
-	cSLASHNEXTITEM, cBUSHNEXT, cSLASHTOUCHY, cSLASHITEMTOUCHY, cBUSHTOUCHY, 
+	cSLASHNEXTITEM, cBUSHNEXT, cSLASHTOUCHY, cSLASHITEMTOUCHY, cBUSHTOUCHY,
 	//135
-	cFLOWERSTOUCHY, cTALLGRASSTOUCHY, cSLASHNEXTTOUCHY, cSLASHNEXTITEMTOUCHY, cBUSHNEXTTOUCHY, 
+	cFLOWERSTOUCHY, cTALLGRASSTOUCHY, cSLASHNEXTTOUCHY, cSLASHNEXTITEMTOUCHY, cBUSHNEXTTOUCHY,
 	//140
-	cEYEBALL_4, cTALLGRASSNEXT, cSCRIPT1, cSCRIPT2, cSCRIPT3, 
+	cEYEBALL_4, cTALLGRASSNEXT, cSCRIPT1, cSCRIPT2, cSCRIPT3,
 	//145
-	cSCRIPT4, cSCRIPT5, cSCRIPT6, cSCRIPT7, cSCRIPT8, 
+	cSCRIPT4, cSCRIPT5, cSCRIPT6, cSCRIPT7, cSCRIPT8,
 	//150
-	cSCRIPT9, cSCRIPT10, cSCRIPT11, cSCRIPT12, cSCRIPT13, 
+	cSCRIPT9, cSCRIPT10, cSCRIPT11, cSCRIPT12, cSCRIPT13,
 	//155
-	cSCRIPT14, cSCRIPT15, cSCRIPT16, cSCRIPT17, cSCRIPT18, 
+	cSCRIPT14, cSCRIPT15, cSCRIPT16, cSCRIPT17, cSCRIPT18,
 	//160
 	cSCRIPT19, cSCRIPT20, cTRIGGERGENERIC, cPITFALL, cSTEPSFX,
 	//165
@@ -460,106 +461,12 @@ enum
 	//175
 	cCUSTOMBLOCK, cSHOOTER, cSLOPE, cCUTSCENETRIG, cPUSHBLOCK,
 	//180
-	cICY, cMIRRORNEW, cCRUMBLE,
-    cMAX,
-	// ! potential new stuff that I might decide it is worth adding. 
-    //Five additional user script types, 
-    
-    //165
-    cDIG, cDIGNEXT, cDIGITEM, //Dig a hole, dig a hole.
-    
-      /* pot, or rock:
-		lift and slash combos need a 'break' sprite set in the combo editor. 
-		The lifted object also needs a 'damage enemies' value, so that when thrown
-		it makes an lweapon. The leweapon type, and damage should be inputs
-		in the combo editor. -1 to damage means enemies ignore it. 
-		-1 to weapon means that itdoesn't generate a weapon.
-	
-		The default type should be LW_POT, which we need to add, or LW_ROCK. 
-		We should add both of these. 
-		
-		These should also include a break sound, a throw sound, and possibly other
-		attributes such as throw distance. Sideview behaviour must be very carefully 
-		defined. -Z
-		
-	*/
-    //168
-    //normal (use undercombo), lift and generate drop item, lift and generate special item (screen item)
-    cLIFT, cLIFTITEM, cLIFTSPECITER, 
-    //171
-    //lift and show next combo, same plus item drop, same with room item
-    cLIFTNEXT, cLIFTNEXTITEM, cLIFTNEXTSPECITEM,
-    //174
-    //lift or slash (do not change combo; use undercombo), ...and make drop item, ...and make room item
-    cLIFTSLASH, cLIFTSLAHITEM, cLIFTSLASHSPECITEM, 
-    //177
-    //lift or shash, then change the combo at its position to the 'next combo', ...
-	//...and make drop, ...and make screen room item
-    cLIFTSLASHNEXT, cLIFTSLASHNEXTITEM, cLIFTSLASHNEXTSPECITEM, 
-    //180
-
-    cBREAKAWAYFLOOR, //as combo cycling to pit, but it makes a sound? Might be useful? 
-    //181
-    cFREEZEFFCONLY, //freezes only scripts
-    //182
-    // cSYS183, cSYS184, cSYS185, cSYS186, cSYS187, cSYS188, cSYS189, cSYS190,
-    // cSYS191, cSYS192, cSYS193, cSYS194, cSYS195, cSYS196, cSYS197, cSYS198, cSYS199, cSYS200, 
-    // cSYS201, cSYS202, cSYS203, cSYS204, cSYS205, cSYS206, cSYS207, cSYS208, cSYS209, cSYS210,
-    // cSYS211, cSYS212, cSYS213, cSYS214, cSYS215, cSYS216, cSYS217, cSYS218, cSYS219, cSYS220,
-    // cSYS221, cSYS222, cSYS223, cSYS224, cSYS225, cSYS226, cSYS227, cSYS228, cSYS229, cSYS230, 
-    // cSYS231, cSYS232, cSYS233, cSYS234, cSYS235, cSYS236, cSYS237, cSYS238, cSYS239, cSYS240, 
-    // cSYS241, cSYS242, cSYS243, cSYS244, cSYS245, cSYS246, cSYS247, cSYS248, cSYS249, cSYS250,
-    // cSYS251, cSYS252, cSYS253, cSYS254,
-    //Should be 255
-    cEXPANDED=255, //Set to this, and then select an expansion[0] type for the 'oombo editor'.
-    
-    //2.54, these would need filepack changes. Needs V_COMBOS.
-    cMAX250 //Old max, to make filepack handling easier. 
-    
-    //These need to be in a new, index of expansion[]. 
-    //Let's use expansion[0] for now. 
-    
-    //cMAX
+	cICY, cMIRRORNEW, cCRUMBLE, cCUTSCENEEFFECT,
+	cMAX
 };
 
 #define PITFALL_FALL_FRAMES 70
 #define WATER_DROWN_FRAMES 64
-
-//Combo editor and additional system combos for combo type 'expanded'.
-
-//We could also change .type from a byte to a word, and typecast (byte)combo.type for old quests. 
-//That would make 2.50 exporting harder, though. 
-enum 
-{
-	cUSER000, cUSER001, cUSER002, cUSER003, cUSER004, cUSER005, cUSER006, cUSER007, cUSER008, cUSER009,
-    cUSER010, cUSER011, cUSER012, cUSER013, cUSER014, cUSER015, cUSER016, cUSER017, cUSER018, cUSER019,
-    cUSER020, cUSER021, cUSER022, cUSER023, cUSER024, cUSER025, cUSER026, cUSER027, cUSER028, cUSER029,
-    cUSER030, cUSER031, cUSER032, cUSER033, cUSER034, cUSER035, cUSER036, cUSER037, cUSER038, cUSER039,
-    cUSER040, cUSER041, cUSER042, cUSER043, cUSER044, cUSER045, cUSER046, cUSER047, cUSER048, cUSER049,
-    cUSER050, cUSER051, cUSER052, cUSER053, cUSER054, cUSER055, cUSER056, cUSER057, cUSER058, cUSER059,
-    cUSER060, cUSER061, cUSER062, cUSER063, cUSER064, cUSER065, cUSER066, cUSER067, cUSER068, cUSER069,
-    cUSER070, cUSER071, cUSER072, cUSER073, cUSER074, cUSER075, cUSER076, cUSER077, cUSER078, cUSER079,
-    cUSER080, cUSER081, cUSER082, cUSER083, cUSER084, cUSER085, cUSER086, cUSER087, cUSER088, cUSER089,
-    cUSER090, cUSER091, cUSER092, cUSER093, cUSER094, cUSER095, cUSER096, cUSER097, cUSER098, cUSER099,
-    cUSER100, cUSER101, cUSER102, cUSER103, cUSER104, cUSER105, cUSER106, cUSER107, cUSER108, cUSER109,
-    cUSER110, cUSER111, cUSER112, cUSER113, cUSER114, cUSER115, cUSER116, cUSER117, cUSER118, cUSER119,
-    cUSER120, cUSER121, cUSER122, cUSER123, cUSER124, cUSER125, cUSER126, cUSER127,
-    
-    cSYSTEM000, cSYSTEM001, cSYSTEM002, cSYSTEM003, cSYSTEM004, cSYSTEM005, cSYSTEM006, cSYSTEM007, cSYSTEM008, cSYSTEM009,
-    cSYSTEM010, cSYSTEM011, cSYSTEM012, cSYSTEM013, cSYSTEM014, cSYSTEM015, cSYSTEM016, cSYSTEM017, cSYSTEM018, cSYSTEM019,
-    cSYSTEM020, cSYSTEM021, cSYSTEM022, cSYSTEM023, cSYSTEM024, cSYSTEM025, cSYSTEM026, cSYSTEM027, cSYSTEM028, cSYSTEM029,
-    cSYSTEM030, cSYSTEM031, cSYSTEM032, cSYSTEM033, cSYSTEM034, cSYSTEM035, cSYSTEM036, cSYSTEM037, cSYSTEM038, cSYSTEM039,
-    cSYSTEM040, cSYSTEM041, cSYSTEM042, cSYSTEM043, cSYSTEM044, cSYSTEM045, cSYSTEM046, cSYSTEM047, cSYSTEM048, cSYSTEM049,
-    cSYSTEM050, cSYSTEM051, cSYSTEM052, cSYSTEM053, cSYSTEM054, cSYSTEM055, cSYSTEM056, cSYSTEM057, cSYSTEM058, cSYSTEM059,
-    cSYSTEM060, cSYSTEM061, cSYSTEM062, cSYSTEM063, cSYSTEM064, cSYSTEM065, cSYSTEM066, cSYSTEM067, cSYSTEM068, cSYSTEM069,
-    cSYSTEM070, cSYSTEM071, cSYSTEM072, cSYSTEM073, cSYSTEM074, cSYSTEM075, cSYSTEM076, cSYSTEM077, cSYSTEM078, cSYSTEM079,
-    cSYSTEM080, cSYSTEM081, cSYSTEM082, cSYSTEM083, cSYSTEM084, cSYSTEM085, cSYSTEM086, cSYSTEM087, cSYSTEM088, cSYSTEM089,
-    cSYSTEM090, cSYSTEM091, cSYSTEM092, cSYSTEM093, cSYSTEM094, cSYSTEM095, cSYSTEM096, cSYSTEM097, cSYSTEM098, cSYSTEM099,
-    cSYSTEM100, cSYSTEM101, cSYSTEM102, cSYSTEM103, cSYSTEM104, cSYSTEM105, cSYSTEM106, cSYSTEM107, cSYSTEM108, cSYSTEM109,
-    cSYSTEM110, cSYSTEM111, cSYSTEM112, cSYSTEM113, cSYSTEM114, cSYSTEM115, cSYSTEM116, cSYSTEM117, cSYSTEM118, cSYSTEM119,
-    cSYSTEM120, cSYSTEM121, cSYSTEM122, cSYSTEM123, cSYSTEM124, cSYSTEM125, cSYSTEM126, cSYSTEM127,
-    cEXPANDED_MAX	
-};
 
 #define lensflagSHOWHINTS = 0x0010;
 #define lensflagHIDESECRETS = 0x0020;
@@ -567,8 +474,7 @@ enum
 #define lensflagSHOWRAFTPATHS = 0x0800;
 #define lensflagSHOWINVISENEMIES = 0x1000;
 
-
-enum 
+enum
 {
 	USR_MIDI_DEATH, USR_MIDI_GAMEOVER, USR_MIDI_OVERWORLD, USR_MIDI_DUNGEON, USR_MIDI_LEVELNINE, USR_MIDI_MAX 
 	
@@ -862,7 +768,7 @@ enum defWpnSprite
 	wsLast
 };
 
-// phantom weapon types
+// phantom (wPhantom) weapon types
 enum
 {
     pDIVINEFIREROCKET, pDIVINEFIREROCKETRETURN, pDIVINEFIREROCKETTRAIL, pDIVINEFIREROCKETTRAILRETURN, pMESSAGEMORE,
@@ -1279,7 +1185,7 @@ struct guydata
     
     int16_t hp;
     
-    int16_t  family, cset, anim, e_anim, frate, e_frate;
+    int16_t  type, cset, anim, e_anim, frate, e_frate;
     int16_t  dp, wdp, weapon;
     
     int16_t  rate, hrate, step, homing, grumble, item_set;
@@ -1350,8 +1256,8 @@ struct guydata
 // For discussion: https://discord.com/channels/876899628556091432/1120883971950125147/1319734005871939615
 enum class DrawOrigin
 {
-	// Equal to `Region`, unless in a scrolling region (or scrolling to/from one), in which
-	// case this is equal to `PlayingField`.
+	// When in a scrolling region (or scrolling to/from one), this is equal to `Region`.
+	// Otherwise, this is equal to `PlayingField`.
 	Default,
 	// The origin `(0, 0)` is the top-left pixel of the playing field (where screen combos are drawn).
 	// Normally, this is just below the passive subscreen. But in extended height mode,
@@ -1387,8 +1293,7 @@ public:
 	dword pc; //current command offset
 	
 	int32_t d[8]; //d registers
-	uint32_t sp; //stack pointer for current script
-	dword wait_index; // nth WaitX instruction (0 being script entry) last execution stopped at. for jit only
+	uint32_t sp = MAX_STACK_SIZE; //stack pointer for current script
 	uint32_t retsp; //stack pointer for the return stack
 	
 	uint32_t ffcref;
@@ -1414,7 +1319,8 @@ public:
 	int32_t cmp_op1, cmp_op2; //cached compare operands
 	optional<int32_t> cmp_strcache;
 	std::set<uint32_t> stack_pos_is_object;
-	
+	bool overflow;
+
 	void Clear()
 	{
 		*this = refInfo();
@@ -1660,18 +1566,20 @@ struct ffscript
 	{
 		other.copy(*this);
 	}
-	ffscript(ffscript&& other) : vecptr(), strptr()
+	ffscript(ffscript&& other) : ffscript()
 	{
-		other.give(*this);
+		swap(other);
 	}
 	ffscript& operator=(ffscript const& other)
 	{
-		other.copy(*this);
+		ffscript temp(other);
+		swap(temp);
 		return *this;
 	}
-	ffscript& operator=(ffscript&& other)
+
+	ffscript& operator=(ffscript&& other) noexcept
 	{
-		other.give(*this);
+		swap(other);
 		return *this;
 	}
 	~ffscript()
@@ -1688,17 +1596,14 @@ struct ffscript
 		}
 	}
 	
-	void give(ffscript& other)
+	void swap(ffscript& other) noexcept
 	{
-		other.command = command;
-		other.arg1 = arg1;
-		other.arg2 = arg2;
-		other.arg3 = arg3;
-		other.vecptr = vecptr;
-		other.strptr = strptr;
-		vecptr = nullptr;
-		strptr = nullptr;
-		clear();
+		std::swap(command, other.command);
+        std::swap(arg1, other.arg1);
+        std::swap(arg2, other.arg2);
+        std::swap(arg3, other.arg3);
+        std::swap(vecptr, other.vecptr);
+        std::swap(strptr, other.strptr);
 	}
 	void clear()
 	{
@@ -1795,7 +1700,7 @@ struct zasm_script
 	// TODO: remove the necessity of this terminal command being here.
 	bool valid() const
 	{
-		return !zasm.empty() && zasm[0] != 0xFFFF;
+		return !zasm.empty() && zasm[0].command != 0xFFFF;
 	}
 };
 
@@ -2207,6 +2112,8 @@ extern void removeFromItemCache(int32_t itemclass);
 #define RUNSCRIPT_SELFDELETE	2
 #define RUNSCRIPT_STOPPED		3
 #define RUNSCRIPT_SELFREMOVE	4
+#define RUNSCRIPT_JIT_STACK_OVERFLOW 5
+#define RUNSCRIPT_JIT_CALL_LIMIT 6
 
 bool runscript_do_earlyret(int runscript_val);
 
@@ -2296,8 +2203,8 @@ std::string get_qr_hexstr(byte* qrs = NULL, bool hash = false, bool disctags = t
 bool clipboard_has_text();
 bool get_al_clipboard(std::string& clipboard);
 void set_al_clipboard(std::string const& clipboard);
-bool load_qr_hexstr(std::string hexstr);
-bool load_qr_hexstr_clipboard();
+bool load_qr_hexstr(std::string hexstr, byte* dest_ptr = nullptr);
+bool load_qr_hexstr_clipboard(byte* dest_ptr = nullptr);
 bool load_dev_info(std::string const& devstr);
 bool load_dev_info_clipboard();
 std::string generate_zq_about();

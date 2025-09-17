@@ -65,6 +65,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case GAMELKEYSD: return "Game->LKeys[]";
 		case GAMEENTRDMAP: return "Game->LastEntranceDMap";
 		case GAMEENTRSCR: return "Game->LastEntranceScreen";
+		case GAMELAYERZTHRESHOLDS: return "Game->LayerZThresholds[]";
 		case GAMELSWITCH: return "Game->LevelStates[]";
 		case LOADMAPDATA: return "Game->LoadMapData()";
 		case GAMEMCOUNTERD: return "Game->MCounter[]";
@@ -164,6 +165,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case HEROISWARPING: return "Hero->IsWarping";
 		case LINKITEMA: return "Hero->ItemA";
 		case LINKITEMB: return "Hero->ItemB";
+		case HEROITEMCOOLDOWN: return "Hero->ItemCooldown[]";
 		case LINKITEMJINX: return "Hero->ItemJinx";
 		case LINKITEMX: return "Hero->ItemX";
 		case LINKITEMY: return "Hero->ItemY";
@@ -271,6 +273,8 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SCREENDATAENEMY: return "Screen->Enemy[]";
 		case SCREENDATAENTRYX: return "Screen->EntryX";
 		case SCREENDATAENTRYY: return "Screen->EntryY";
+		case SCREENDATAEXCARRY: return "Screen->ExStateCarry[]";
+		case SCREENDATAEXRESET: return "Screen->ExStateReset[]";
 		case SCREENEXSTATED: return "Screen->ExState[]";
 		case SCREENDATAEXITDIR: return "Screen->ExitDir";
 		case SCREEN_FFCS: return "Screen->FFCs[]";
@@ -278,6 +282,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SCREENFLAGSD: return "Screen->Flags[]";
 		case SCREENDATAEXDOOR: return "Screen->GetExDoor()";
 		case GETRENDERTARGET: return "Screen->GetRenderTarget";
+		case SCREENDATA_GRAVITY_STRENGTH: return "Screen->GravityStrength";
 		case SCREENDATAGUY: return "Screen->Guy";
 		case SCREENDATAGUYCOUNT: return "Screen->GuyCount";
 		case SCREENDATAHASITEM: return "Screen->HasItem";
@@ -308,7 +313,9 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SCREENDATANEXTMAP: return "Screen->NextMap";
 		case SCREENDATANEXTSCREEN: return "Screen->NextScreen";
 		case SCREENDATANOCARRY: return "Screen->NoCarry";
+		case SCREENDATANOCARRYARR: return "Screen->NoCarryState[]";
 		case SCREENDATANORESET: return "Screen->NoReset";
+		case SCREENDATANORESETARR: return "Screen->NoResetState[]";
 		case EWPNCOUNT: return "Screen->NumEWeapons";
 		case ITEMCOUNT: return "Screen->NumItems";
 		case LWPNCOUNT: return "Screen->NumLWeapons";
@@ -340,6 +347,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SCREENDATASTAIRY: return "Screen->StairsY";
 		case SCREENSTATED: return "Screen->State[]";
 		case SCREENDATASTRING: return "Screen->String";
+		case SCREENDATA_TERMINAL_VELOCITY: return "Screen->TerminalVelocity";
 		case SCREENDATATILEWARPDMAP: return "Screen->TileWarpDMap[]";
 		case SCREENDATATILEWARPOVFLAGS: return "Screen->TileWarpOverlay[]";
 		case SCREENDATATWARPRETSQR: return "Screen->TileWarpReturnSquare[]";
@@ -381,6 +389,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case COMBODATTRISHORTS: return "combodata::Attrishorts[]";
 		case COMBODCSET: return "combodata::CSet2";
 		case COMBODCSET2FLAGS: return "combodata::CSet2Flags";
+		case COMBOD_DIVE_UNDER_LEVEL: return "combodata::DiveUnderLevel";
 		case COMBODEFFECT: return "combodata::Effect";
 		case COMBODFLAG: return "combodata::Flag";
 		case COMBODUSRFLAGARR: return "combodata::Flags[]";
@@ -468,6 +477,8 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case COMBODWALK: return "combodata::Walk";
 		case COMBOXR: return "combodata::X";
 		case COMBOYR: return "combodata::Y";
+		case COMBOD_Z_HEIGHT: return "combodata::ZHeight";
+		case COMBOD_Z_STEP_HEIGHT: return "combodata::ZStepHeight";
 		case CMBTRIGBOSSPAL: return "combotrigger::BossPal";
 		case CMBTRIGBUNNY: return "combotrigger::Bunny";
 		case CMBTRIGBUTTON: return "combotrigger::Button[]";
@@ -488,9 +499,14 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case CMBTRIGGERFAILPROMPTCID: return "combotrigger::FailPromptCombo";
 		case CMBTRIGGERFAILSTR: return "combotrigger::FailString";
 		case CMBTRIGFLAGS: return "combotrigger::Flags[]";
+		case CMBTRIGGERFORCEPLAYERDIR: return "combotrigger::ForceHeroDir";
+		case CMBTRIGGERICECOMBO: return "combotrigger::ForceIceCombo";
+		case CMBTRIGGERICEVX: return "combotrigger::ForceIceVx";
+		case CMBTRIGGERICEVY: return "combotrigger::ForceIceVy";
 		case CMBTRIGGTIMER: return "combotrigger::GStateTimer";
 		case CMBTRIGGENSCRIPT: return "combotrigger::GenScript";
 		case CMBTRIGGSTATE: return "combotrigger::GlobalState";
+		case CMBTRIGGER_GRAVITY: return "combotrigger::GravityStrength";
 		case CMBTRIGGERPLAYERBOUNCE: return "combotrigger::HeroBounce";
 		case CMBTRIGITEMJINX: return "combotrigger::ItemJinx";
 		case CMBTRIGLITEMS: return "combotrigger::LItems";
@@ -519,6 +535,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case CMBTRIGITEMPICKUP: return "combotrigger::SpawnItemPickup";
 		case CMBTRIGSTUN: return "combotrigger::Stun";
 		case CMBTRIGSWORDJINX: return "combotrigger::SwordJinx";
+		case CMBTRIGGER_TERMINAL_VELOCITY: return "combotrigger::TerminalVelocity";
 		case CMBTRIGTIMER: return "combotrigger::Timer";
 		case CMBTRIGTINTB: return "combotrigger::TintB";
 		case CMBTRIGTINTG: return "combotrigger::TintG";
@@ -539,6 +556,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case DMAPDATADISABLEDITEMS: return "dmapdata::DisabledItems[]";
 		case DMAPDATAFLAGS: return "dmapdata::Flags";
 		case DMAPDATAFLAGARR: return "dmapdata::Flagset[]";
+		case DMAPDATA_GRAVITY_STRENGTH: return "dmapdata::GravityStrength";
 		case DMAPDATAGRID: return "dmapdata::Grid[]";
 		case DMAPDATAID: return "dmapdata::ID";
 		case DMAPINITD: return "dmapdata::InitD[]";
@@ -566,6 +584,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case DMAPSCRIPT: return "dmapdata::Script";
 		case DMAPDATASIDEVIEW: return "dmapdata::Sideview";
 		case DMAPDATASUBINITD: return "dmapdata::SubInitD[]";
+		case DMAPDATA_TERMINAL_VELOCITY: return "dmapdata::TerminalVelocity";
 		case DMAPDATATYPE: return "dmapdata::Type";
 		case DROPSETCHANCES: return "dropsetdata::Chances[]";
 		case DROPSETITEMS: return "dropsetdata::Items[]";
@@ -604,7 +623,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case EWPNSTEP: return "eweapon::Step";
 		case EWPNTIMEOUT: return "eweapon::Timeout";
 		case EWPNTOTALDYOFFS: return "eweapon::TotalDYOffset";
-		case EWPNID: return "eweapon::Type";
+		case EWPNTYPE: return "eweapon::Type";
 		case EWEAPONSCRIPTUID: return "eweapon::UID";
 		case EWPNUNBL: return "eweapon::Unblockable";
 		case EWPNVX: return "eweapon::Vx";
@@ -646,6 +665,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case IDATACOLLECTFLAGS: return "itemdata::CollectFlags";
 		case IDATACOMBINE: return "itemdata::Combine";
 		case IDATACONSTSCRIPT: return "itemdata::ConstantScript";
+		case IDATACOOLDOWN: return "itemdata::Cooldown";
 		case IDATAMAGCOST: return "itemdata::Cost";
 		case IDATACOST2: return "itemdata::Cost2";
 		case IDATACOSTCOUNTER: return "itemdata::CostCounter";
@@ -703,7 +723,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case IDATATILEH: return "itemdata::TileHeight";
 		case IDATALTM: return "itemdata::TileMod";
 		case IDATATILEW: return "itemdata::TileWidth";
-		case IDATAFAMILY: return "itemdata::Type";
+		case IDATATYPE: return "itemdata::Type";
 		case IDATAFLAGUNUSED: return "itemdata::Unused";
 		case IDATAUSEBURNSPR: return "itemdata::UseBurnSprites";
 		case IDATAUSESOUND: return "itemdata::UseSound";
@@ -746,7 +766,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case ITEMPSTRINGFLAGS: return "itemsprite::PickupStringFlags";
 		case ITEMSPRITESCRIPT: return "itemsprite::Script";
 		case ITEMOVERRIDEFLAGS: return "itemsprite::SizeFlags";
-		case ITEMFAMILY: return "itemsprite::Type";
+		case ITEMTYPE: return "itemsprite::Type";
 		case ITEMSCRIPTUID: return "itemsprite::UID";
 		case LWPNASPEED: return "lweapon::ASpeed";
 		case LWPNANGLE: return "lweapon::Angle";
@@ -783,7 +803,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case LWPNSTEP: return "lweapon::Step";
 		case LWPNTIMEOUT: return "lweapon::Timeout";
 		case LWPNTOTALDYOFFS: return "lweapon::TotalDYOffset";
-		case LWPNID: return "lweapon::Type";
+		case LWPNTYPE: return "lweapon::Type";
 		case LWEAPONSCRIPTUID: return "lweapon::UID";
 		case LWPNUNBL: return "lweapon::Unblockable";
 		case LWPNVX: return "lweapon::Vx";
@@ -811,6 +831,8 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case MAPDATAENEMY: return "mapdata::Enemy[]";
 		case MAPDATAENTRYX: return "mapdata::EntryX";
 		case MAPDATAENTRYY: return "mapdata::EntryY";
+		case MAPDATAEXCARRY: return "mapdata::ExStateCarry[]";
+		case MAPDATAEXRESET: return "mapdata::ExStateReset[]";
 		case MAPDATAEXSTATED: return "mapdata::ExState[]";
 		case MAPDATAEXITDIR: return "mapdata::ExitDir";
 		case MAPDATAFFXDELTA2: return "mapdata::FFCAx[]";
@@ -834,6 +856,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case MAPDATAFLAGS: return "mapdata::Flags[]";
 		case MAPDATAEXDOOR: return "mapdata::GetExDoor()";
 		case MAPDATAINTID: return "mapdata::GetFFCInitD()";
+		case MAPDATA_GRAVITY_STRENGTH: return "mapdata::GravityStrength";
 		case MAPDATAGUY: return "mapdata::Guy";
 		case MAPDATAGUYCOUNT: return "mapdata::GuyCount";
 		case MAPDATAHASITEM: return "mapdata::HasItem";
@@ -855,7 +878,9 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case MAPDATANEXTMAP: return "mapdata::NextMap";
 		case MAPDATANEXTSCREEN: return "mapdata::NextScreen";
 		case MAPDATANOCARRY: return "mapdata::NoCarry";
+		case MAPDATANOCARRYARR: return "mapdata::NoCarryState[]";
 		case MAPDATANORESET: return "mapdata::NoReset";
+		case MAPDATANORESETARR: return "mapdata::NoResetState[]";
 		case MAPDATACOLOUR: return "mapdata::Palette";
 		case MAPDATAPATTERN: return "mapdata::Pattern";
 		case MAPDATAREGIONID: return "mapdata::RegionID";
@@ -879,6 +904,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case MAPDATASTAIRY: return "mapdata::StairsY";
 		case MAPDATASCREENSTATED: return "mapdata::State[]";
 		case MAPDATASTRING: return "mapdata::String";
+		case MAPDATA_TERMINAL_VELOCITY: return "mapdata::TerminalVelocity";
 		case MAPDATATILEWARPDMAP: return "mapdata::TileWarpDMap[]";
 		case MAPDATATILEWARPOVFLAGS: return "mapdata::TileWarpOverlay[]";
 		case MAPDATATWARPRETSQR: return "mapdata::TileWarpReturnSquare[]";
@@ -1025,7 +1051,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case NPCDATATILEHEIGHT: return "npcdata::TileHeight";
 		case NPCDATATILEWIDTH: return "npcdata::TileWidth";
 		case NPCDATATOUCHDAMAGE: return "npcdata::TouchDamage";
-		case NPCDATAFAMILY: return "npcdata::Type";
+		case NPCDATATYPE: return "npcdata::Type";
 		case NPCDATAWEAPON: return "npcdata::Weapon";
 		case NPCDATAWEAPONDAMAGE: return "npcdata::WeaponDamage";
 		case NPCDATAWEAPONINITD: return "npcdata::WeaponInitD[]";
@@ -1068,6 +1094,9 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SHOPDATATYPE: return "shopdata::Type";
 		case SPRITE_ENGINE_ANIMATE: return "sprite::Animation";
 		case SPRITE_CSET: return "sprite::CSet";
+		case SPRITE_CURRENT_SCREEN: return "sprite::CurrentScreen";
+		case SPRITE_CUSTOM_GRAVITY_STRENGTH: return "sprite::CustomGravityStrength";
+		case SPRITE_CUSTOM_TERMINAL_VELOCITY: return "sprite::CustomTerminalVelocity";
 		case SPRITE_DIR: return "sprite::Dir";
 		case SPRITE_DRAW_STYLE: return "sprite::DrawStyle";
 		case SPRITE_X_OFFSET: return "sprite::DrawXOffset";
@@ -1082,6 +1111,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SPRITE_FALL_CLK: return "sprite::Falling";
 		case SPRITE_FLIP: return "sprite::Flip";
 		case SPRITE_GRAVITY: return "sprite::Gravity";
+		case SPRITE_GRAVITY_STRENGTH: return "sprite::GravityStrength";
 		case SPRITE_HIT_HEIGHT: return "sprite::HitHeight";
 		case SPRITE_HIT_WIDTH: return "sprite::HitWidth";
 		case SPRITE_HIT_OFFSET_X: return "sprite::HitXOffset";
@@ -1101,6 +1131,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SPRITE_SHADOW_YOFS: return "sprite::ShadowYOffset";
 		case SPRITE_SPAWN_SCREEN: return "sprite::SpawnScreen";
 		case SPRITE_SWHOOKED: return "sprite::SwitchHooked";
+		case SPRITE_TERMINAL_VELOCITY: return "sprite::TerminalVelocity";
 		case SPRITE_TILE: return "sprite::Tile";
 		case SPRITE_TILE_H: return "sprite::TileHeight";
 		case SPRITE_TILE_W: return "sprite::TileWidth";
@@ -1249,6 +1280,7 @@ const char* scripting_get_zasm_register_context_string(int reg)
 		case SUBWIDGTY_TABSIZE: return "subscreenwidget::TabSize";
 		case SUBWIDGPGTARG: return "subscreenwidget::TargetPage";
 		case SUBWIDGTY_TILE: return "subscreenwidget::Tile[]";
+		case SUBWIDGTY_TOTAL: return "subscreenwidget::Total";
 		case SUBWIDGTYPE: return "subscreenwidget::Type";
 		case SUBWIDGTY_UNITS: return "subscreenwidget::Units";
 		case SUBWIDGTY_VSPACE: return "subscreenwidget::VSpace";

@@ -310,9 +310,6 @@ extern int32_t slot_arg, slot_arg2;
 // The top-left screen index of the current region. Also know as the origin screen index.
 // Corresponds to origin_scr.
 extern int32_t cur_screen;
-// Screen the player is currently on. If in a scrolling region, this updates as the player moves around. Otherwise this is equal to cur_screen.
-// Corresponds to hero_scr.
-extern int32_t hero_screen;
 // Screen the player is currently on. If in a scrolling region, this updates as the player moves around. Otherwise this is equal to origin_scr.
 extern mapscr* hero_scr;
 // Screen the player was last on. If in a scrolling region, this updates as the player moves around. Otherwise this is equal to origin_scr.
@@ -343,7 +340,7 @@ extern int32_t hs_startx, hs_starty, hs_xdist, hs_ydist, clockclk;
 extern std::vector<std::pair<int32_t, int32_t>> clock_zoras;
 extern int32_t swordhearts[4], currcset, currspal6, currspal14, gfc, gfc2, pitx, pity, refill_what, refill_why;
 extern int32_t heart_beep_timer, new_enemy_tile_start, nets, magicitem, div_prot_item;
-extern int32_t magiccastclk, castx, casty, quakeclk, wavy, df_x, df_y, nl1_x, nl1_y, nl2_x, nl2_y, magicdrainclk, conveyclk;
+extern int32_t magiccastclk, castx, casty, quakeclk, wavy, df_x, df_y, nl1_x, nl1_y, nl2_x, nl2_y, conveyclk;
 extern byte newconveyorclk;
 
 extern bool cheats_execute_goto, cheats_execute_light;
@@ -358,8 +355,7 @@ extern int32_t LastWidth, LastHeight;
 extern bool refreshpal,blockpath,__debug,loaded_guys,freeze_guys;
 extern bool drawguys,debug_enabled,watch;
 extern bool down_control_states[controls::btnLast];
-extern bool F12,F11,F5,keyI, keyQ;
-extern bool SystemKeys,NESquit,volkeys,useCD,boughtsomething;
+extern bool SystemKeys,NESquit,volkeys,boughtsomething;
 extern bool BSZ;
 // Used by classic/NES dark rooms. In dark rooms, this is only false if there is a light in the
 // room.
@@ -373,8 +369,8 @@ extern bool region_is_lit;
 extern bool scrolling_region_is_lit;
 // Cached value of is_any_dark() - true if any screen in the region is dark (new).
 extern bool is_any_room_dark;
-extern bool hookshot_used, hookshot_frozen, pull_hero, hs_fix, hs_switcher, cheat_superman, gofast, checkhero;
-extern bool ewind_restart, didpit, heart_beep, pausenow, castnext;
+extern bool hookshot_used, hookshot_frozen, pull_hero, hs_fix, hs_switcher, cheat_superman, gofast;
+extern bool ewind_restart, didpit, heart_beep, castnext;
 extern bool add_df1asparkle, add_df1bsparkle, add_nl1asparkle, add_nl1bsparkle, add_nl2asparkle, add_nl2bsparkle;
 extern bool activated_timed_warp;
 extern rpos_t hooked_comborpos;
@@ -406,8 +402,7 @@ extern mapscr* origin_scr;
 extern mapscr special_warp_return_scrs[7];
 // &special_warp_return_scrs[0]
 extern mapscr* special_warp_return_scr;
-extern std::map<int, byte> activation_counters;
-extern std::map<int, byte> activation_counters_ffc;
+extern std::array<std::map<int, byte>, 8> activation_counters;
 extern char   sig_str[44];
 extern script_data *ffscripts[NUMSCRIPTFFC];
 extern script_data *itemscripts[NUMSCRIPTITEM];
@@ -437,7 +432,7 @@ dword getNumGlobalArrays();
 extern int32_t  resx,resy,scrx,scry;
 extern int32_t window_width, window_height;
 
-extern bool toogam;
+extern bool walk_through_walls;
 extern bool ignoreSideview;
 
 extern int32_t script_mouse_x;

@@ -454,12 +454,12 @@ int32_t readoneitem(PACKFILE *f, int32_t index)
 		return 0;
 	}
 	
-	if(!p_igetl(&tempitem.family,f))
+	if(!p_igetl(&tempitem.type,f))
 	{
 		return 0;
 	}
 	
-	if(!p_getc(&tempitem.fam_type,f))
+	if(!p_getc(&tempitem.level,f))
 	{
 		return 0;
 	}
@@ -599,7 +599,7 @@ int32_t readoneitem(PACKFILE *f, int32_t index)
 			return 0;
 		}
 		tempitem.cost_amount[0] = tempbyte;
-		switch(tempitem.family)
+		switch(tempitem.type)
 		{
 			case itype_arrow:
 			case itype_bomb:
@@ -968,12 +968,12 @@ int32_t writeoneitem(PACKFILE *f, int32_t i)
 				new_return(12);
 			}
 			
-			if(!p_iputl(itemsbuf[i].family,f))
+			if(!p_iputl(itemsbuf[i].type,f))
 			{
 				new_return(13);
 			}
 			
-			if(!p_putc(itemsbuf[i].fam_type,f))
+			if(!p_putc(itemsbuf[i].level,f))
 			{
 				new_return(14);
 			}
@@ -1580,7 +1580,7 @@ int32_t readonenpc(PACKFILE *f, int32_t index)
 	return 0;
 	}
 
-	if(!p_igetw(&tempguy.family,f))
+	if(!p_igetw(&tempguy.type,f))
 	{
 	return 0;
 	}
@@ -2015,7 +2015,7 @@ int32_t writeonenpc(PACKFILE *f, int32_t i)
 		return 0;
 		}
 		
-		if(!p_iputw(guysbuf[i].family,f))
+		if(!p_iputw(guysbuf[i].type,f))
 		{
 		return 0;
 		}

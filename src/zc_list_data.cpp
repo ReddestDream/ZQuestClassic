@@ -339,6 +339,34 @@ GUI::ListData GUI::ZCListData::itemclass(bool numbered, bool zero_none)
 	return ls;
 }
 
+GUI::ListData GUI::ZCListData::level_items(bool numbered, bool skipNone)
+{
+	GUI::ListData ls;
+	if (!skipNone)
+		ls.add(numbered ? "(None) (-001)" : "(None)", -1);
+	
+	for(int li = 0; li < li_max; ++li)
+	{
+		char const* li_name = ZI.getLevelItemName(li);
+		std::string name;
+        if(li_name[0])
+		{
+			if(numbered)
+				name = fmt::format("{} ({:03})", li_name, li);
+			else name = li_name;
+		}
+		else 
+		{
+			if(numbered)
+				name = fmt::format("li{:02} ({:03})", li, li);
+			else name = fmt::format("li{:02}",li);
+		}
+		ls.add(name, li);
+	}
+	
+	return ls;
+}
+
 GUI::ListData GUI::ZCListData::combotype(bool numbered, bool skipNone)
 {
 	GUI::ListData ls;
@@ -723,7 +751,7 @@ GUI::ListData GUI::ZCListData::lpals()
 	for (int q = 0; q < 0x1FF; ++q)
 	{
 		sprintf(buf, "%.3X - %s", q, palnames[q]);
-		ls.add(buf, q + 1);
+		ls.add(buf, q);
 	}
 	return ls;
 }
@@ -1220,7 +1248,7 @@ static const GUI::ListData screen_state
 	{ "Door Right", 3 },
 	{ "Screen Item", 4 },
 	{ "Special Item", 5 },
-	{ "Enemies Never Return", 6 },
+	{ "Some Enemies Never Return", 6 },
 	{ "Enemies Temp No Return", 7 },
 	{ "Lockblock", 8 },
 	{ "Boss Lockblock", 9 },
@@ -1229,7 +1257,8 @@ static const GUI::ListData screen_state
 	{ "Boss Chest", 12 },
 	{ "Secrets", 13 },
 	{ "Visited", 14 },
-	{ "Light Triggers", 15 }
+	{ "Light Triggers", 15 },
+	{ "All Enemies Don't Return", 16 },
 };
 
 GUI::ListData const& GUI::ZCListData::screenstate()
@@ -1269,6 +1298,9 @@ static const GUI::ListData subscrWidgets =
 		" for any counter" },
 	{ "Button Counter", widgBTNCOUNTER, "Shows a counter used by a specified button as a cost" },
 	{ "Counter Percentage Bar", widgCOUNTERPERCBAR, "Shows a colored bar filled for a specified counter" },
+	{ "Gauge Piece: Item Cooldown", widgITMCOOLDOWNGAUGE, "Allows building highly customizable gauges"
+		" for item cooldowns." },
+	{ "Item Cooldown Text", widgITMCOOLDOWNTEXT, "Shows a timer for item cooldowns." },
 };
 
 GUI::ListData const& GUI::ZCListData::subscr_widgets()
@@ -1322,9 +1354,18 @@ static const GUI::ListData button
 	{ "Y", 3 }
 };
 
-GUI::ListData const& GUI::ZCListData::buttons()
+static const GUI::ListData button_none
 {
-	return button;
+	{ "(None)", -1 },
+	{ "A", 0 },
+	{ "B", 1 },
+	{ "X", 2 },
+	{ "Y", 3 }
+};
+
+GUI::ListData const& GUI::ZCListData::buttons(bool none)
+{
+	return none ? button_none : button;
 }
 
 static const GUI::ListData autocombo_types
@@ -1427,3 +1468,102 @@ GUI::ListData const& GUI::ZCListData::doortypes()
 {
 	return door_types;
 }
+
+// Checklist Data
+
+vector<CheckListInfo> GUI::ZCCheckListData::numbers(int first, int last)
+{
+	vector<CheckListInfo> vec;
+	int inc = (first < last) ? 1 : -1;
+	for (int q = first; q != (last + inc); q += inc)
+		vec.emplace_back(std::to_string(q));
+	return vec;
+}
+vector<CheckListInfo> const& GUI::ZCCheckListData::level_states()
+{
+	static vector<CheckListInfo> vec = numbers(0, 31);
+	return vec;
+}
+vector<CheckListInfo> const& GUI::ZCCheckListData::global_states()
+{
+	static vector<CheckListInfo> vec = numbers(0, 255);
+	return vec;
+}
+vector<CheckListInfo> GUI::ZCCheckListData::level_items()
+{
+	vector<CheckListInfo> vec;
+	for (int q = 0; q < li_max; ++q)
+		vec.emplace_back(ZI.getLevelItemName(q), ZI.getLevelItemHelp(q));
+	return vec;
+}
+vector<CheckListInfo> const& GUI::ZCCheckListData::dir_4()
+{
+	static const vector<CheckListInfo> vec =
+	{
+		{ "Up" },
+		{ "Down" },
+		{ "Left" },
+		{ "Right" },
+	};
+	return vec;
+}
+vector<CheckListInfo> const& GUI::ZCCheckListData::dir_8()
+{
+	static const vector<CheckListInfo> vec =
+	{
+		{ "Up" },
+		{ "Down" },
+		{ "Left" },
+		{ "Right" },
+		{ "Up Left" },
+		{ "Up Right" },
+		{ "Down Left" },
+		{ "Down Right" },
+	};
+	return vec;
+}
+vector<CheckListInfo> const& GUI::ZCCheckListData::buttons()
+{
+	static const vector<CheckListInfo> vec =
+	{
+		{ "A" },
+		{ "B" },
+		{ "L" },
+		{ "R" },
+		{ "Ex1" },
+		{ "Ex2" },
+		{ "Ex3" },
+		{ "Ex4" },
+	};
+	return vec;
+}
+vector<CheckListInfo> const& GUI::ZCCheckListData::screen_state()
+{
+	static const vector<CheckListInfo> vec =
+	{
+		{ "Door Up" },
+		{ "Door Down" },
+		{ "Door Left" },
+		{ "Door Right" },
+		{ "Screen Item" },
+		{ "Special Item" },
+		{ "Some Enemies Never Return" },
+		{ "Enemies Temp No Return" },
+		{ "Lockblock" },
+		{ "Boss Lockblock" },
+		{ "Chest" },
+		{ "Locked Chest" },
+		{ "Boss Chest" },
+		{ "Secrets" },
+		{ "Visited" },
+		{ "Light Triggers" },
+		{ "All Enemies Don't Return" },
+	};
+	return vec;
+}
+vector<CheckListInfo> const& GUI::ZCCheckListData::ex_state()
+{
+	static vector<CheckListInfo> vec = numbers(0, 31);
+	return vec;
+}
+

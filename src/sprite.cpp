@@ -47,7 +47,7 @@ sprite::sprite(): solid_object()
 {
     uid = 0;
 	parent = nullptr;
-	screen_spawned = -1;
+	screen_spawned = current_screen = -1;
 	isspawning = false;
     x=y=z=tile=shadowtile=cs=flip=c_clk=clk=xofs=yofs=shadowxofs=shadowyofs=zofs=fall=fakefall=fakez=0;
     slopeid = 0;
@@ -119,6 +119,7 @@ sprite::sprite(): solid_object()
 	spr_spawn_anim_clk = 0;
 	spr_spawn_anim_frm = 0;
 	hide_hitbox = false;
+	behind = false;
 }
 
 sprite::sprite(sprite const & other):
@@ -149,7 +150,8 @@ sprite::sprite(sprite const & other):
 	spr_death_anim_frm(other.spr_death_anim_frm),
 	spr_spawn_anim_frm(other.spr_spawn_anim_frm),
 	glowRad(other.glowRad), glowShape(other.glowShape),
-	ignore_delete(other.ignore_delete)
+	ignore_delete(other.ignore_delete),
+	behind(other.behind)
 {
     uid = 0;
 	parent = nullptr;
@@ -349,6 +351,16 @@ int32_t sprite::fake_z(zfix fz)
     return fz.getInt();
 }
 
+zfix sprite::total_z() const
+{
+	return z+fakez;
+}
+
+zfix sprite::center_y() const
+{
+	return y + yofs + (tysz * 8);
+}
+
 int32_t sprite::get_pit() //Returns combo ID of pit that sprite WOULD fall into; no side-effects
 {
 	int32_t ispitul = getpitfall(x,y);
@@ -431,180 +443,201 @@ int32_t sprite::get_pit() //Returns combo ID of pit that sprite WOULD fall into;
 
 int32_t sprite::check_pits() //Returns combo ID of pit fallen into; 0 for not fallen.
 {
-	int32_t safe_cnt = 0;
-	bool has_fallen = false;
-	int32_t ispitul, ispitbl, ispitur, ispitbr, ispitul_50, ispitbl_50, ispitur_50, ispitbr_50;
-	while(++safe_cnt < 16) //Prevent softlocks
+	if (get_qr(qr_OLD_SPRITE_FALL_DROWN))
 	{
-		ispitul = getpitfall(x,y);
-		ispitbl = getpitfall(x,y+15);
-		ispitur = getpitfall(x+15,y);
-		ispitbr = getpitfall(x+15,y+15);
-		ispitul_50 = getpitfall(x+7,y+7);
-		ispitbl_50 = getpitfall(x+7,y+8);
-		ispitur_50 = getpitfall(x+8,y+7);
-		ispitbr_50 = getpitfall(x+8,y+8);
-		int32_t dir = -1;
-		size_t cnt = (ispitul?1:0) + (ispitur?1:0) + (ispitbl?1:0) + (ispitbr?1:0);
-		switch(cnt)
+		int32_t safe_cnt = 0;
+		bool has_fallen = false;
+		int32_t ispitul, ispitbl, ispitur, ispitbr, ispitul_50, ispitbl_50, ispitur_50, ispitbr_50;
+		while (++safe_cnt < 16) //Prevent softlocks
 		{
-			case 4:
+			ispitul = getpitfall(x, y);
+			ispitbl = getpitfall(x, y + 15);
+			ispitur = getpitfall(x + 15, y);
+			ispitbr = getpitfall(x + 15, y + 15);
+			ispitul_50 = getpitfall(x + 7, y + 7);
+			ispitbl_50 = getpitfall(x + 7, y + 8);
+			ispitur_50 = getpitfall(x + 8, y + 7);
+			ispitbr_50 = getpitfall(x + 8, y + 8);
+			int32_t dir = -1;
+			size_t cnt = (ispitul ? 1 : 0) + (ispitur ? 1 : 0) + (ispitbl ? 1 : 0) + (ispitbr ? 1 : 0);
+			switch (cnt)
 			{
-				fallclk = PITFALL_FALL_FRAMES; //Fall
-				has_fallen = true;
-				o_cset = cs;
-				return ispitul_50 ? ispitul_50 : ispitul;
-			}
-			case 3:
-			{
-				if(ispitul && ispitur && ispitbl) //UL_3
+				case 4:
 				{
-					if(ispitul_50)
-					{
-						dir=l_up; break;
-					}
+					fallclk = PITFALL_FALL_FRAMES; //Fall
+					has_fallen = true;
+					o_cset = cs;
+					return ispitul_50 ? ispitul_50 : ispitul;
 				}
-				else if(ispitul && ispitur && ispitbr) //UR_3
+				case 3:
 				{
-					if(ispitur_50)
+					if (ispitul && ispitur && ispitbl) //UL_3
 					{
-						dir=r_up; break;
+						if (ispitul_50)
+						{
+							dir = l_up; break;
+						}
 					}
+					else if (ispitul && ispitur && ispitbr) //UR_3
+					{
+						if (ispitur_50)
+						{
+							dir = r_up; break;
+						}
+					}
+					else if (ispitul && ispitbl && ispitbr) //BL_3
+					{
+						if (ispitbl_50)
+						{
+							dir = l_down; break;
+						}
+					}
+					else if (ispitbl && ispitur && ispitbr) //BR_3
+					{
+						if (ispitbr_50)
+						{
+							dir = r_down; break;
+						}
+					}
+					break;
 				}
-				else if(ispitul && ispitbl && ispitbr) //BL_3
+				case 2:
 				{
-					if(ispitbl_50)
+					if (ispitul && ispitur) //Up
 					{
-						dir=l_down; break;
+						if (ispitul_50 && ispitur_50) //Straight up
+						{
+							dir = up; break;
+						}
+						else if (ispitul_50)
+						{
+							dir = l_up; break;
+						}
+						else if (ispitur_50)
+						{
+							dir = r_up; break;
+						}
 					}
+					if (ispitbl && ispitbr) //Down
+					{
+						if (ispitbl_50 && ispitbr_50) //Straight down
+						{
+							dir = down; break;
+						}
+						else if (ispitbl_50)
+						{
+							dir = l_down; break;
+						}
+						else if (ispitbr_50)
+						{
+							dir = r_down; break;
+						}
+					}
+					if (ispitul && ispitbl) //Left
+					{
+						if (ispitul_50 && ispitbl_50) //Straight left
+						{
+							dir = left; break;
+						}
+						else if (ispitul_50)
+						{
+							dir = l_up; break;
+						}
+						else if (ispitbl_50)
+						{
+							dir = l_down; break;
+						}
+					}
+					if (ispitur && ispitbr) //Right
+					{
+						if (ispitur_50 && ispitbr_50) //Straight right
+						{
+							dir = right; break;
+						}
+						else if (ispitur_50)
+						{
+							dir = r_up; break;
+						}
+						else if (ispitbr_50)
+						{
+							dir = r_down; break;
+						}
+					}
+					break;
 				}
-				else if(ispitbl && ispitur && ispitbr) //BR_3
+				case 1:
 				{
-					if(ispitbr_50)
-					{
-						dir=r_down; break;
-					}
-				}
-				break;
-			}
-			case 2:
-			{
-				if(ispitul && ispitur) //Up
-				{
-					if(ispitul_50 && ispitur_50) //Straight up
-					{
-						dir = up; break;
-					}
-					else if(ispitul_50)
+					if (ispitul && ispitul_50) //UL_1
 					{
 						dir = l_up; break;
 					}
-					else if(ispitur_50)
+					if (ispitur && ispitur_50) //UR_1
 					{
 						dir = r_up; break;
 					}
-				}
-				if(ispitbl && ispitbr) //Down
-				{
-					if(ispitbl_50 && ispitbr_50) //Straight down
-					{
-						dir = down; break;
-					}
-					else if(ispitbl_50)
+					if (ispitbl && ispitbl_50) //BL_1
 					{
 						dir = l_down; break;
 					}
-					else if(ispitbr_50)
+					if (ispitbr && ispitbr_50) //BR_1
 					{
 						dir = r_down; break;
 					}
+					break;
 				}
-				if(ispitul && ispitbl) //Left
-				{
-					if(ispitul_50 && ispitbl_50) //Straight left
-					{
-						dir = left; break;
-					}
-					else if(ispitul_50)
-					{
-						dir = l_up; break;
-					}
-					else if(ispitbl_50)
-					{
-						dir = l_down; break;
-					}
-				}
-				if(ispitur && ispitbr) //Right
-				{
-					if(ispitur_50 && ispitbr_50) //Straight right
-					{
-						dir = right; break;
-					}
-					else if(ispitur_50)
-					{
-						dir = r_up; break;
-					}
-					else if(ispitbr_50)
-					{
-						dir = r_down; break;
-					}
-				}
-				break;
 			}
-			case 1:
+			if (dir == -1) return 0; //Not falling
+			has_fallen = true;
+			switch (dir)
 			{
-				if(ispitul && ispitul_50) //UL_1
-				{
-					dir = l_up; break;
-				}
-				if(ispitur && ispitur_50) //UR_1
-				{
-					dir = r_up; break;
-				}
-				if(ispitbl && ispitbl_50) //BL_1
-				{
-					dir = l_down; break;
-				}
-				if(ispitbr && ispitbr_50) //BR_1
-				{
-					dir = r_down; break;
-				}
-				break;
+				case l_up: case l_down: case left:
+					--x; break;
+				case r_up: case r_down: case right:
+					++x; break;
+			}
+			switch (dir)
+			{
+				case l_up: case r_up: case up:
+					--y; break;
+				case l_down: case r_down: case down:
+					++y; break;
 			}
 		}
-		if(dir == -1) return 0; //Not falling
-		has_fallen = true;
-		switch(dir)
+		if (has_fallen)
 		{
-			case l_up: case l_down: case left:
-				--x; break;
-			case r_up: case r_down: case right:
-				++x; break;
+			int32_t old_fall = fallclk; //sanity check
+			fallclk = PITFALL_FALL_FRAMES;
+			o_cset = cs;
+			if (ispitul_50) return ispitul_50;
+			if (ispitur_50) return ispitur_50;
+			if (ispitbl_50) return ispitbl_50;
+			if (ispitbr_50) return ispitbr_50;
+			if (ispitul) return ispitul;
+			if (ispitur) return ispitur;
+			if (ispitbl) return ispitbl;
+			if (ispitbr) return ispitbr;
+			fallclk = old_fall; //sanity check
 		}
-		switch(dir)
+		return 0;
+	}
+	const int sens = 2;
+	int endx = zc_max(hit_width - sens, 1), endy = zc_max(hit_height - sens, 1);
+	int startx = zc_min(sens, endx - 1), starty = zc_min(sens, endy - 1);
+	if (isSideViewGravity())
+		starty = zc_min(endy / 2 + sens, endy - 1);
+	int32_t ret = 0;
+	for (int dx = startx; dx < endx; ++dx)
+	{
+		for (int dy = starty; dy < endy; ++dy)
 		{
-			case l_up: case r_up: case up:
-				--y; break;
-			case l_down: case r_down: case down:
-				++y; break;
+			ret = getpitfall(x + dx + hxofs, y + dy + hyofs);
+			if (!ret)
+				return 0;
 		}
 	}
-	if(has_fallen)
-	{
-		int32_t old_fall = fallclk; //sanity check
+	if (ret)
 		fallclk = PITFALL_FALL_FRAMES;
-		o_cset = cs;
-		if(ispitul_50) return ispitul_50;
-		if(ispitur_50) return ispitur_50;
-		if(ispitbl_50) return ispitbl_50;
-		if(ispitbr_50) return ispitbr_50;
-		if(ispitul) return ispitul;
-		if(ispitur) return ispitur;
-		if(ispitbl) return ispitbl;
-		if(ispitbr) return ispitbr;
-		fallclk = old_fall; //sanity check
-	}
-	return 0;
+	return ret;
 }
 
 int32_t sprite::check_water() //Returns combo ID of water fallen into; 0 for not fallen.
@@ -612,178 +645,199 @@ int32_t sprite::check_water() //Returns combo ID of water fallen into; 0 for not
 #ifndef IS_PLAYER
 	return 0;
 #else
-	int32_t safe_cnt = 0;
-	bool has_fallen = false;
-	int32_t ispitul, ispitbl, ispitur, ispitbr, ispitul_50, ispitbl_50, ispitur_50, ispitbr_50;
-	while(++safe_cnt < 16) //Prevent softlocks
+	if (get_qr(qr_OLD_SPRITE_FALL_DROWN))
 	{
-		ispitul = iswaterexzq(MAPCOMBO(x,y), get_currmap(), get_currscr(), -1, x, y, false, false, true);
-		ispitbl = iswaterexzq(MAPCOMBO(x,y+15), get_currmap(), get_currscr(), -1, x, y+15, false, false, true);
-		ispitur = iswaterexzq(MAPCOMBO(x+15,y), get_currmap(), get_currscr(), -1, x+15, y, false, false, true);
-		ispitbr = iswaterexzq(MAPCOMBO(x+15,y+15), get_currmap(), get_currscr(), -1, x+15, y+15, false, false, true);
-		ispitul_50 = iswaterexzq(MAPCOMBO(x+8,y+8), get_currmap(), get_currscr(), -1, x+8, y+8, false, false, true);
-		ispitbl_50 = iswaterexzq(MAPCOMBO(x+8,y+7), get_currmap(), get_currscr(), -1, x+8, y+7, false, false, true);
-		ispitur_50 = iswaterexzq(MAPCOMBO(x+7,y+8), get_currmap(), get_currscr(), -1, x+7, y+8, false, false, true);
-		ispitbr_50 = iswaterexzq(MAPCOMBO(x+7,y+7), get_currmap(), get_currscr(), -1, x+7, y+7, false, false, true);
-		int32_t dir = -1;
-		switch((ispitul?1:0) + (ispitur?1:0) + (ispitbl?1:0) + (ispitbr?1:0))
+		int32_t safe_cnt = 0;
+		bool has_fallen = false;
+		int32_t ispitul, ispitbl, ispitur, ispitbr, ispitul_50, ispitbl_50, ispitur_50, ispitbr_50;
+		while (++safe_cnt < 16) //Prevent softlocks
 		{
-			case 4:
+			ispitul = iswaterexzq(MAPCOMBO(x, y), get_currmap(), get_currscr(), -1, x, y, false, false, true);
+			ispitbl = iswaterexzq(MAPCOMBO(x, y + 15), get_currmap(), get_currscr(), -1, x, y + 15, false, false, true);
+			ispitur = iswaterexzq(MAPCOMBO(x + 15, y), get_currmap(), get_currscr(), -1, x + 15, y, false, false, true);
+			ispitbr = iswaterexzq(MAPCOMBO(x + 15, y + 15), get_currmap(), get_currscr(), -1, x + 15, y + 15, false, false, true);
+			ispitul_50 = iswaterexzq(MAPCOMBO(x + 8, y + 8), get_currmap(), get_currscr(), -1, x + 8, y + 8, false, false, true);
+			ispitbl_50 = iswaterexzq(MAPCOMBO(x + 8, y + 7), get_currmap(), get_currscr(), -1, x + 8, y + 7, false, false, true);
+			ispitur_50 = iswaterexzq(MAPCOMBO(x + 7, y + 8), get_currmap(), get_currscr(), -1, x + 7, y + 8, false, false, true);
+			ispitbr_50 = iswaterexzq(MAPCOMBO(x + 7, y + 7), get_currmap(), get_currscr(), -1, x + 7, y + 7, false, false, true);
+			int32_t dir = -1;
+			switch ((ispitul ? 1 : 0) + (ispitur ? 1 : 0) + (ispitbl ? 1 : 0) + (ispitbr ? 1 : 0))
 			{
-				drownclk = WATER_DROWN_FRAMES; //Fall
-				o_cset = cs;
-				return ispitul_50 ? ispitul_50 : ispitul;
-			}
-			case 3:
-			{
-				if(ispitul && ispitur && ispitbl) //UL_3
+				case 4:
 				{
-					if(ispitul_50)
-					{
-						dir=l_up; break;
-					}
+					drownclk = WATER_DROWN_FRAMES; //Fall
+					o_cset = cs;
+					return ispitul_50 ? ispitul_50 : ispitul;
 				}
-				else if(ispitul && ispitur && ispitbr) //UR_3
+				case 3:
 				{
-					if(ispitur_50)
+					if (ispitul && ispitur && ispitbl) //UL_3
 					{
-						dir=r_up; break;
+						if (ispitul_50)
+						{
+							dir = l_up; break;
+						}
 					}
+					else if (ispitul && ispitur && ispitbr) //UR_3
+					{
+						if (ispitur_50)
+						{
+							dir = r_up; break;
+						}
+					}
+					else if (ispitul && ispitbl && ispitbr) //BL_3
+					{
+						if (ispitbl_50)
+						{
+							dir = l_down; break;
+						}
+					}
+					else if (ispitbl && ispitur && ispitbr) //BR_3
+					{
+						if (ispitbr_50)
+						{
+							dir = r_down; break;
+						}
+					}
+					break;
 				}
-				else if(ispitul && ispitbl && ispitbr) //BL_3
+				case 2:
 				{
-					if(ispitbl_50)
+					if (ispitul && ispitur) //Up
 					{
-						dir=l_down; break;
+						if (ispitul_50 && ispitur_50) //Straight up
+						{
+							dir = up; break;
+						}
+						else if (ispitul_50)
+						{
+							dir = l_up; break;
+						}
+						else if (ispitur_50)
+						{
+							dir = r_up; break;
+						}
 					}
+					if (ispitbl && ispitbr) //Down
+					{
+						if (ispitbl_50 && ispitbr_50) //Straight down
+						{
+							dir = down; break;
+						}
+						else if (ispitbl_50)
+						{
+							dir = l_down; break;
+						}
+						else if (ispitbr_50)
+						{
+							dir = r_down; break;
+						}
+					}
+					if (ispitul && ispitbl) //Left
+					{
+						if (ispitul_50 && ispitbl_50) //Straight left
+						{
+							dir = left; break;
+						}
+						else if (ispitul_50)
+						{
+							dir = l_up; break;
+						}
+						else if (ispitbl_50)
+						{
+							dir = l_down; break;
+						}
+					}
+					if (ispitur && ispitbr) //Right
+					{
+						if (ispitur_50 && ispitbr_50) //Straight right
+						{
+							dir = right; break;
+						}
+						else if (ispitur_50)
+						{
+							dir = r_up; break;
+						}
+						else if (ispitbr_50)
+						{
+							dir = r_down; break;
+						}
+					}
+					break;
 				}
-				else if(ispitbl && ispitur && ispitbr) //BR_3
+				case 1:
 				{
-					if(ispitbr_50)
-					{
-						dir=r_down; break;
-					}
-				}
-				break;
-			}
-			case 2:
-			{
-				if(ispitul && ispitur) //Up
-				{
-					if(ispitul_50 && ispitur_50) //Straight up
-					{
-						dir = up; break;
-					}
-					else if(ispitul_50)
+					if (ispitul && ispitul_50) //UL_1
 					{
 						dir = l_up; break;
 					}
-					else if(ispitur_50)
+					if (ispitur && ispitur_50) //UR_1
 					{
 						dir = r_up; break;
 					}
-				}
-				if(ispitbl && ispitbr) //Down
-				{
-					if(ispitbl_50 && ispitbr_50) //Straight down
-					{
-						dir = down; break;
-					}
-					else if(ispitbl_50)
+					if (ispitbl && ispitbl_50) //BL_1
 					{
 						dir = l_down; break;
 					}
-					else if(ispitbr_50)
+					if (ispitbr && ispitbr_50) //BR_1
 					{
 						dir = r_down; break;
 					}
+					break;
 				}
-				if(ispitul && ispitbl) //Left
-				{
-					if(ispitul_50 && ispitbl_50) //Straight left
-					{
-						dir = left; break;
-					}
-					else if(ispitul_50)
-					{
-						dir = l_up; break;
-					}
-					else if(ispitbl_50)
-					{
-						dir = l_down; break;
-					}
-				}
-				if(ispitur && ispitbr) //Right
-				{
-					if(ispitur_50 && ispitbr_50) //Straight right
-					{
-						dir = right; break;
-					}
-					else if(ispitur_50)
-					{
-						dir = r_up; break;
-					}
-					else if(ispitbr_50)
-					{
-						dir = r_down; break;
-					}
-				}
-				break;
 			}
-			case 1:
+			if (dir == -1) return 0; //Not falling
+			has_fallen = true;
+			switch (dir)
 			{
-				if(ispitul && ispitul_50) //UL_1
-				{
-					dir = l_up; break;
-				}
-				if(ispitur && ispitur_50) //UR_1
-				{
-					dir = r_up; break;
-				}
-				if(ispitbl && ispitbl_50) //BL_1
-				{
-					dir = l_down; break;
-				}
-				if(ispitbr && ispitbr_50) //BR_1
-				{
-					dir = r_down; break;
-				}
-				break;
+				case l_up: case l_down: case left:
+					--x; break;
+				case r_up: case r_down: case right:
+					++x; break;
+			}
+			switch (dir)
+			{
+				case l_up: case r_up: case up:
+					--y; break;
+				case l_down: case r_down: case down:
+					++y; break;
 			}
 		}
-		if(dir == -1) return 0; //Not falling
-		has_fallen = true;
-		switch(dir)
+		if (has_fallen)
 		{
-			case l_up: case l_down: case left:
-				--x; break;
-			case r_up: case r_down: case right:
-				++x; break;
+			int32_t old_drown = drownclk; //sanity check
+			drownclk = WATER_DROWN_FRAMES;
+			o_cset = cs;
+			if (ispitul_50) return ispitul_50;
+			if (ispitur_50) return ispitur_50;
+			if (ispitbl_50) return ispitbl_50;
+			if (ispitbr_50) return ispitbr_50;
+			if (ispitul) return ispitul;
+			if (ispitur) return ispitur;
+			if (ispitbl) return ispitbl;
+			if (ispitbr) return ispitbr;
+			drownclk = old_drown; //sanity check
 		}
-		switch(dir)
+		return 0;
+	}
+	const int sens = 2;
+	int endx = zc_max(hit_width - sens, 1), endy = zc_max(hit_height - sens, 1);
+	int startx = zc_min(sens, endx - 1), starty = zc_min(sens, endy - 1);
+	if (isSideViewGravity())
+		starty = zc_min(endy / 2 + sens, endy - 1);
+	int32_t ret = 0;
+	for (int dx = startx; dx < endx; ++dx)
+	{
+		for (int dy = starty; dy < endy; ++dy)
 		{
-			case l_up: case r_up: case up:
-				--y; break;
-			case l_down: case r_down: case down:
-				++y; break;
+			ret = iswaterexzq(MAPCOMBO(x + dx + hxofs, y + dy + hyofs), get_currmap(), get_currscr(), -1, x + dx + hxofs, y + dy + hyofs, false, false, true);
+			if (!ret)
+				return 0;
 		}
 	}
-	if(has_fallen)
-	{
-		int32_t old_drown = drownclk; //sanity check
+	if (ret)
 		drownclk = WATER_DROWN_FRAMES;
-		o_cset = cs;
-		if(ispitul_50) return ispitul_50;
-		if(ispitur_50) return ispitur_50;
-		if(ispitbl_50) return ispitbl_50;
-		if(ispitbr_50) return ispitbr_50;
-		if(ispitul) return ispitul;
-		if(ispitur) return ispitur;
-		if(ispitbl) return ispitbl;
-		if(ispitbr) return ispitbr;
-		fallclk = old_drown; //sanity check
-	}
-	return 0;
+	return ret;
 #endif
 }
 
@@ -1939,6 +1993,10 @@ void sprite::drawcloaked(BITMAP* dest)
         rectfill(dest,x+hxofs,sy+hyofs-fakez,x+hxofs+hit_width-1,sy+hyofs+hit_height-fakez-1,vc(id));
 }
 
+bool sprite::can_drawshadow() const
+{
+	return true;
+}
 void sprite::drawshadow(BITMAP* dest,bool translucent)
 {
 	if(extend == 4 || shadowtile==0 || id<0)
@@ -1982,6 +2040,33 @@ int32_t sprite::run_script(int32_t mode)
 ALLEGRO_COLOR sprite::hitboxColor(byte opacity) const
 {
 	return al_map_rgba(255,0,255,opacity);
+}
+
+bool SpriteSorter::operator()(sprite* s1, sprite* s2) const
+{
+	auto zdiff = s1->total_z() - s2->total_z();
+	if(zdiff) return zdiff < 0; // lower Z sorts earlier
+	
+	tempsprite_shadow* shadow_1 = dynamic_cast<tempsprite_shadow*>(s1);
+	tempsprite_shadow* shadow_2 = dynamic_cast<tempsprite_shadow*>(s2);
+	if(bool(shadow_1) != bool(shadow_2)) return bool(shadow_1); // shadows draw behind other sprites
+	
+	if(s1->behind != s2->behind) return s1->behind; // behind acts as a tiebreaker, bypassing ysort
+	
+	if(get_qr(qr_YSORT_SPRITES))
+	{
+		auto ydiff = s1->center_y() - s2->center_y();
+		if(ydiff) return ydiff < 0; // lower Y sorts earlier at same z
+	}
+	auto uid_1 = (shadow_1 ? shadow_1->parent : s1)->getUID();
+	auto uid_2 = (shadow_2 ? shadow_2->parent : s2)->getUID();
+	
+	// The Hero always wins tiebreaks (draws over other things)
+	if(uid_1 == 1) return false;
+	if(uid_2 == 1) return true;
+	
+	// lower UID sorts earlier as final tiebreaker
+	return uid_1 < uid_2;
 }
 
 sprite_list::sprite_list() : count(0), active_iterator(0), max_sprites(255),
@@ -2294,12 +2379,7 @@ void sprite_list::animate()
 	active_iterator = 0;
 
 #ifdef IS_PLAYER
-	viewport_t freeze_rect = viewport;
-	int tile_buffer = 3;
-	freeze_rect.w += 16 * tile_buffer * 2;
-	freeze_rect.h += 16 * tile_buffer * 2;
-	freeze_rect.x -= 16 * tile_buffer;
-	freeze_rect.y -= 16 * tile_buffer;
+	viewport_t freeze_rect = get_sprite_freeze_rect();
 #endif
 
 	while(active_iterator<count)
@@ -2628,6 +2708,74 @@ void sprite::setCanFlicker(bool v)
 	can_flicker = v;
 }
 
+zfix sprite::get_gravity(bool skip_custom) const
+{
+	if (custom_gravity && !skip_custom)
+		return custom_gravity;
+#ifdef IS_PLAYER
+	mapscr* current_scr = get_scr_maybe(cur_map, current_screen);
+	if (current_scr && (current_scr->flags10 & fSCREEN_GRAVITY))
+		return current_scr->screen_gravity;
+	auto const& dmap = DMaps[cur_dmap];
+	if (dmap.flags & dmfCUSTOM_GRAVITY)
+		return dmap.dmap_gravity;
+#endif
+	return zslongToFix(zinit.gravity);
+}
+zfix sprite::get_terminalv(bool skip_custom) const
+{
+	if (custom_terminal_v && !skip_custom)
+		return custom_terminal_v;
+#ifdef IS_PLAYER
+	mapscr* current_scr = get_scr_maybe(cur_map, current_screen);
+	if (current_scr && (current_scr->flags10 & fSCREEN_GRAVITY))
+		return current_scr->screen_terminal_v;
+	auto const& dmap = DMaps[cur_dmap];
+	if (dmap.flags & dmfCUSTOM_GRAVITY)
+		return dmap.dmap_terminal_v;
+#endif
+	return zslongToFix(zinit.terminalv * 100);
+}
+int32_t sprite::get_grav_fall() const
+{
+	return get_gravity().getZLong() / 100;
+}
+int32_t sprite::get_terminalv_fall() const
+{
+	return get_terminalv().getZLong() / 100;
+}
+bool sprite::handle_termv()
+{
+	if (get_qr(qr_OLD_TERMINAL_VELOCITY))
+		return false;
+	bool ret = false;
+	auto termv = get_terminalv_fall();
+	if (fall > termv)
+	{
+		fall = termv;
+		ret = true;
+	}
+	if (fakefall > termv)
+	{
+		fakefall = termv;
+		ret = true;
+	}
+	return ret;
+}
+
+void sprite::update_current_screen()
+{
+#ifdef IS_PLAYER
+	int cx = x + hxofs + hit_width / 2;
+	int cy = y + hyofs + hit_height / 2;
+	
+	int new_screen = get_screen_for_world_xy(cx, cy);
+	
+	if (is_in_current_region(new_screen))
+		current_screen = new_screen;
+#endif
+}
+
 //Moving Block 
 
 movingblock::movingblock() : sprite(), blockLayer(0), step(0.5)
@@ -2806,7 +2954,7 @@ bool breakable::animate(int32_t)
 				case 2: decorations.add(new dFlowerClippings(x, y, dFLOWERCLIPPINGS, 0, 0)); break;
 				case 3: decorations.add(new dGrassClippings(x, y, dGRASSCLIPPINGS, 0, 0)); break;
 			}
-			if(breaksfx) sfx(breaksfx,int32_t(x));
+			if(breaksfx) sfx(breaksfx,pan(x));
 			if(dropitem > -1)
 			{
 				item* itm = (new item(x, y, z, dropitem, ipBIGRANGE + ipTIMER, 0));
@@ -2818,6 +2966,25 @@ bool breakable::animate(int32_t)
 	}
 #endif
 	return false;
+}
+
+tempsprite_shadow::tempsprite_shadow(sprite* p)
+	: sprite()
+{
+	parent = p;
+	if(parent) // Copy the parent's y position/size, for y-sorting
+	{
+		y = parent->y;
+		tysz = parent->tysz;
+	}
+	z = fakez = 0; // shadow is on the ground, so 0 z
+	behind = false; // shadow is never 'behind'
+}
+
+void tempsprite_shadow::draw(BITMAP* dest)
+{
+	if(parent)
+		parent->drawshadow(dest, get_qr(qr_TRANSSHADOWS)!=0);
 }
 
 //x1,y1 = top of left line
@@ -2897,4 +3064,10 @@ double comparePointLine(double x, double y, double x1, double y1, double x2, dou
     double b = y1 - (slope*x1);
     double ly = slope*x + b;
     return y-ly;
+}
+
+void for_every_sprite(std::function<void(sprite&)> proc)
+{
+	for (auto& it : all_sprites)
+		proc(*it.second);
 }

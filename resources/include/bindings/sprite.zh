@@ -45,11 +45,17 @@ class sprite {
 
 	// The screen index this sprite was created on. Does not update as the sprite moves around a region.
 	//
-	// [Hero]: Actually does update as the player moves around. Equivalent to [Game->HeroScreen].
+	// [Hero]: This is always equal to the top-left screen of the current region, equivalent to [Game->CurScreen].
 	//
 	// @versionadded 3.0
 	// @zasm_var SPRITE_SPAWN_SCREEN
 	internal const int SpawnScreen;
+
+	// The screen index this sprite is currently on, updating as it moves around.
+	//
+	// @versionadded 3.0
+	// @zasm_var SPRITE_CURRENT_SCREEN
+	internal const int CurrentScreen;
 
 	// @zasm_var SPRITE_X
 	internal int X;
@@ -203,6 +209,26 @@ class sprite {
 	//
 	// @zasm_var SPRITE_GRAVITY
 	internal bool Gravity;
+	
+	// The current strength of gravity on this sprite.
+	//
+	// @zasm_var SPRITE_GRAVITY_STRENGTH
+	internal const int GravityStrength;
+	
+	// The current terminal velocity of this sprite.
+	//
+	// @zasm_var SPRITE_TERMINAL_VELOCITY
+	internal const int TerminalVelocity;
+	
+	// If non-zero, overrides the current [GravityStrength].
+	//
+	// @zasm_var SPRITE_CUSTOM_GRAVITY_STRENGTH
+	internal int CustomGravityStrength;
+	
+	// If non-zero, overrides the current [TerminalVelocity].
+	//
+	// @zasm_var SPRITE_CUSTOM_TERMINAL_VELOCITY
+	internal int CustomTerminalVelocity;
 
 	// How to flip (or rotate) the sprite.
 	//

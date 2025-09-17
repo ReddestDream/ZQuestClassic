@@ -182,6 +182,7 @@ def run_replays_process(args):
     test_results_folder = root_dir / '.tmp/replay_uploads_test_results'
     if test_results_folder.exists():
         shutil.rmtree(test_results_folder)
+    test_results_folder.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
             sys.executable,
@@ -245,8 +246,6 @@ def run_replays():
     failing_runs = []
     for run in test_results.runs[-1]:
         if not run.success:
-            if '0FF17D261771D591F9B3BF1919A39D88' in run.path:
-                print(run)
             failing_runs.append(run)
 
     if failing_runs:

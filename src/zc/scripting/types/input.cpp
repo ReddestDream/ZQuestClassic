@@ -78,7 +78,7 @@ static ArrayRegistrar MOUSEARR_registrar(MOUSEARR, []{
 			return true;
 		}
 	);
-	impl.setDefaultValue(-10000);
+	impl.compatSetDefaultValue(-10000);
 	impl.setMul10000(false);
 	return &impl;
 }());
@@ -96,7 +96,6 @@ static ArrayRegistrar RAWKEY_registrar(RAWKEY, []{
 			return true;
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
@@ -123,14 +122,12 @@ static ArrayRegistrar DISABLEKEY_registrar(DISABLEKEY, []{
 			return true;
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
 
 static ArrayRegistrar KEYINPUT_registrar(KEYINPUT, []{
 	static ScriptingArray_GlobalCArray impl(KeyInput, comptime_array_size(KeyInput));
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	impl.setSideEffect([](int index){
 		switch (index)
@@ -145,14 +142,12 @@ static ArrayRegistrar KEYINPUT_registrar(KEYINPUT, []{
 
 static ArrayRegistrar KEYPRESS_registrar(KEYPRESS, []{
 	static ScriptingArray_GlobalCArray impl(KeyPress, comptime_array_size(KeyPress));
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
 
 static ArrayRegistrar DISABLEBUTTON_registrar(DISABLEBUTTON, []{
 	static ScriptingArray_GlobalCArray impl(disable_control, comptime_array_size(disable_control));
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
@@ -167,7 +162,6 @@ static ArrayRegistrar READKEY_registrar(READKEY, []{
 			return false;
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	impl.setReadOnly();
 	return &impl;
@@ -183,7 +177,6 @@ static ArrayRegistrar JOYPADPRESS_registrar(JOYPADPRESS, []{
 			return false;
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	impl.setReadOnly();
 	return &impl;
@@ -233,20 +226,19 @@ static ArrayRegistrar KEYBINDINGS_registrar(KEYBINDINGS, []{
 			return true;
 		}
 	);
-	impl.setDefaultValue(0);
 	impl.setMul10000(true);
 	return &impl;
 }());
 
 static ArrayRegistrar BUTTONHELD_registrar(BUTTONHELD, []{
 	static ScriptingArray_GlobalCArray impl(button_hold, comptime_array_size(button_hold));
-	impl.boundIndex();
+	impl.compatBoundIndex();
 	return &impl;
 }());
 
 static ArrayRegistrar BUTTONINPUT_registrar(BUTTONINPUT, []{
 	static ScriptingArray_GlobalCArray impl(control_state, comptime_array_size(control_state));
-	impl.boundIndex();
+	impl.compatBoundIndex();
 	impl.setSideEffect([](int index){
 		if (index < 11 && get_qr(qr_FIXDRUNKINPUTS))
 			drunk_toggle_state[index] = false;
@@ -256,7 +248,7 @@ static ArrayRegistrar BUTTONINPUT_registrar(BUTTONINPUT, []{
 
 static ArrayRegistrar BUTTONPRESS_registrar(BUTTONPRESS, []{
 	static ScriptingArray_GlobalCArray impl(button_press, comptime_array_size(button_press));
-	impl.boundIndex();
+	impl.compatBoundIndex();
 	impl.setSideEffect([](int index) {
 		if (index < 11 && get_qr(qr_FIXDRUNKINPUTS)) {
 			drunk_toggle_state[index] = false;

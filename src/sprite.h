@@ -59,7 +59,7 @@ public:
 			parent->children.push_back(this);
 	}
 
-    uint8_t screen_spawned;
+    uint8_t screen_spawned, current_screen;
     zfix z,fall,fakefall,fakez;
     int32_t tile,shadowtile,cs,flip,c_clk,clk,misc;
     int16_t flickercolor;
@@ -78,6 +78,9 @@ public:
     int32_t txsz = -1;
 	// tile height
 	int32_t tysz = -1;
+    // Specific to the sprite subclass. For items, this is the item type. For weapons, it's the weapon type. etc.
+    // Not unique. For a unique identifer, use "getUID()".
+    // If negative, the sprite will not render.
     int32_t id;
     zfix slopeid;
     byte onplatid = 0;
@@ -126,6 +129,7 @@ public:
 	bool isspawning;
 	bool can_flicker;
 	bool hide_hitbox;
+    bool behind;
 	
 	byte spr_shadow, spr_death, spr_spawn;
 	int16_t spr_death_anim_clk, spr_spawn_anim_clk;
@@ -134,6 +138,8 @@ public:
 	byte glowRad, glowShape;
 	
 	int32_t ignore_delete;
+	
+	zfix custom_gravity, custom_terminal_v;
     
     sprite();
     sprite(sprite const & other);
@@ -144,6 +150,7 @@ public:
     virtual void drawzcboss(BITMAP* dest);                        // main layer
     virtual void draw8(BITMAP* dest);                       // main layer
     virtual void drawcloaked(BITMAP* dest);                 // main layer
+	virtual bool can_drawshadow() const;
     virtual void drawshadow(BITMAP* dest, bool translucent);// main layer
     virtual void draw2(BITMAP* dest);                       // top layer for special needs
     virtual void drawcloaked2(BITMAP* dest);                // top layer for special needs
@@ -159,11 +166,12 @@ public:
     int32_t real_ground_y(zfix fy);
     int32_t real_z(zfix fz);
     int32_t fake_z(zfix fz);
+	zfix total_z() const;
+	zfix center_y() const;
     virtual bool hit();
     virtual bool hit(sprite *s);
     virtual bool hit(int32_t tx,int32_t ty,int32_t tz,int32_t txsz,int32_t tysz,int32_t tzsz);
     virtual bool hit(int32_t tx,int32_t ty,int32_t txsz,int32_t tysz);
-    
     
     virtual int32_t hitdir(int32_t tx,int32_t ty,int32_t txsz,int32_t tysz,int32_t dir);
     virtual void move(zfix dx,zfix dy);
@@ -173,6 +181,16 @@ public:
     void explode(int32_t mode);
 	bool getCanFlicker();
 	void setCanFlicker(bool v);
+	
+	// zfix returns in px/frame^2 and px/frame
+	// _fall returns modified by *100 and cast to int
+	virtual zfix get_gravity(bool skip_custom = false) const;
+	virtual zfix get_terminalv(bool skip_custom = false) const;
+	virtual int32_t get_grav_fall() const;
+	virtual int32_t get_terminalv_fall() const;
+	bool handle_termv();
+	
+	virtual void update_current_screen();
 	
 	virtual int32_t run_script(int32_t mode);
 	
@@ -192,6 +210,10 @@ enum //run_script modes
 
 #define SLMAX 255*(511*4)+1
 
+struct SpriteSorter
+{
+	bool operator()(sprite* s1, sprite* s2) const;
+};
 class sprite_list
 {
     sprite *sprites[SLMAX];
@@ -273,10 +295,10 @@ public:
     byte undercset;
 	byte blockLayer;
 	zfix step;
-	zfix grav_step;
 	bool force_many;
 	bool no_icy;
 	bool new_block;
+	bool grav_falling;
     
 	cpos_info blockinfo;
 	
@@ -287,7 +309,7 @@ public:
     void push_new(zfix bx,zfix by,int32_t d,int32_t f,zfix spd);
 	bool check_hole() const;
 	bool check_trig() const;
-	bool check_side_fall() const;
+	bool check_side_fall(bool antigrav) const;
 	bool active() const;
     virtual bool animate(int32_t index);
     virtual void draw(BITMAP *dest);
@@ -324,9 +346,18 @@ public:
 	virtual bool animate(int32_t);
 };
 
+class tempsprite_shadow : public sprite
+{
+public:
+	tempsprite_shadow(sprite* parent);
+	void draw(BITMAP *dest) override;
+};
+
 bool insideRotRect(double x, double y, int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t x3, int32_t y3, int32_t x4, int32_t y4);
 bool lineLineColl(zfix x1, zfix y1, zfix x2, zfix y2, zfix x3, zfix y3, zfix x4, zfix y4);
 bool lineBoxCollision(zfix linex1, zfix liney1, zfix linex2, zfix liney2, zfix boxx, zfix boxy, zfix boxwidth, zfix boxheight);
 double comparePointLine(double x, double y, double x1, double x2, double y1, double y2);
+
+void for_every_sprite(std::function<void(sprite&)> proc);
 
 #endif

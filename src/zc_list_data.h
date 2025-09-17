@@ -14,6 +14,7 @@ namespace GUI::ZCListData
 	GUI::ListData items(bool numbered = false, bool none = true);
 	GUI::ListData dropsets(bool numbered = false, bool none = false);
 	GUI::ListData itemclass(bool numbered = false, bool zero_none = false);
+	GUI::ListData level_items(bool numbered = false, bool skipNone = false);
 	GUI::ListData combotype(bool numbered = false, bool skipNone = false);
 	GUI::ListData mapflag(int32_t numericalFlags, bool numbered = false, bool skipNone = false);
 	GUI::ListData counters(bool numbered = false, bool skipNone = false);
@@ -65,13 +66,26 @@ namespace GUI::ZCListData
 	GUI::ListData const& light_shapes();
 	GUI::ListData const& dmaptypes();
 	GUI::ListData const& alignments();
-	GUI::ListData const& buttons();
+	GUI::ListData const& buttons(bool none = false);
 	GUI::ListData const& autocombotypes();
 	GUI::ListData const& scripttypes();
 	GUI::ListData const& patterntypes();
 	GUI::ListData const& heroanimations();
 	GUI::ListData const& swimtypes();
 	GUI::ListData const& doortypes();
+}
+
+namespace GUI::ZCCheckListData
+{
+	std::vector<CheckListInfo> numbers(int first, int last);
+	std::vector<CheckListInfo> const& level_states();
+	std::vector<CheckListInfo> const& global_states();
+	std::vector<CheckListInfo> level_items();
+	std::vector<CheckListInfo> const& dir_4();
+	std::vector<CheckListInfo> const& dir_8();
+	std::vector<CheckListInfo> const& buttons();
+	std::vector<CheckListInfo> const& screen_state();
+	std::vector<CheckListInfo> const& ex_state();
 }
 
 #endif

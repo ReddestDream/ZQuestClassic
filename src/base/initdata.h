@@ -19,12 +19,22 @@ enum
 	REGION_MAPPING_PHYSICAL,
 	REGION_MAPPING_MAX
 };
+enum
+{
+	SPRITE_THRESHOLD_GROUND,
+	SPRITE_THRESHOLD_3,
+	SPRITE_THRESHOLD_4,
+	SPRITE_THRESHOLD_OVERHEAD,
+	SPRITE_THRESHOLD_5,
+	SPRITE_THRESHOLD_MAX
+};
 struct zinitdata
 {
 	byte items[MAXITEMS/8];
 	
-	byte litems[MAXLEVELS] = {0};
-	bounded_vec<word,byte> level_keys {MAXLEVELS};
+	word litems[MAXLEVELS] = {0};
+	bounded_vec<word,dword> lvlswitches {MAXLEVELS, 0};
+	bounded_vec<word,byte> level_keys {MAXLEVELS, 0};
 	
 	word counter[MAX_COUNTERS];
 	word mcounter[MAX_COUNTERS] = {0, 255, 0, 0, 0, 255}; // crMONEY/crKEYS = 255
@@ -74,6 +84,9 @@ struct zinitdata
 	
 	byte region_mapping;
 	
+	word item_spawn_flicker = 32, item_timeout_dur = 512, item_timeout_flicker = 0;
+	byte item_flicker_speed = 2;
+	
 	bitstring gen_doscript;
 	bounded_map<word,word> gen_exitState {NUMSCRIPTSGENERIC};
 	bounded_map<word,word> gen_reloadState {NUMSCRIPTSGENERIC};
@@ -83,6 +96,7 @@ struct zinitdata
 	bounded_map<dword,bounded_map<dword,int32_t>> screen_data {MAXSCRS, {0}};
 	
 	byte bottle_slot[NUM_BOTTLE_SLOTS];
+	word sprite_z_thresholds[SPRITE_THRESHOLD_MAX];
 	
 	bool get_item(size_t ind) const {return get_bit(items,ind);}
 	void set_item(size_t ind, bool st) {set_bit(items,ind,st);}

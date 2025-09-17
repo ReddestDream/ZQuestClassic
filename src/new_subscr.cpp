@@ -22,6 +22,7 @@
 #include "zc_list_data.h"
 
 #ifdef IS_PLAYER
+#include "zc/hero.h"
 extern sprite_list Lwpns;
 extern bool msg_onscreen;
 void verifyBothWeapons();
@@ -105,11 +106,59 @@ void animate_subscr_buttonitems()
 	}
 }
 
-static int get_subscr_item_id(int family, bool compat)
+static int get_subscr_item_id(int family, bool compat = false)
 {
 	if(compat && replay_version_check(0,24))
 		return current_item_id(family,true,false,false);
 	return current_item_id(family,false,false,false);
+}
+
+static int calc_item_from_class_id_button(int specific_item_id, int button_id, int item_class)
+{
+	int item_id = -1;
+	if (specific_item_id > -1)
+		item_id = specific_item_id;
+	else if (button_id > -1)
+	{
+		if (button_id >= 4) return 0;
+		int ids[] = { Awpn,Bwpn,Xwpn,Ywpn };
+		item_id = NEG_OR_MASK(ids[button_id], 0xFF);
+	}
+	else
+	{
+		auto family = -1;
+		switch (item_class)
+		{
+			case itype_bowandarrow:
+			case itype_arrow:
+#ifdef IS_PLAYER
+				if (get_subscr_item_id(itype_bow) > -1
+					&& get_subscr_item_id(itype_arrow) > -1)
+					family = itype_arrow;
+#else
+				family = itype_arrow;
+#endif
+				break;
+			case itype_letterpotion:
+#ifdef IS_PLAYER
+				if (get_subscr_item_id(itype_potion) > -1)
+					family = itype_potion;
+				else if (get_subscr_item_id(itype_letter) > -1)
+					family = itype_letter;
+#else
+				if (get_subscr_item_id(itype_potion) > -1)
+					family = itype_potion;
+				else family = itype_letter;
+#endif
+				break;
+			default:
+				family = item_class;
+				break;
+		}
+		if (family < 0) return 0;
+		item_id = get_subscr_item_id(family);
+	}
+	return item_id;
 }
 
 void refresh_subscr_items()
@@ -128,7 +177,7 @@ void refresh_subscr_items()
 				case itype_bosskey:
 					continue;
 			}
-			get_subscr_item_id(i, false);
+			get_subscr_item_id(i);
 		}
 	}
 }
@@ -1466,8 +1515,18 @@ int32_t SubscrWidget::read(PACKFILE *f, word s_version)
 			return qe_invalid;
 		if(!p_getc(&req_counter_cond_type,f))
 			return qe_invalid;
-		if(!p_getc(&req_litems,f))
-			return qe_invalid;
+		if(s_version >= 15)
+		{
+			if(!p_igetw(&req_litems,f))
+				return qe_invalid;
+		}
+		else
+		{
+			byte b;
+			if(!p_getc(&b,f))
+				return qe_invalid;
+			req_litems = word(b);
+		}
 		if(!p_igetw(&req_litem_level,f))
 			return qe_invalid;
 		byte tempb;
@@ -1564,7 +1623,7 @@ int32_t SubscrWidget::write(PACKFILE *f) const
 		new_return(1);
 	if(!p_putc(req_counter_cond_type,f))
 		new_return(1);
-	if(!p_putc(req_litems,f))
+	if(!p_iputw(req_litems,f))
 		new_return(1);
 	if(!p_iputw(req_litem_level,f))
 		new_return(1);
@@ -2267,7 +2326,7 @@ void SW_ButtonItem::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& p
 	if(btnitem_ids[btn] > nullval)
 	{
 		bool dodraw = true;
-		switch(itemsbuf[btnitem_ids[btn]&0xFF].family)
+		switch(itemsbuf[btnitem_ids[btn]&0xFF].type)
 		{
 			case itype_arrow:
 				if(btnitem_ids[btn]&0xF000)
@@ -3034,6 +3093,8 @@ byte SW_MMapTitle::get_strs(char* line1, char* line2) const
 
 void SW_MMapTitle::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) const
 {
+	if((flags&SUBSCR_MMAPTIT_REQMAP) && !has_item(itype_map, -1))
+		return;
 	if (get_qr(qr_OLD_DMAP_INTRO_STRINGS))
 		draw_old(dest, xofs, yofs, page);
 	else
@@ -3049,28 +3110,25 @@ void SW_MMapTitle::draw_new(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage
 void SW_MMapTitle::draw_old(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) const
 {
 	FONT* tempfont = get_zc_font(fontid);
-	if(!(flags&SUBSCR_MMAPTIT_REQMAP) || has_item(itype_map, -1))
+	auto y1 = y+yofs, y2 = y1+8;
+	if(flags&SUBSCR_MMAPTIT_ONELINE)
+		y2 = y1;
+	char bufs[2][21] = {0};
+	auto linecnt = get_strs(bufs[0],bufs[1]);
+	if(linecnt == 1)
 	{
-		auto y1 = y+yofs, y2 = y1+8;
-		if(flags&SUBSCR_MMAPTIT_ONELINE)
-			y2 = y1;
-		char bufs[2][21] = {0};
-		auto linecnt = get_strs(bufs[0],bufs[1]);
-		if(linecnt == 1)
-		{
-			textprintf_styled_aligned_ex(dest,tempfont,x+xofs,y2,shadtype,
-				align,c_text.get_color(),c_shadow.get_color(),c_bg.get_color(),
-				"%s",bufs[0]);
-		}
-		else if(linecnt == 2)
-		{
-			textprintf_styled_aligned_ex(dest,tempfont,x+xofs,y2,shadtype,
-				align,c_text.get_color(),c_shadow.get_color(),c_bg.get_color(),
-				"%s",bufs[1]);
-			textprintf_styled_aligned_ex(dest,tempfont,x+xofs,y1,shadtype,
-				align,c_text.get_color(),c_shadow.get_color(),c_bg.get_color(),
-				"%s",bufs[0]);
-		}
+		textprintf_styled_aligned_ex(dest,tempfont,x+xofs,y2,shadtype,
+			align,c_text.get_color(),c_shadow.get_color(),c_bg.get_color(),
+			"%s",bufs[0]);
+	}
+	else if(linecnt == 2)
+	{
+		textprintf_styled_aligned_ex(dest,tempfont,x+xofs,y2,shadtype,
+			align,c_text.get_color(),c_shadow.get_color(),c_bg.get_color(),
+			"%s",bufs[1]);
+		textprintf_styled_aligned_ex(dest,tempfont,x+xofs,y1,shadtype,
+			align,c_text.get_color(),c_shadow.get_color(),c_bg.get_color(),
+			"%s",bufs[0]);
 	}
 }
 SubscrWidget* SW_MMapTitle::clone() const
@@ -3274,8 +3332,8 @@ void SW_MMap::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) c
 		{
 			int screen = get_homescr();
 #ifdef IS_PLAYER
-			if (hero_screen < 0x80)
-				screen = hero_screen;
+			if (Hero.current_screen < 0x80)
+				screen = Hero.current_screen;
 #endif
 
 			if(type==dmOVERW)
@@ -3312,8 +3370,18 @@ int32_t SW_MMap::read(PACKFILE *f, word s_version)
 		return ret;
 	if(s_version >= 13)
 	{
-		if(!p_getc(&compass_litems,f))
-			return qe_invalid;
+		if (s_version >= 15)
+		{
+			if(!p_igetw(&compass_litems,f))
+				return qe_invalid;
+		}
+		else
+		{
+			byte b;
+			if(!p_getc(&b,f))
+				return qe_invalid;
+			compass_litems = word(b);
+		}
 	}
 	if(auto ret = c_plr.read(f,s_version))
 		return ret;
@@ -3327,7 +3395,7 @@ int32_t SW_MMap::write(PACKFILE *f) const
 {
 	if(auto ret = SubscrWidget::write(f))
 		return ret;
-	if(!p_putc(compass_litems,f))
+	if(!p_iputw(compass_litems,f))
 		new_return(1);
 	if(auto ret = c_plr.write(f))
 		return ret;
@@ -3544,7 +3612,7 @@ static bool check_sbomb(optional<int> iid = nullopt)
 		return true;
 	if(get_qr(qr_BROKEN_BOMB_AMMO_COSTS) ? game->get_sbombs() : (iid ? checkmagiccost(*iid) : current_item_id(itype_sbomb,true) > -1))
 		return true;
-	auto sbombid = iid ? *iid : get_subscr_item_id(itype_sbomb, false);
+	auto sbombid = iid ? *iid : get_subscr_item_id(itype_sbomb);
 	if(sbombid >- 1 && itemsbuf[sbombid].misc1==0 && Lwpns.idCount(wLitSBomb) > 0)
 		return true; // Remote Bombs - still usable without cost
 	return false;
@@ -3558,7 +3626,7 @@ int32_t SW_ItemSlot::getItemVal() const
 	if(iid > -1)
 	{
 		bool select = false;
-		switch(itemsbuf[iid].family)
+		switch(itemsbuf[iid].type)
 		{
 			case itype_bomb:
 				if(check_bomb(iid))
@@ -3586,7 +3654,7 @@ int32_t SW_ItemSlot::getItemVal() const
 		if (select && !item_disabled(iid) && game->get_item(iid))
 		{
 			int32_t ret = iid;
-			if(ret>-1 && itemsbuf[ret].family == itype_arrow)
+			if(ret>-1 && itemsbuf[ret].type == itype_arrow)
 				ret += 0xF000; //bow
 			return ret;
 		}
@@ -3625,7 +3693,7 @@ int32_t SW_ItemSlot::getItemVal() const
 	}
 	if(family < 0)
 		return -1;
-	int32_t itemid = get_subscr_item_id(family, false);
+	int32_t itemid = get_subscr_item_id(family);
 	if(item_disabled(itemid))
 		return -1;
 	if(wrap_iid(itemid) < 0)
@@ -3655,7 +3723,7 @@ int32_t SW_ItemSlot::getItemVal() const
 		case itype_heartpiece:
 			return iHCPiece;
 	}
-	int itemid = get_subscr_item_id(fam, false);
+	int itemid = get_subscr_item_id(fam);
 	if(itemid == -1) return -1;
 	if(fam == itype_bowandarrow)
 		itemid |= 0xF000;
@@ -3669,7 +3737,7 @@ int32_t SW_ItemSlot::getDisplayItem() const
 	if(iid > -1)
 	{
 		bool select = false;
-		switch(itemsbuf[iid].family)
+		switch(itemsbuf[iid].type)
 		{
 			case itype_bomb:
 				if(check_bomb(iid))
@@ -3709,7 +3777,7 @@ int32_t SW_ItemSlot::getDisplayItem() const
 		if (select && !item_disabled(iid) && game->get_item(iid))
 		{
 			auto ret = iid;
-			if(ret>-1 && itemsbuf[ret].family == itype_arrow)
+			if(ret>-1 && itemsbuf[ret].type == itype_arrow)
 				ret += 0xF000; //bow
 			return ret;
 		}
@@ -3758,7 +3826,7 @@ int32_t SW_ItemSlot::getDisplayItem() const
 	}
 	if(family < 0)
 		return -1;
-	int32_t itemid = get_subscr_item_id(family, false);
+	int32_t itemid = get_subscr_item_id(family);
 	if(item_disabled(itemid))
 		return -1;
 	if(wrap_iid(itemid) < 0)
@@ -3792,7 +3860,7 @@ int32_t SW_ItemSlot::getDisplayItem() const
 			if(nosp) break;
 			return iHCPiece;
 	}
-	int itemid = get_subscr_item_id(fam, false);
+	int itemid = get_subscr_item_id(fam);
 	if(itemid == -1) return -1;
 	if(fam == itype_bowandarrow)
 		itemid |= 0xF000;
@@ -3833,7 +3901,7 @@ void SW_ItemSlot::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& pag
 			putitem3(dest,x+xofs,y+yofs,itemid,clk);
 			if(!nosp && (id&0xF000))
 			{
-				int id2 = get_subscr_item_id(itype_bow, false);
+				int id2 = get_subscr_item_id(itype_bow);
 				if(id2 > -1)
 					putitem3(dest,x+xofs,y+yofs,id2,clk);
 			}
@@ -4506,7 +4574,7 @@ word SW_GaugePiece::getH() const
 
 void SW_GaugePiece::draw_piece(BITMAP* dest, int dx, int dy, int container, int anim_offs) const
 {
-	word ctr_cur = get_ctr(), ctr_max = get_ctr_max(),
+	dword ctr_cur = get_ctr(), ctr_max = get_ctr_max(),
 		ctr_per_cont = get_per_container();
 	int containers=ctr_max/ctr_per_cont;
 	int fr = frames ? frames : 1;
@@ -4572,14 +4640,10 @@ void SW_GaugePiece::draw_piece(BITMAP* dest, int dx, int dy, int container, int 
 void SW_GaugePiece::draw(BITMAP* dest, int xofs, int yofs, SubscrPage& page) const
 {
 	auto b = zq_ignore_item_ownership;
-	zq_ignore_item_ownership = false;
 	
 	bool inf = infinite();
 	if(flags & (inf ? SUBSCR_GAUGE_INFITM_BAN : SUBSCR_GAUGE_INFITM_REQ))
-	{
-		zq_ignore_item_ownership = b;
 		return;
-	}
 	
 	int anim_offs = 0;
 	bool animate = true;
@@ -4614,7 +4678,7 @@ void SW_GaugePiece::draw(BITMAP* dest, int xofs, int yofs, SubscrPage& page) con
 		}
 		if(skipanim) ++anim_offs;
 	}
-	
+
 	if(!gauge_hei && !gauge_wid) //1x1
 	{
 		draw_piece(dest, x+xofs, y+yofs, container, anim_offs);
@@ -4673,7 +4737,6 @@ void SW_GaugePiece::draw(BITMAP* dest, int xofs, int yofs, SubscrPage& page) con
 			}
 		}
 	}
-	zq_ignore_item_ownership = b;
 }
 bool SW_GaugePiece::copy_prop(SubscrWidget const* src, bool all)
 {
@@ -4684,6 +4747,7 @@ bool SW_GaugePiece::copy_prop(SubscrWidget const* src, bool all)
 		case widgLGAUGE:
 		case widgMGAUGE:
 		case widgMISCGAUGE:
+		case widgITMCOOLDOWNGAUGE:
 			break;
 		default:
 			return false;
@@ -4871,21 +4935,36 @@ byte SW_LifeGaugePiece::getType() const
 	return widgLGAUGE;
 }
 
-word SW_LifeGaugePiece::get_ctr() const
+dword SW_LifeGaugePiece::get_ctr() const
 {
-	return get_ssc_ctr(crLIFE);
+	auto old_ign_ownership = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	auto ret = get_ssc_ctr(crLIFE);
+	
+	zq_ignore_item_ownership = old_ign_ownership;
+	
+	return ret;
 }
-word SW_LifeGaugePiece::get_ctr_max() const
+dword SW_LifeGaugePiece::get_ctr_max() const
 {
-	return get_ssc_ctrmax(crLIFE);
+	auto old_ign_ownership = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	auto ret = get_ssc_ctrmax(crLIFE);
+	
+	zq_ignore_item_ownership = old_ign_ownership;
+	
+	return ret;
 }
 bool SW_LifeGaugePiece::infinite() const
 {
 	if(zq_view_allinf && can_inf(crLIFE,inf_item)) return true;
 	if(zq_view_noinf) return false;
+	
 	return SW_GaugePiece::infinite();
 }
-word SW_LifeGaugePiece::get_per_container() const
+dword SW_LifeGaugePiece::get_per_container() const
 {
 	return game ? game->get_hp_per_heart() : zinit.hp_per_heart;
 }
@@ -4949,23 +5028,45 @@ byte SW_MagicGaugePiece::getType() const
 	return widgMGAUGE;
 }
 
-word SW_MagicGaugePiece::get_ctr() const
+dword SW_MagicGaugePiece::get_ctr() const
 {
-	return get_ssc_ctr(crMAGIC);
+	auto old_ign_ownership = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	auto ret = get_ssc_ctr(crMAGIC);
+	
+	zq_ignore_item_ownership = old_ign_ownership;
+	
+	return ret;
 }
-word SW_MagicGaugePiece::get_ctr_max() const
+dword SW_MagicGaugePiece::get_ctr_max() const
 {
-	return get_ssc_ctrmax(crMAGIC);
+	auto old_ign_ownership = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	auto ret = get_ssc_ctrmax(crMAGIC);
+	
+	zq_ignore_item_ownership = old_ign_ownership;
+	
+	return ret;
 }
 bool SW_MagicGaugePiece::infinite() const
 {
 	if(zq_view_allinf && can_inf(crMAGIC,inf_item)) return true;
 	if(zq_view_noinf) return false;
-	bool b = false;
-	get_ssc_ctr(crMAGIC, &b);
-	return b || SW_GaugePiece::infinite();
+	
+	auto old_ign_ownership = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	bool ret = false;
+	get_ssc_ctr(crMAGIC, &ret);
+	ret = ret || SW_GaugePiece::infinite();
+	
+	zq_ignore_item_ownership = old_ign_ownership;
+	
+	return ret;
 }
-word SW_MagicGaugePiece::get_per_container() const
+dword SW_MagicGaugePiece::get_per_container() const
 {
 	return game ? game->get_mp_per_block() : zinit.magic_per_block;
 }
@@ -5017,23 +5118,45 @@ byte SW_MiscGaugePiece::getType() const
 	return widgMISCGAUGE;
 }
 
-word SW_MiscGaugePiece::get_ctr() const
+dword SW_MiscGaugePiece::get_ctr() const
 {
-	return get_ssc_ctr(counter);
+	auto old_ign_ownership = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	auto ret = get_ssc_ctr(counter);
+	
+	zq_ignore_item_ownership = old_ign_ownership;
+	
+	return ret;
 }
-word SW_MiscGaugePiece::get_ctr_max() const
+dword SW_MiscGaugePiece::get_ctr_max() const
 {
-	return get_ssc_ctrmax(counter);
+	auto old_ign_ownership = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	auto ret = get_ssc_ctrmax(counter);
+	
+	zq_ignore_item_ownership = old_ign_ownership;
+	
+	return ret;
 }
 bool SW_MiscGaugePiece::infinite() const
 {
 	if(zq_view_allinf && can_inf(counter,inf_item)) return true;
 	if(zq_view_noinf) return false;
-	bool b = false;
-	get_ssc_ctr(counter, &b);
-	return b || SW_GaugePiece::infinite();
+	
+	auto old_ign_ownership = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	bool ret = false;
+	get_ssc_ctr(counter, &ret);
+	ret = ret || SW_GaugePiece::infinite();
+	
+	zq_ignore_item_ownership = old_ign_ownership;
+	
+	return ret;
 }
-word SW_MiscGaugePiece::get_per_container() const
+dword SW_MiscGaugePiece::get_per_container() const
 {
 	return per_container;
 }
@@ -5073,6 +5196,254 @@ int32_t SW_MiscGaugePiece::write(PACKFILE *f) const
 	if(!p_iputw(counter, f))
 		new_return(1);
 	if(!p_iputw(per_container,f))
+		new_return(1);
+	return 0;
+}
+
+byte SW_ItemCooldownGauge::getType() const
+{
+	return widgITMCOOLDOWNGAUGE;
+}
+
+dword SW_ItemCooldownGauge::get_ctr() const
+{
+	int item_id = calc_item_from_class_id_button(specific_item_id, button_id, item_class);
+	if (unsigned(item_id) >= MAXITEMS)
+		return 0;
+	
+	auto b = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	auto cd_data = calc_item_cooldown(item_id);
+	
+	zq_ignore_item_ownership = b;
+	
+	zfix cooldown = cd_data.cooldown;
+	zfix max_cooldown = cd_data.max_cooldown;
+	zfix perc = cooldown < 0 ? 1.0_zf : (cooldown / max_cooldown);
+	perc = vbound(perc, 0_zf, 1_zf);
+	
+	return (perc * zfix(total_points)).getCeil(); 
+}
+dword SW_ItemCooldownGauge::get_ctr_max() const
+{
+	return total_points;
+}
+bool SW_ItemCooldownGauge::infinite() const
+{
+	return false;
+}
+dword SW_ItemCooldownGauge::get_per_container() const
+{
+	return per_container;
+}
+void SW_ItemCooldownGauge::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) const
+{
+	SW_GaugePiece::draw(dest, xofs, yofs, page);
+}
+SubscrWidget* SW_ItemCooldownGauge::clone() const
+{
+	return new SW_ItemCooldownGauge(*this);
+}
+bool SW_ItemCooldownGauge::copy_prop(SubscrWidget const* src, bool all)
+{
+	if (!SW_GaugePiece::copy_prop(src, all))
+		return false;
+	if (src->getType() != getType() || src == this)
+		return false;
+	SW_ItemCooldownGauge const* other = dynamic_cast<SW_ItemCooldownGauge const*>(src);
+	item_class = other->item_class;
+	specific_item_id = other->specific_item_id;
+	button_id = other->button_id;
+	total_points = other->total_points;
+	per_container = other->per_container;
+	return true;
+}
+int32_t SW_ItemCooldownGauge::read(PACKFILE* f, word s_version)
+{
+	if (auto ret = SW_GaugePiece::read(f, s_version))
+		return ret;
+	if (!p_igetl(&item_class, f))
+		return qe_invalid;
+	if (!p_igetl(&specific_item_id, f))
+		return qe_invalid;
+	if (!p_getc(&button_id, f))
+		return qe_invalid;
+	if (!p_igetl(&total_points, f))
+		return qe_invalid;
+	if (!p_igetl(&per_container, f))
+		return qe_invalid;
+	return 0;
+}
+int32_t SW_ItemCooldownGauge::write(PACKFILE* f) const
+{
+	if (auto ret = SW_GaugePiece::write(f))
+		return ret;
+	if (!p_iputl(item_class, f))
+		new_return(1);
+	if (!p_iputl(specific_item_id, f))
+		new_return(1);
+	if (!p_putc(button_id, f))
+		new_return(1);
+	if (!p_iputl(total_points, f))
+		new_return(1);
+	if (!p_iputl(per_container, f))
+		new_return(1);
+	return 0;
+}
+
+int16_t SW_ItemCooldownText::getX() const
+{
+	auto tx = x+shadow_x(shadtype);
+	switch(align)
+	{
+		case sstaCENTER:
+			return tx-getW()/2;
+		case sstaRIGHT:
+			return tx-getW();
+	}
+	return tx;
+}
+int16_t SW_ItemCooldownText::getY() const
+{
+	return y+shadow_y(shadtype);
+}
+word SW_ItemCooldownText::getW() const
+{
+	int32_t len = text_length(get_zc_font(fontid), get_text().c_str());
+	return len == 0 ? 8 : len;
+}
+word SW_ItemCooldownText::getH() const
+{
+	return text_height(get_zc_font(fontid));
+}
+byte SW_ItemCooldownText::getType() const
+{
+	return widgITMCOOLDOWNTEXT;
+}
+string SW_ItemCooldownText::format_text(int cd) const
+{
+	int frames = cd % 60;
+	int seconds = (cd / 60) % 60;
+	int minutes = ((cd / 60) / 60) % 60;
+	
+	string text;
+	if (flags & SUBSCR_COOLDOWNTEXT_ALTSTYLE)
+	{
+		if (minutes)
+			text += fmt::format("{}m{:02}", minutes, seconds);
+		else
+			text += fmt::format("{}", seconds);
+		
+		text += fmt::format(".{:02}s", frames);
+	}
+	else
+	{
+		if (minutes)
+			text += fmt::format("{}:{:02}", minutes, seconds);
+		else
+			text += fmt::format("{}", seconds);
+		
+		text += fmt::format(".{:02}", frames);
+	}
+	return text;
+}
+string SW_ItemCooldownText::get_text() const
+{
+	int item_id = calc_item_from_class_id_button(specific_item_id, button_id, item_class);
+	if (unsigned(item_id) >= MAXITEMS)
+		return "";
+	
+	auto b = zq_ignore_item_ownership;
+	zq_ignore_item_ownership = false;
+	
+	auto cd_data = calc_item_cooldown(item_id);
+	
+	zq_ignore_item_ownership = b;
+	
+	auto cd = cd_data.cooldown;
+	if (!cd)
+		return "";
+	if (cd < 0)
+	{
+		cd = cd_data.max_cooldown; // display max time for 'infinite' cooldowns
+		if (!cd) cd = 60; // default display 1s
+	}
+	return format_text(cd);
+}
+void SW_ItemCooldownText::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage& page) const
+{
+	FONT* tempfont = get_zc_font(fontid);
+	textout_styled_aligned_ex(dest,tempfont,get_text().c_str(),x+xofs,y+yofs,
+		shadtype,align,c_text.get_color(),c_shadow.get_color(),c_bg.get_color());
+}
+SubscrWidget* SW_ItemCooldownText::clone() const
+{
+	return new SW_ItemCooldownText(*this);
+}
+bool SW_ItemCooldownText::copy_prop(SubscrWidget const* src, bool all)
+{
+	if(src->getType() != getType() || src == this)
+		return false;
+	SW_ItemCooldownText const* other = dynamic_cast<SW_ItemCooldownText const*>(src);
+	if(!SubscrWidget::copy_prop(other,all))
+		return false;
+	fontid = other->fontid;
+	align = other->align;
+	shadtype = other->shadtype;
+	c_text = other->c_text;
+	c_shadow = other->c_shadow;
+	c_bg = other->c_bg;
+	item_class = other->item_class;
+	specific_item_id = other->specific_item_id;
+	button_id = other->button_id;
+	return true;
+}
+int32_t SW_ItemCooldownText::read(PACKFILE *f, word s_version)
+{
+	if(auto ret = SubscrWidget::read(f,s_version))
+		return ret;
+	if(!p_igetl(&fontid,f))
+		return qe_invalid;
+	if(!p_getc(&align,f))
+		return qe_invalid;
+	if(!p_getc(&shadtype,f))
+		return qe_invalid;
+	if(auto ret = c_text.read(f,s_version))
+		return ret;
+	if(auto ret = c_shadow.read(f,s_version))
+		return ret;
+	if(auto ret = c_bg.read(f,s_version))
+		return ret;
+	if (!p_igetl(&item_class, f))
+		return qe_invalid;
+	if (!p_igetl(&specific_item_id, f))
+		return qe_invalid;
+	if (!p_getc(&button_id, f))
+		return qe_invalid;
+	return 0;
+}
+int32_t SW_ItemCooldownText::write(PACKFILE *f) const
+{
+	if(auto ret = SubscrWidget::write(f))
+		return ret;
+	if(!p_iputl(fontid,f))
+		new_return(1);
+	if(!p_putc(align,f))
+		new_return(1);
+	if(!p_putc(shadtype,f))
+		new_return(1);
+	if(auto ret = c_text.write(f))
+		return ret;
+	if(auto ret = c_shadow.write(f))
+		return ret;
+	if(auto ret = c_bg.write(f))
+		return ret;
+	if (!p_iputl(item_class, f))
+		new_return(1);
+	if (!p_iputl(specific_item_id, f))
+		new_return(1);
+	if (!p_putc(button_id, f))
 		new_return(1);
 	return 0;
 }
@@ -5222,7 +5593,7 @@ void SW_SelectedText::draw(BITMAP* dest, int32_t xofs, int32_t yofs, SubscrPage&
 			#endif
 			
 			itemdata const& itm = itemsbuf[itemid];
-			str = itm.get_name(false,itm.family==itype_arrow && !bowarrow);
+			str = itm.get_name(false,itm.type==itype_arrow && !bowarrow);
 			if(widg->getType() == widgITEMSLOT && (widg->flags&SUBSCR_CURITM_IGNR_SP_SELTEXT))
 			{
 				//leave the name as-is
@@ -5316,7 +5687,7 @@ void SW_CounterPercentBar::draw(BITMAP* dest, int32_t xofs, int32_t yofs, Subscr
 	
 	auto cur = get_ssc_ctr(counter);
 	auto max = get_ssc_ctrmax(counter);
-	zfix perc = max ? vbound((zfix(cur)/max), 1_zf, 0_zf) : 0_zf;
+	zfix perc = max ? vbound((zfix(cur)/max), 0_zf, 1_zf) : 0_zf;
 	auto x2 = x+xofs, y2 = y+yofs;
 	bool vertical = (flags&SUBSCR_COUNTERPERCBAR_VERTICAL);
 	bool invert = bool(flags&SUBSCR_COUNTERPERCBAR_INVERT) != vertical; // vertical naturally inverts
@@ -5560,6 +5931,12 @@ SubscrWidget* SubscrWidget::newType(byte ty)
 		case widgMISCGAUGE:
 			widg = new SW_MiscGaugePiece();
 			break;
+		case widgITMCOOLDOWNGAUGE:
+			widg = new SW_ItemCooldownGauge();
+			break;
+		case widgITMCOOLDOWNTEXT:
+			widg = new SW_ItemCooldownText();
+			break;
 		case widgTEXTBOX:
 			widg = new SW_TextBox();
 			break;
@@ -5632,6 +6009,10 @@ byte SubscrWidget::numFlags(byte type)
 			return SUBSCR_NUMFLAG_MISCGAUGE;
 		case widgBTNCOUNTER:
 			return SUBSCR_NUMFLAG_BTNCOUNTER;
+		case widgITMCOOLDOWNGAUGE:
+			return SUBSCR_NUMFLAG_COOLDOWNGAUGE;
+		case widgITMCOOLDOWNTEXT:
+			return SUBSCR_NUMFLAG_COOLDOWNTEXT;
 	}
 	return 0;
 }
@@ -6102,7 +6483,7 @@ bool ZCSubscreen::get_page_pos(int32_t itmid, word& pgpos)
 }
 int32_t ZCSubscreen::get_item_pos(word pgpos)
 {
-	if(pgpos&0xFF >= pages.size()) return -1;
+	if((pgpos&0xFF) >= pages.size()) return -1;
 	return pages[pgpos&0xFF].get_item_pos(pgpos>>8, false);
 }
 void ZCSubscreen::delete_page(byte id)

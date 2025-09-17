@@ -35,6 +35,7 @@ static const GUI::ListData retsqrlist
 
 static GUI::ListData init_data_list;
 
+int calculate_test_dmap();
 void call_testqst_dialog()
 {
 	if(!first_save) //Require quest file is saved (i.e. not 'Untitled' fresh from File->New)
@@ -43,23 +44,9 @@ void call_testqst_dialog()
 		if(!first_save)
 			return;
 	}
-	test_start_dmap = -1;
-	test_start_screen = Map.getCurrScr();
-	int32_t pal = Map.getcolor();
-	for(auto q = 0; q < MAXDMAPS; ++q)
-	{
-		if(DMaps[q].map == Map.getCurrMap())
-		{
-			if(pal == DMaps[q].color)
-			{
-				test_start_dmap = q;
-				break;
-			}
-			if(test_start_dmap < 0)
-				test_start_dmap = q;
-		}
-	}
-	if(test_start_dmap < 0) test_start_dmap = 0;
+	test_start_dmap = calculate_test_dmap();
+	test_start_screen = zc_min(0x7F, Map.getCurrScr());
+	
 	TestQstDialog().show();
 }
 
@@ -263,7 +250,7 @@ bool TestQstDialog::handleMessage(const GUI::DialogMessage<message>& msg)
 			test_killer.kill();
 
 			bool should_record = zc_get_config("zquest", "test_mode_record", false);
-			std::filesystem::path replay_file_dir = zc_get_config("zquest", "replay_file_dir", "replays/");
+			std::filesystem::path replay_file_dir = std::filesystem::path(zc_get_config("zquest", "replay_file_dir", "replays/")) / "test";
 			std::filesystem::create_directory(replay_file_dir);
 			auto replay_path = replay_file_dir / fmt::format("test_{}.zplay", std::time(nullptr));
 

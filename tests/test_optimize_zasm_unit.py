@@ -51,6 +51,8 @@ class TestOptimizeZasmUnit(ZCTestCase):
     def run_test(self, path: Path):
         run_args = [
             '-headless',
+            '-optimize-zasm-experimental',
+            '-optimize-zasm-no-parallel',
             '-test-optimize-zasm',
             str(path),
             '-no_console',

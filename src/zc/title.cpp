@@ -45,7 +45,7 @@
 #define stricmp _stricmp
 #endif
 
-extern int32_t loadlast;
+extern std::string loadlast;
 extern int32_t skipcont;
 
 static void select_mode()
@@ -1148,7 +1148,7 @@ static void select_game(bool skip = false)
 				}
 				else
 				{
-					loadlast = saves_current_selection() + 1;
+					loadlast = saves_current_path();
 				}
 
 				break;
@@ -1213,7 +1213,7 @@ static void select_game(bool skip = false)
 					}
 					else
 					{
-						loadlast = saves_current_selection() + 1;
+						loadlast = saves_current_path();
 						if (r.value()->header->quest)
 							done=true;
 					}
@@ -1298,7 +1298,7 @@ static void select_game(bool skip = false)
 				save_t* save = r.value();
 				if (game_details(save) && saves_select(save))
 				{
-					loadlast = saves_current_selection() + 1;
+					loadlast = saves_current_path();
 					if (save->header->quest)
 						done=true;
 				}
@@ -1556,7 +1556,7 @@ void game_over(int32_t type)
 		do {
 			load_control_state();
 		}
-		while(getInput(btnS, true, false, true));//rSbtn
+		while (getInput(btnS, INPUT_PRESS | INPUT_IGNORE_DISABLE));
 	}
 	
 	do
@@ -1565,7 +1565,7 @@ void game_over(int32_t type)
 		
 		if(f==-1)
 		{
-			if(getInput(btnUp, true, false, true))//rUp
+			if (getInput(btnUp, INPUT_PRESS | INPUT_IGNORE_DISABLE))
 			{
 				sfx(SaveScreenSettings[SAVESC_CUR_SOUND]);
 				pos=(pos==0)?2:pos-1;
@@ -1575,8 +1575,8 @@ void game_over(int32_t type)
 					if(pos==1) pos--;
 				}
 			}
-			
-			if(getInput(btnDown, true, false, true))//rDown
+
+			if (getInput(btnDown, INPUT_PRESS | INPUT_IGNORE_DISABLE))
 			{
 				sfx(SaveScreenSettings[SAVESC_CUR_SOUND]);
 				pos=(pos+1)%3;
@@ -1586,8 +1586,8 @@ void game_over(int32_t type)
 					if(pos==1) pos++;
 				}
 			}
-			
-			if(getInput(btnS, true, false, true)) ++f;//rSbtn
+
+			if (getInput(btnS, INPUT_PRESS | INPUT_IGNORE_DISABLE)) ++f;
 		}
 		
 		if(f>=0)
@@ -1739,19 +1739,19 @@ bool save_game(bool savepoint, int32_t type)
 			
 			if(f==-1)
 			{
-				if(getInput(btnUp, true, false, true))//rUp
+				if (getInput(btnUp, INPUT_PRESS | INPUT_IGNORE_DISABLE))
 				{
 					sfx(SaveScreenSettings[SAVESC_CUR_SOUND]);
 					pos=(pos==0)?2:pos-1;
 				}
-				
-				if(getInput(btnDown, true, false, true))//rDown
+
+				if (getInput(btnDown, INPUT_PRESS | INPUT_IGNORE_DISABLE))
 				{
 					sfx(SaveScreenSettings[SAVESC_CUR_SOUND]);
 					pos=(pos+1)%3;
 				}
-				
-				if(getInput(btnS, true, false, true)) ++f;//rSbtn
+
+				if (getInput(btnS, INPUT_PRESS | INPUT_IGNORE_DISABLE)) ++f;
 			}
 			
 			if(f>=0)
@@ -1846,19 +1846,19 @@ bool save_game(bool savepoint, int32_t type)
 					
 					if(g==-1)
 					{
-						if(getInput(btnUp, true, false, true))//rUp
+						if (getInput(btnUp, INPUT_PRESS | INPUT_IGNORE_DISABLE))
 						{
 							sfx(WAV_CHINK);
 							pos2=(pos2==0)?1:pos2-1;
 						}
-						
-						if(getInput(btnDown, true, false, true))//rDown
+
+						if (getInput(btnDown, INPUT_PRESS | INPUT_IGNORE_DISABLE))
 						{
 							sfx(WAV_CHINK);
 							pos2=(pos2+1)%2;
 						}
-						
-						if(getInput(btnS, true, false, true)) ++g;//rSbtn
+
+						if (getInput(btnS, INPUT_PRESS | INPUT_IGNORE_DISABLE)) ++g;
 					}
 					
 					if(g>=0)

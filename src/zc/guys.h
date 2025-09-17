@@ -58,7 +58,7 @@ public:
 
 	guy_flags flags;
 	
-	int16_t  family, dcset, anim;
+	int16_t  type, dcset, anim;
 	int16_t  dp, wdp, wpn;
 	
 	int16_t  rate, hrate, homing, grumble;
@@ -69,7 +69,7 @@ public:
 	byte hitsfx,deadsfx;
 	bool submerged;
 	
-	std::optional<ffc_handle_t> ffcactivated;
+	std::optional<combined_handle_t> activated_handle;
 
 	int32_t  clk2,sclk;
 	int32_t  starting_hp;
@@ -177,7 +177,7 @@ public:
 	bool canmove(int32_t ndir,zfix s,int32_t special, bool kb);
 	bool canmove(int32_t ndir,int32_t special, bool kb);
 	bool canmove(int32_t ndir, bool kb);
-	bool enemycanfall(int32_t id, bool checkgrav = true);
+	bool enemycanfall(int32_t id, bool checkgrav = true) const;
 	// 8-directional
 	void newdir_8_old(int32_t rate,int32_t homing, int32_t special,int32_t dx1,int32_t dy1,int32_t dx2,int32_t dy2);
 	void newdir_8(int32_t rate,int32_t homing, int32_t special,int32_t dx1,int32_t dy1,int32_t dx2,int32_t dy2);
@@ -188,8 +188,8 @@ public:
 	int32_t slide();
 	bool can_slide();
 	bool fslide();
-	bool overpit(enemy *e);
-	bool shadow_overpit(enemy *e);
+	bool overpit() const;
+	bool shadow_overpit() const;
 	virtual bool knockback(int32_t time, int32_t dir, int32_t speed);
 	virtual bool runKnockback();
 	// changes enemy's direction, checking restrictions
@@ -266,14 +266,16 @@ public:
 	virtual int32_t run_script(int32_t mode);
 	virtual ALLEGRO_COLOR hitboxColor(byte opacity = 255) const;
 	virtual optional<ScriptType> get_scrtype() const {return ScriptType::NPC;}
+	virtual void draw(BITMAP *dest);
+	virtual bool can_drawshadow() const;
+	virtual void drawshadow(BITMAP *dest, bool translucent);
 protected:
 	
 	
 	// to allow for different sfx on defeating enemy
 	virtual void death_sfx();
 	virtual void move(zfix dx,zfix dy);
-	virtual void removearmos(int32_t ax,int32_t ay, std::optional<ffc_handle_t> ffcactive = std::nullopt);
-	virtual void removearmosffc(const ffc_handle_t& ffc_handle);
+	virtual void removearmos(int32_t ax,int32_t ay);
 	virtual void move(zfix s);
 	void leave_item();
 	
@@ -289,14 +291,10 @@ protected:
 	int32_t defenditemclass(int32_t wpnId, int32_t *power);
 	int32_t defenditemclassNew(int32_t wpnId, int32_t *power, weapon *w, weapon* realweap = nullptr);
 	
-	bool dont_draw();
-	// base drawing function to be used by all derived classes instead of
-	// sprite::draw()
-	virtual void draw(BITMAP *dest);
+	bool dont_draw() const;
 	virtual void drawzcboss(BITMAP *dest);
 	// similar to the overblock function--can do up to a 32x32 sprite
 	void drawblock(BITMAP *dest,int32_t mask);
-	virtual void drawshadow(BITMAP *dest, bool translucent);
 	void masked_draw(BITMAP *dest,int32_t mx,int32_t my,int32_t mw,int32_t mh);
 	virtual void init_size_flags();
 	
@@ -401,6 +399,7 @@ public:
 
 	eTektite(zfix X,zfix Y,int32_t Id,int32_t Clk);                   // : enemy(X,Y,Id,Clk)
 	virtual bool animate(int32_t index);
+	virtual bool can_drawshadow() const;
 	virtual void drawshadow(BITMAP *dest,bool translucent);
 	virtual void draw(BITMAP *dest);
 };
@@ -475,6 +474,7 @@ class eRock : public enemy
 public:
 	eRock(zfix X,zfix Y,int32_t Id,int32_t Clk);                      // : enemy(X,Y,Id,Clk)
 	virtual bool animate(int32_t index);
+	virtual bool can_drawshadow() const;
 	virtual void drawshadow(BITMAP *dest, bool translucent);
 	virtual void draw(BITMAP *dest);
 	virtual int32_t takehit(weapon *w, weapon* realweap = nullptr);
@@ -486,6 +486,7 @@ class eBoulder : public enemy
 public:
 	eBoulder(zfix X,zfix Y,int32_t Id,int32_t Clk);                      // : enemy(X,Y,Id,Clk)
 	virtual bool animate(int32_t index);
+	virtual bool can_drawshadow() const;
 	virtual void drawshadow(BITMAP *dest, bool translucent);
 	virtual void draw(BITMAP *dest);
 	virtual int32_t takehit(weapon *w, weapon* realweap = nullptr);
@@ -561,6 +562,7 @@ public:
 	virtual void draw(BITMAP *dest);
 	virtual int32_t takehit(weapon *w, weapon* realweap = nullptr);
 	void vire_hop();
+	virtual bool can_drawshadow() const;
 	virtual void drawshadow(BITMAP *dest, bool translucent);
 	virtual void break_shield();
 	virtual void repair_shield();
@@ -573,6 +575,7 @@ public:
 	int32_t clk4, clk5;
 	eKeese(zfix X,zfix Y,int32_t Id,int32_t Clk);                     // : enemy(X,Y,Id,Clk)
 	virtual bool animate(int32_t index);
+	virtual bool can_drawshadow() const;
 	virtual void drawshadow(BITMAP *dest, bool translucent);
 	virtual void draw(BITMAP *dest);
 	virtual void init_size_flags();
